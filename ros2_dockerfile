@@ -1,0 +1,22 @@
+#### Generates an image based on jazzy 
+
+FROM ros:jazzy
+
+RUN apt-get update && apt-get install -y \
+    vim \
+    ros-jazzy-moveit \
+    ros-jazzy-moveit-ros-planning-interface \
+    ros-jazzy-ros2-control \
+    ros-jazzy-ros2-controllers \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-robot-state-publisher
+
+
+RUN mkdir -p /ws/src
+WORKDIR /ws
+
+COPY ./fr3_sim_ros2 /ws/src/fr3_sim_ros2
+# RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && colcon build"
+
+ENTRYPOINT ["/ros_entrypoint.sh"]
+CMD ["/bin/bash"]
