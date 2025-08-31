@@ -1,7 +1,0 @@
-[submodule "fr3_sim"]
-	path = fr3_sim
-	url = git@github.com:tranjamin/fr3_sim.git
-[submodule "fr3_sim_ros2"]
-	path = fr3_sim_ros2
-	url = git@github.com:tranjamin/fr3_sim.git
-	branch = ros2
