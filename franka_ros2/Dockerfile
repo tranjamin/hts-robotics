@@ -70,6 +70,9 @@ RUN sudo apt-get update \
         ros-humble-moveit-simple-controller-manager \
         ros-humble-rviz2 \
         ros-humble-xacro \
+        ros-humble-turtlesim \
+        ros-humble-rqt \
+        ros-humble-rqt-graph \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
 
