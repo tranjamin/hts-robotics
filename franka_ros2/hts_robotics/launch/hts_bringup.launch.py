@@ -117,6 +117,13 @@ def generate_launch_description():
              arguments=['--display-config', rviz_file, '-f', 'world'],
     )
 
+    # Add in MoveIt
+    moveit_launchfile = os.path.join(get_package_share_directory('franka_fr3_moveit_config'), 'launch', 'moveit.launch.py')
+    moveit_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(moveit_launchfile),
+        launch_arguments = {'robot_ip': '0', 'use_fake_hardware': 'true', 'ros2_control': 'true'}.items(),
+    )
+
     load_joint_state_broadcaster = ExecuteProcess(
         cmd=['ros2', 'control', 'load_controller', '--set-state', 'inactive',
                 'joint_state_broadcaster'],
@@ -137,6 +144,7 @@ def generate_launch_description():
         gazebo_empty_world,
         robot_state_publisher,
         rviz,
+        # moveit_launch,
         spawn,
         RegisterEventHandler(
                 event_handler=OnProcessExit(
@@ -153,4 +161,11 @@ def generate_launch_description():
                 {'source_list': ['joint_states'],
                  'rate': 30}],
         ),
+        Node(
+            package='hts_robotics',
+            executable='hts_node',
+            name='hts_node',
+            output='screen',
+            namespace=namespace,
+        )
     ])
