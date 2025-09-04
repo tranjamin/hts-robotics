@@ -14,6 +14,7 @@
   <depend>franka_ign_ros2_control</depend>
   <depend>rclcpp</depend>
   <depend>std_msgs</depend>
+  <depend>moveit_ros_planning_interface</depend>
 
   <exec_depend>franka_hardware</exec_depend>
   <exec_depend>franka_gripper</exec_depend>

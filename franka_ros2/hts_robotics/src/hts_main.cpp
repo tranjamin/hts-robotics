@@ -4,6 +4,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
+#include <moveit/move_group_interface/move_group_interface.h>
 
 using namespace std::chrono_literals;
 
