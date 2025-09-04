@@ -9,11 +9,15 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 add_executable(hts_node src/hts_main.cpp)
 ament_target_dependencies(hts_node
   rclcpp
   std_msgs
+  geometry_msgs
+  sensor_msgs
   moveit_ros_planning_interface
 )
 
