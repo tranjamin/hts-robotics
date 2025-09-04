@@ -103,8 +103,11 @@ def generate_launch_description():
         package='ros_gz_sim',
         executable='create',
         namespace=namespace,
-        arguments=['-topic', '/robot_description'],
         output='screen',
+        arguments=[
+            "-topic", "/robot_description",
+            "-name", "fr3",
+        ],
     )
 
     # Visualize in RViz
@@ -118,7 +121,8 @@ def generate_launch_description():
     )
 
     # Add in MoveIt
-    moveit_launchfile = os.path.join(get_package_share_directory('franka_fr3_moveit_config'), 'launch', 'moveit.launch.py')
+    moveit_launchfile = os.path.join(get_package_share_directory('hts_robotics'), 'launch', 'moveit.launch.py')
+    # moveit_launchfile = os.path.join(get_package_share_directory('franka_fr3_moveit_config'), 'launch', 'moveit.launch.py')
     moveit_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(moveit_launchfile),
         launch_arguments = {'robot_ip': '0', 'use_fake_hardware': 'true', 'ros2_control': 'true'}.items(),
@@ -136,6 +140,12 @@ def generate_launch_description():
         output='screen'
     )
 
+    load_dynamic_controller = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'inactive',
+                'joint_position_example_controller'],
+        output='screen'
+    )
+
     return LaunchDescription([
         load_gripper_launch_argument,
         franka_hand_launch_argument,
@@ -149,7 +159,7 @@ def generate_launch_description():
         RegisterEventHandler(
                 event_handler=OnProcessExit(
                     target_action=spawn,
-                    on_exit=[load_joint_state_broadcaster, load_hts_controller],
+                    on_exit=[load_joint_state_broadcaster, load_hts_controller, load_dynamic_controller],
                 )
         ),
         Node(
