@@ -26,6 +26,7 @@ RUN apt-get update && \
         python3-colcon-common-extensions \
         sudo \
         vim \
+        apt-utils \
         python3-pip \
     && python3 -m pip install pybullet \
     && apt-get clean \

@@ -1,18 +1,21 @@
 cmake_minimum_required(VERSION 3.5)
 
-# Suppress CMP0002 warning 
-option(CHECK_TIDY "Enable clang-tidy checks" OFF)
-option(CMAKE_EXPORT_COMPILE_COMMANDS "Enable compile commands export" OFF)
-
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(hts_robotics)
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
 
 add_executable(hts_node src/hts_main.cpp)
-target_link_libraries(hts_node PUBLIC rclcpp::rclcpp ${std_msgs_TARGETS})
+ament_target_dependencies(hts_node
+  rclcpp
+  std_msgs
+  moveit_ros_planning_interface
+)
 
 install(TARGETS 
   hts_node
