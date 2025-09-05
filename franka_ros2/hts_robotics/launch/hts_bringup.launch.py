@@ -14,7 +14,7 @@ from launch.substitutions import LaunchConfiguration
 from launch import LaunchContext, LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import  LaunchConfiguration
+from launch.substitutions import  LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 
 def load_yaml(package_name, file_path):
@@ -81,18 +81,87 @@ def get_robot_description(context: LaunchContext,
 
     return robot_description
 
+def get_rviz_config():
+    rviz_base = os.path.join(get_package_share_directory('franka_fr3_moveit_config'), 'rviz')
+    rviz_full_config = os.path.join(rviz_base, 'moveit.rviz')
+    return rviz_full_config
+
+def get_ompl_config():
+    ompl_planning_pipeline_config = {
+        'move_group': {
+            'planning_plugin': 'ompl_interface/OMPLPlanner',
+            'request_adapters': 'default_planner_request_adapters/AddTimeOptimalParameterization '
+                                'default_planner_request_adapters/ResolveConstraintFrames '
+                                'default_planner_request_adapters/FixWorkspaceBounds '
+                                'default_planner_request_adapters/FixStartStateBounds '
+                                'default_planner_request_adapters/FixStartStateCollision '
+                                'default_planner_request_adapters/FixStartStatePathConstraints',
+            'start_state_max_bounds_error': 0.1,
+        }
+    }
+    ompl_planning_yaml = load_yaml(
+        'franka_fr3_moveit_config', 'config/ompl_planning.yaml'
+    )
+    ompl_planning_pipeline_config['move_group'].update(ompl_planning_yaml)
+    return ompl_planning_pipeline_config
+
 def create_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
     robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo)
     robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper)
     robot_kinematics_yaml = load_yaml('franka_fr3_moveit_config', 'config/kinematics.yaml')
+
+    # Trajectory Execution Functionality
+    moveit_simple_controllers_yaml = load_yaml(
+        'franka_fr3_moveit_config', 'config/fr3_controllers.yaml'
+    )
+    moveit_controllers = {
+        'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
+        'moveit_controller_manager': 'moveit_simple_controller_manager'
+                                     '/MoveItSimpleControllerManager',
+    }
+
+    trajectory_execution = {
+        'moveit_manage_controllers': True,
+        'trajectory_execution.allowed_execution_duration_scaling': 1.2,
+        'trajectory_execution.allowed_goal_duration_margin': 0.5,
+        'trajectory_execution.allowed_start_tolerance': 0.01,
+    }
+
+    planning_scene_monitor_parameters = {
+        'publish_planning_scene': True,
+        'publish_geometry_updates': True,
+        'publish_state_updates': True,
+        'publish_transforms_updates': True,
+    }
+
+    ompl_planning_pipeline_config = get_ompl_config()
+    rviz_full_config = get_rviz_config()
+
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='log',
+        arguments=[
+            '-d', rviz_full_config,
+            '--ros-args', '--log-level', 'warn'
+            ],
+        parameters=[
+            robot_description,
+            robot_description_semantic,
+            ompl_planning_pipeline_config,
+            robot_kinematics_yaml,
+        ],
+    )
 
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
-        parameters=[
-            robot_description,
+        parameters=[robot_description],
+        arguments=[
+            '--ros-args', '--log-level', 'warn'
         ]
     )
 
@@ -104,7 +173,14 @@ def create_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robo
             robot_description,
             robot_description_semantic,
             robot_kinematics_yaml,
+            ompl_planning_pipeline_config,
+            trajectory_execution,
+            moveit_controllers,
+            planning_scene_monitor_parameters,
         ],
+        arguments=[
+            '--ros-args', '--log-level', 'warn'
+        ]
     )
 
     joint_state_publisher = Node(
@@ -115,6 +191,9 @@ def create_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robo
     parameters=[
         {'source_list': ['joint_states'],
             'rate': 30}],
+    arguments=[
+            '--ros-args', '--log-level', 'warn'
+        ]
     )
 
     hts_robotics_node = Node(
@@ -126,7 +205,42 @@ def create_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robo
         )
 
 
-    return [robot_state_publisher, move_group_node, joint_state_publisher, hts_robotics_node]
+    ros2_controllers_path = os.path.join(
+        get_package_share_directory('hts_robotics'),
+        'config',
+        'controllers.yaml',
+    )
+
+    ros2_control_node = Node(
+        package='controller_manager',
+        executable='ros2_control_node',
+        namespace=namespace,
+        parameters=[robot_description, ros2_controllers_path],
+        remappings=[('joint_states', 'franka/joint_states')],
+        output={
+            'stdout': 'screen',
+            'stderr': 'screen',
+        },
+        # arguments=['--ros-args', '--log-level', 'warn']
+    )
+
+    # Load controllers
+    load_controllers = []
+    for controller in ['fr3_arm_controller', 'joint_state_broadcaster']:
+        load_controllers.append(
+            ExecuteProcess(
+                cmd=[
+                    'ros2', 'run', 'controller_manager', 'spawner', controller,
+                    '--controller-manager-timeout', '60',
+                    '--controller-manager',
+                    PathJoinSubstitution([namespace, 'controller_manager'])
+                ],
+                output='screen'
+            )
+    )
+
+
+    return [robot_state_publisher, move_group_node, joint_state_publisher, hts_robotics_node, rviz_node, ros2_control_node] + load_controllers
 
 
 def generate_launch_description():
@@ -136,7 +250,7 @@ def generate_launch_description():
     arm_id_parameter_name = 'arm_id'
     namespace_parameter_name = 'namespace'
     robot_ip_parameter_name = 'robot_ip'
-    use_fake_hardware_parameter_name = 'fake_sensor_commands'
+    use_fake_hardware_parameter_name = 'use_fake_hardware'
     fake_sensor_commands_parameter_name = 'fake_sensor_commands'
     use_gazebo_parameter_name = 'gazebo'
 
@@ -208,38 +322,9 @@ def generate_launch_description():
         arguments=[
             "-topic", "/robot_description",
             "-name", "fr3",
+            '--ros-args', '--log-level', 'warn',
         ],
     )
-
-    # Visualize in RViz
-    rviz_file = os.path.join(get_package_share_directory('franka_description'), 'rviz',
-                             'visualize_franka.rviz')
-    rviz = Node(package='rviz2',
-             executable='rviz2',
-             name='rviz2',
-             namespace=namespace,
-             arguments=['--display-config', rviz_file, '-f', 'world'],
-    )
-
-    load_joint_state_broadcaster = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'inactive',
-                'joint_state_broadcaster'],
-        output='screen'
-    )
-
-    load_hts_controller = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'inactive',
-                'load_hts_controller'],
-        output='screen'
-    )
-
-    load_dynamic_controller = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'inactive',
-                'joint_position_example_controller'],
-        output='screen'
-    )
-
-    controllers = [load_joint_state_broadcaster, load_hts_controller, load_dynamic_controller]
 
     return LaunchDescription([
         load_gripper_launch_argument,
@@ -254,15 +339,15 @@ def generate_launch_description():
         opaque_nodes,
 
         gazebo_empty_world,
-        rviz,
+        # rviz,
         # moveit_launch,
         spawn,
-        RegisterEventHandler(
-                event_handler=OnProcessExit(
-                    target_action=spawn,
-                    on_exit=controllers,
-                )
-        ),
+        # RegisterEventHandler(
+        #         event_handler=OnProcessExit(
+        #             target_action=spawn,
+        #             on_exit=controllers,
+        #         )
+        # ),
 
 
     ])
