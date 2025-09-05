@@ -72,8 +72,8 @@ public:
       message.pose.orientation.z = 0.0;
       message.pose.orientation.w = 1.0;
 
-      RCLCPP_INFO(this->get_logger(), "Publishing a stamped pose");
-      this->goal_pose_pub_->publish(message);
+      // RCLCPP_INFO(this->get_logger(), "Publishing a stamped pose");
+      // this->goal_pose_pub_->publish(message);
     });
 
   }
