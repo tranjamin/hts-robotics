@@ -143,6 +143,12 @@ def generate_launch_description():
         output='screen'
     )
 
+    fr3_arm_controller = ExecuteProcess(
+        cmd=['ros2', 'control', 'load_controller', '--set-state', 'inactive',
+                'fr3_arm_controller'],
+        output='screen'
+    )
+
     return LaunchDescription([
         load_gripper_launch_argument,
         franka_hand_launch_argument,
@@ -162,6 +168,12 @@ def generate_launch_description():
             event_handler=OnProcessExit(
                 target_action=load_joint_state_broadcaster,
                 on_exit=[joint_impedance_example_controller],
+            )
+        ),
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=load_joint_state_broadcaster,
+                on_exit=[fr3_arm_controller],
             )
         ),
         Node(
