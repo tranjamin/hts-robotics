@@ -157,7 +157,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             robot_description_semantic,
             ompl_planning_pipeline_config,
             robot_kinematics_yaml,
-            {"use_sim_time": USE_SIM_TIME}
+            {"use_sim_time": True},
         ],
     )
 
@@ -173,13 +173,6 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             trajectory_execution,
             moveit_controllers,
             planning_scene_monitor_parameters,
-            trajectory_config,
-            {"use_sim_time": USE_SIM_TIME},
-            {
-                "goal_joint_tolerance": 0.01,
-                "goal_position_tolerance": 0.01,
-                "goal_orientation_tolerance": 0.01
-            }
         ],
         arguments=[
             '--ros-args', '--log-level', 'info'
@@ -196,10 +189,7 @@ def create_robot_publisher(context: LaunchContext, arm_id, load_gripper, franka_
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
-        parameters=[
-            robot_description,
-            {"use_sim_time": USE_SIM_TIME},            
-            ],
+        parameters=[robot_description],
         arguments=[
             '--ros-args', '--log-level', 'warn'
         ]
@@ -348,49 +338,25 @@ def generate_launch_description():
         publisher_node,
 
         RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=spawn,
-                on_exit=[arm_controller],
-            )
+                event_handler=OnProcessExit(
+                    target_action=spawn,
+                    on_exit=controller_actions,
+                )
         ),
-
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=arm_controller,
-                on_exit=[state_controller],
-            )
+        Node(
+            package='joint_state_publisher',
+            executable='joint_state_publisher',
+            name='joint_state_publisher',
+            namespace=namespace,
+            parameters=[
+                {'source_list': ['joint_states'],
+                 'rate': 30}],
         ),
-
-    
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=state_controller,
-                on_exit=[state_controller_activate],
-            )
-        ),
-
-        
-        # RegisterEventHandler(
-        #     event_handler=OnProcessExit(
-        #         target_action=controller_actions,
-        #         on_exit = [ExecuteProcess(
-        #             cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
-        #             output=["screen"]
-        #         )]
-        #     )
-        # ),
-
-        activate_broadcaster,
-
-        
         Node(
             package='hts_robotics',
             executable='hts_node',
             name='hts_node',
             output='screen',
             namespace=namespace,
-            parameters=[{
-                "use_sim_time": USE_SIM_TIME
-            }]
         ),
     ])
