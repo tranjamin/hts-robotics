@@ -152,6 +152,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             robot_description_semantic,
             ompl_planning_pipeline_config,
             robot_kinematics_yaml,
+            {"use_sim_time": True},
         ],
     )
 
@@ -167,6 +168,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             trajectory_execution,
             moveit_controllers,
             planning_scene_monitor_parameters,
+            {"use_sim_time": True},
         ],
         arguments=[
             '--ros-args', '--log-level', 'warn'
@@ -183,7 +185,11 @@ def create_basic_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
-        parameters=[robot_description],
+        parameters=[
+            robot_description,
+            {"use_sim_time": True},
+            
+            ],
         arguments=[
             '--ros-args', '--log-level', 'warn'
         ]
@@ -252,7 +258,7 @@ def generate_launch_description():
     gazebo_empty_world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': 'empty.sdf -r', }.items(),
+        launch_arguments={'gz_args': 'empty.sdf -r', 'ros_clock_publisher': 'true'}.items(),
     )
 
     # Spawn
@@ -316,13 +322,16 @@ def generate_launch_description():
             namespace=namespace,
             parameters=[
                 {'source_list': ['joint_states'],
-                 'rate': 30}],
+                 'rate': 30},
+                {"use_sim_time": True},
+                 
+                 ],
         ),
-        Node(
-            package='hts_robotics',
-            executable='hts_node',
-            name='hts_node',
-            output='screen',
-            namespace=namespace,
-        ),
+        # Node(
+        #     package='hts_robotics',
+        #     executable='hts_node',
+        #     name='hts_node',
+        #     output='screen',
+        #     namespace=namespace,
+        # ),
     ])
