@@ -11,6 +11,14 @@ find_package(std_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "action/MoveToPoint.action"
+  DEPENDENCIES geometry_msgs
+)
+
 
 add_executable(hts_node src/hts_main.cpp)
 ament_target_dependencies(hts_node
@@ -19,6 +27,10 @@ ament_target_dependencies(hts_node
   geometry_msgs
   sensor_msgs
   moveit_ros_planning_interface
+)
+
+rosidl_target_interfaces(hts_node
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
 )
 
 install(TARGETS 
@@ -39,4 +51,5 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()
