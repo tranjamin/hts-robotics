@@ -24,7 +24,7 @@ fr3_arm_controller:
     type: joint_trajectory_controller/JointTrajectoryController
     gazebo: true
     command_interfaces:
-      - effort
+      - position
     state_interfaces:
       - position
       - velocity
