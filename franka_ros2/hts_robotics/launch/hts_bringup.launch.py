@@ -17,6 +17,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import  LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 
+USE_SIM_TIME = True
+
 def get_robot_description(context: LaunchContext, 
         arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo):
     arm_id_str = context.perform_substitution(arm_id)
@@ -153,6 +155,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             robot_description_semantic,
             ompl_planning_pipeline_config,
             robot_kinematics_yaml,
+            {"use_sim_time": USE_SIM_TIME}
         ],
     )
 
@@ -168,6 +171,12 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             trajectory_execution,
             moveit_controllers,
             planning_scene_monitor_parameters,
+            {"use_sim_time": USE_SIM_TIME},
+            {
+                "goal_joint_tolerance": 1,
+                "goal_position_tolerance": 1,
+                "goal_orientation_tolerance": 1
+            }
         ],
         arguments=[
             '--ros-args', '--log-level', 'warn'
@@ -176,7 +185,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
 
     return [move_group_node, rviz_node]
 
-def create_basic_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
+def create_robot_publisher(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
     robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo)
 
     robot_state_publisher = Node(
@@ -184,7 +193,10 @@ def create_basic_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
-        parameters=[robot_description],
+        parameters=[
+            robot_description,
+            {"use_sim_time": USE_SIM_TIME},            
+            ],
         arguments=[
             '--ros-args', '--log-level', 'warn'
         ]
@@ -253,7 +265,7 @@ def generate_launch_description():
     gazebo_empty_world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': 'empty.sdf -r', }.items(),
+        launch_arguments={'gz_args': 'empty.sdf -r', 'ros_clock_publisher': 'true'}.items(),
     )
 
     # Spawn
@@ -265,17 +277,20 @@ def generate_launch_description():
         output='screen',
     )
 
-    controllers = ['joint_state_broadcaster', 'fr3_arm_controller']
-    controller_actions = []
-    for controller in controllers:
-        state = 'active' if controller == 'fr3_arm_controller' else 'inactive'
-        controller_actions.append(
-            ExecuteProcess(
-                cmd=['ros2', 'control', 'load_controller', '--set-state', state,
-                        controller],
-                output='screen'
-            )
-        )
+    arm_controller = ExecuteProcess(
+        cmd=["ros2", "control", "load_controller", "--set-state", "active", "fr3_arm_controller"],
+        output="screen"
+    )
+
+    state_controller = ExecuteProcess(
+        cmd=["ros2", "control", "load_controller", "--set-state", "inactive", "joint_state_broadcaster"],
+        output="screen"
+    )
+
+    state_controller_activate = ExecuteProcess(
+        cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
+        output="screen"
+    )
 
     # Get robot description
     opaque_nodes_moveit = OpaqueFunction(
@@ -283,12 +298,36 @@ def generate_launch_description():
         args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace]
     )
 
-    base_nodes = OpaqueFunction(
-        function = create_basic_nodes,
+    robot_pub = OpaqueFunction(
+        function = create_robot_publisher,
         args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace]
     )
 
+    publisher_node = Node(
+            package='joint_state_publisher',
+            executable='joint_state_publisher',
+            name='joint_state_publisher',
+            namespace=namespace,
+            parameters=[
+                {'source_list': ['joint_states'],
+                 'rate': 30},
+                {"use_sim_time": USE_SIM_TIME},
+                 
+                 ],
+        )
+
+    clock_bridge = ExecuteProcess(
+        cmd=["ros2", "run", "ros_gz_bridge", "parameter_bridge", "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"]
+    )
+    
+    activate_broadcaster = ExecuteProcess(
+        cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
+        output=["screen"]
+    )
+
     return LaunchDescription([
+        clock_bridge,
+
         load_gripper_launch_argument,
         franka_hand_launch_argument,
         arm_id_launch_argument,
@@ -299,31 +338,56 @@ def generate_launch_description():
         use_gazebo_launch_argument,
 
         gazebo_empty_world,
-        base_nodes,
+        robot_pub,
         opaque_nodes_moveit,
     
         spawn,
-        
+        publisher_node,
+
         RegisterEventHandler(
-                event_handler=OnProcessExit(
-                    target_action=spawn,
-                    on_exit=controller_actions,
-                )
+            event_handler=OnProcessExit(
+                target_action=spawn,
+                on_exit=[arm_controller],
+            )
         ),
-        Node(
-            package='joint_state_publisher',
-            executable='joint_state_publisher',
-            name='joint_state_publisher',
-            namespace=namespace,
-            parameters=[
-                {'source_list': ['joint_states'],
-                 'rate': 30}],
+
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=arm_controller,
+                on_exit=[state_controller],
+            )
         ),
+
+    
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=state_controller,
+                on_exit=[state_controller_activate],
+            )
+        ),
+
+        
+        # RegisterEventHandler(
+        #     event_handler=OnProcessExit(
+        #         target_action=controller_actions,
+        #         on_exit = [ExecuteProcess(
+        #             cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
+        #             output=["screen"]
+        #         )]
+        #     )
+        # ),
+
+        activate_broadcaster,
+
+        
         Node(
             package='hts_robotics',
             executable='hts_node',
             name='hts_node',
             output='screen',
             namespace=namespace,
+            parameters=[{
+                "use_sim_time": USE_SIM_TIME
+            }]
         ),
     ])
