@@ -141,6 +141,8 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
     ompl_planning_pipeline_config = get_ompl_config()
     rviz_full_config = get_rviz_config()
 
+    trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
+
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -171,15 +173,16 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             trajectory_execution,
             moveit_controllers,
             planning_scene_monitor_parameters,
+            trajectory_config,
             {"use_sim_time": USE_SIM_TIME},
             {
-                "goal_joint_tolerance": 1,
-                "goal_position_tolerance": 1,
-                "goal_orientation_tolerance": 1
+                "goal_joint_tolerance": 0.01,
+                "goal_position_tolerance": 0.01,
+                "goal_orientation_tolerance": 0.01
             }
         ],
         arguments=[
-            '--ros-args', '--log-level', 'warn'
+            '--ros-args', '--log-level', 'info'
         ]
     )
 
