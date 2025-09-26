@@ -188,9 +188,10 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
 
     return [move_group_node, rviz_node]
 
-def create_robot_publisher(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
+def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
     robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo)
-
+    robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper)
+    
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -198,14 +199,28 @@ def create_robot_publisher(context: LaunchContext, arm_id, load_gripper, franka_
         output='both',
         parameters=[
             robot_description,
-            {"use_sim_time": USE_SIM_TIME},            
+            {"use_sim_time": USE_SIM_TIME},
+            {"use_sim_time": True},
             ],
         arguments=[
             '--ros-args', '--log-level', 'warn'
         ]
     )
 
-    return [robot_state_publisher]
+    hts_node = Node(
+        package='hts_robotics',
+        executable='hts_node',
+        name='hts_node',
+        output='screen',
+        namespace=namespace,
+        parameters=[
+            {"use_sim_time": USE_SIM_TIME},
+            robot_description,
+            robot_description_semantic
+        ]
+    )
+
+    return [robot_state_publisher, hts_node]
 
 def generate_launch_description():
     # parameter names for the launch file
@@ -301,8 +316,8 @@ def generate_launch_description():
         args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace]
     )
 
-    robot_pub = OpaqueFunction(
-        function = create_robot_publisher,
+    base_nodes = OpaqueFunction(
+        function = create_base_nodes,
         args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace]
     )
 
@@ -341,7 +356,7 @@ def generate_launch_description():
         use_gazebo_launch_argument,
 
         gazebo_empty_world,
-        robot_pub,
+        base_nodes,
         opaque_nodes_moveit,
     
         spawn,
@@ -383,14 +398,14 @@ def generate_launch_description():
         activate_broadcaster,
 
         
-        Node(
-            package='hts_robotics',
-            executable='hts_node',
-            name='hts_node',
-            output='screen',
-            namespace=namespace,
-            parameters=[{
-                "use_sim_time": USE_SIM_TIME
-            }]
-        ),
+        # Node(
+        #     package='hts_robotics',
+        #     executable='hts_node',
+        #     name='hts_node',
+        #     output='screen',
+        #     namespace=namespace,
+        #     parameters=[{
+        #         "use_sim_time": USE_SIM_TIME
+        #     }]
+        # ),
     ])
