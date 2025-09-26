@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 
+// includes
 #include "rclcpp/rclcpp.hpp"
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "std_msgs/msg/string.hpp"
@@ -13,25 +14,43 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "hts_robotics/action/move_to_point.hpp"
 
+// for using macros like s, ms, us
 using namespace std::chrono_literals;
 
 
 /**
- * Contains:
- *  
+ * a class for high-level control for high throughput synthesis robotics
+ * 
+ * Node:
+ *  - hts_node
+ * Subscribes to:
+ *  - /clicked_point: moves the robot to predefined point
+ *  - /goal_pose: logs the goal pose
+ *  - /joint_states: logs the joint states (debug)
+ * Publishes:
+ *  - /goal_pose: publishes a fixed goal pose
+ * Action Servers:
+ *  - /hts_moveit_action: publishes hts commands to pass to moveit
+ * Action Clients:
+ *  - /hts_moveit_action: reads in hts commands and forwards it to moveit
  */
 class hts_node : public rclcpp::Node {
 public:
 
   hts_node():Node("hts_node"), count_(0) {
+
+    // create a subscriber to take in a clicked point and move the robot
     clicked_point_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>("/clicked_point", 10,
       [this](geometry_msgs::msg::PointStamped::UniquePtr msg) -> void {
         RCLCPP_INFO(this->get_logger(), "Clicked Point: (%f, %f, %f)", msg->point.x, msg->point.y, msg->point.z);
+
+        // creates a goal message
         auto goal_msg = hts_robotics::action::MoveToPoint::Goal();
         goal_msg.x = 0.5;
         goal_msg.y = 0.0;
         goal_msg.z = 0.3;
 
+        // sets callbacks for action
         auto send_goal_options = rclcpp_action::Client<hts_robotics::action::MoveToPoint>::SendGoalOptions();
         send_goal_options.result_callback =
           [this](const rclcpp_action::ClientGoalHandle<hts_robotics::action::MoveToPoint>::WrappedResult & result) {
@@ -42,9 +61,11 @@ public:
             }
           };
 
+        // sends action
         moveit_client_->async_send_goal(goal_msg, send_goal_options);
       });
 
+    // create a subscriber to read in the goal pose and log info
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10,
       [this](geometry_msgs::msg::PoseStamped::UniquePtr msg) -> void {
         RCLCPP_INFO(this->get_logger(), "Goal Pose: (%f, %f, %f | %f, %f, %f, %f)", 
@@ -54,6 +75,7 @@ public:
       }
     );
 
+    // create a subscriber to read in the joint states and log info
     joint_states_sub_ = this->create_subscription<sensor_msgs::msg::JointState>("/joint_states", 10,
       [this](sensor_msgs::msg::JointState::UniquePtr msg) -> void {
         std::ostringstream oss;
@@ -65,10 +87,11 @@ public:
           if (i < msg->effort.size())   oss << "eff=" << msg->effort[i] << " ";
           oss << "\n";
         }
-        // RCLCPP_INFO(this->get_logger(), "%s", oss.str().c_str());
+        RCLCPP_DEBUG(this->get_logger(), "%s", oss.str().c_str());
       }
     );
 
+    // create a publisher for the goal pose
     goal_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 10);
     timer_ = this->create_wall_timer(500ms, [this]() -> void {
 
@@ -89,10 +112,11 @@ public:
       message.pose.orientation.z = 0.0;
       message.pose.orientation.w = 1.0;
 
-      // RCLCPP_INFO(this->get_logger(), "Publishing a stamped pose");
-      // this->goal_pose_pub_->publish(message);
+      RCLCPP_DEBUG(this->get_logger(), "Publishing a stamped pose");
+      this->goal_pose_pub_->publish(message);
     });
 
+    // create moveit server
     moveit_server_ = rclcpp_action::create_server<hts_robotics::action::MoveToPoint>(
       this, "hts_moveit_action",
       std::bind(&hts_node::handle_goal_, this, std::placeholders::_1, std::placeholders::_2),
@@ -101,8 +125,7 @@ public:
     );
 
 
-    moveit_client_ = rclcpp_action::create_client<hts_robotics::action::MoveToPoint>(this, "hts_moveit_action");
-    
+    moveit_client_ = rclcpp_action::create_client<hts_robotics::action::MoveToPoint>(this, "hts_moveit_action");    
     if (!moveit_client_->wait_for_action_server(5s)) {
       RCLCPP_ERROR(this->get_logger(), "Failed to connect to action server");
       rclcpp::shutdown();
