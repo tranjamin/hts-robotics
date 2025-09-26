@@ -1,0 +1,9 @@
+trajectory_execution:
+  # Multiply expected execution duration by this factor
+  allowed_execution_duration_scaling: 2.0
+
+  # Add this many seconds as a grace margin
+  allowed_goal_duration_margin: 2.0
+
+  # Optional: timeout if execution hasn’t started
+  execution_duration_monitoring: true
