@@ -68,10 +68,10 @@ public:
     // create a subscriber to read in the goal pose and log info
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10,
       [this](geometry_msgs::msg::PoseStamped::UniquePtr msg) -> void {
-        RCLCPP_INFO(this->get_logger(), "Goal Pose: (%f, %f, %f | %f, %f, %f, %f)", 
-          msg->pose.position.x, msg->pose.position.y, msg->pose.position.z,
-          msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w  
-        );
+        // RCLCPP_INFO(this->get_logger(), "Goal Pose: (%f, %f, %f | %f, %f, %f, %f)", 
+        //   msg->pose.position.x, msg->pose.position.y, msg->pose.position.z,
+        //   msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w  
+        // );
       }
     );
 
