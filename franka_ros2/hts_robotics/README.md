@@ -16,3 +16,8 @@ Inside the docker container,
 2. `colcon build --symlink-install`
 3. `source install/setup.bash`
 4. `ros2 launch hts_robotics hts_bringup.launch.py`
+
+Recording video:
+
+`ffmpeg -f x11grab -video_size <3840x2160> -framerate 30 -i <:0.0+2880,0> -pix_fmt yuv420p <video.mp4>`
+
