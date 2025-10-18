@@ -150,7 +150,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
         output='log',
         arguments=[
             '-d', rviz_full_config,
-            '--ros-args', '--log-level', 'warn'
+            '--ros-args', '--log-level', 'error'
             ],
         parameters=[
             robot_description,
@@ -182,7 +182,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             }
         ],
         arguments=[
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', 'error'
         ]
     )
 
@@ -203,7 +203,7 @@ def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand,
             {"use_sim_time": True},
             ],
         arguments=[
-            '--ros-args', '--log-level', 'warn'
+            '--ros-args', '--log-level', 'error'
         ]
     )
 
@@ -216,7 +216,10 @@ def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand,
         parameters=[
             {"use_sim_time": USE_SIM_TIME},
             robot_description,
-            robot_description_semantic
+            robot_description_semantic,
+        ],
+        arguments=[
+            '--ros-args', '--log-level', 'info'
         ]
     )
 
@@ -283,7 +286,11 @@ def generate_launch_description():
     gazebo_empty_world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': 'empty.sdf -r', 'ros_clock_publisher': 'true'}.items(),
+        launch_arguments={
+            'gz_args': 'empty.sdf -r', 
+            'ros_clock_publisher': 'true',
+            'ros_args': '--log-level warn',
+            }.items(),
     )
 
     # Spawn

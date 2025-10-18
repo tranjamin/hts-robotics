@@ -7,6 +7,7 @@
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "std_msgs/msg/string.hpp"
 #include <moveit/move_group_interface/move_group_interface.h>
+#include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/point.hpp"
@@ -37,9 +38,14 @@ using namespace std::chrono_literals;
 class hts_node : public rclcpp::Node {
 public:
 
-  hts_node():Node("hts_node"), count_(0) {
+  hts_node():Node("hts_node"), 
+  count_(0)
+  
+  {
+    RCLCPP_INFO(this->get_logger(), "Initialising the HTS Robotics Node");
 
     // create a subscriber to take in a clicked point and move the robot
+    RCLCPP_INFO(this->get_logger(), "Creating clicked point subscriber...");
     clicked_point_sub_ = this->create_subscription<geometry_msgs::msg::PointStamped>("/clicked_point", 10,
       [this](geometry_msgs::msg::PointStamped::UniquePtr msg) -> void {
         RCLCPP_INFO(this->get_logger(), "Clicked Point: (%f, %f, %f)", msg->point.x, msg->point.y, msg->point.z);
@@ -66,6 +72,7 @@ public:
       });
 
     // create a subscriber to read in the goal pose and log info
+    RCLCPP_INFO(this->get_logger(), "Creating goal pose subscriber...");
     goal_pose_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>("/goal_pose", 10,
       [this](geometry_msgs::msg::PoseStamped::UniquePtr msg) -> void {
         RCLCPP_INFO(this->get_logger(), "Goal Pose: (%f, %f, %f | %f, %f, %f, %f)", 
@@ -76,6 +83,7 @@ public:
     );
 
     // create a subscriber to read in the joint states and log info
+    RCLCPP_INFO(this->get_logger(), "Creating joint states subscriber...");
     joint_states_sub_ = this->create_subscription<sensor_msgs::msg::JointState>("/joint_states", 10,
       [this](sensor_msgs::msg::JointState::UniquePtr msg) -> void {
         std::ostringstream oss;
@@ -92,6 +100,7 @@ public:
     );
 
     // create a publisher for the goal pose
+    RCLCPP_INFO(this->get_logger(), "Creating goal pose publisher...");
     goal_pose_pub_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("/goal_pose", 10);
     timer_ = this->create_wall_timer(500ms, [this]() -> void {
 
@@ -117,6 +126,7 @@ public:
     });
 
     // create moveit server
+    RCLCPP_INFO(this->get_logger(), "Creating MoveIt2 Server...");
     moveit_server_ = rclcpp_action::create_server<hts_robotics::action::MoveToPoint>(
       this, "hts_moveit_action",
       std::bind(&hts_node::handle_goal_, this, std::placeholders::_1, std::placeholders::_2),
@@ -124,7 +134,7 @@ public:
       std::bind(&hts_node::handle_accepted_, this, std::placeholders::_1)
     );
 
-
+    RCLCPP_INFO(this->get_logger(), "Creating MoveIt2 Client...");
     moveit_client_ = rclcpp_action::create_client<hts_robotics::action::MoveToPoint>(this, "hts_moveit_action");    
     if (!moveit_client_->wait_for_action_server(5s)) {
       RCLCPP_ERROR(this->get_logger(), "Failed to connect to action server");
@@ -132,12 +142,52 @@ public:
       return;
     }
 
+    RCLCPP_WARN(this->get_logger(), "Finished constructing node...");
+    // RCLCPP_INFO(this->get_logger(), "Planning scene frame: %s", move_group_interface_.getPlanningFrame().c_str());
+  
+  }
 
+  void init() {
+    RCLCPP_INFO(this->get_logger(), "Starting init...");
+    
+    move_group_interface_ = std::make_shared<moveit::planning_interface::MoveGroupInterface>(
+        shared_from_this(), "fr3_arm");
+
+    planning_scene_interface_ = std::make_shared<moveit::planning_interface::PlanningSceneInterface>();
+
+    RCLCPP_INFO(get_logger(), "MoveGroup and PlanningSceneInterface initialized. Planning frame: %s",
+                move_group_interface_->getPlanningFrame().c_str());
+
+    // Build collision object now that move_group_interface_ exists
+    moveit_msgs::msg::CollisionObject collision_object;
+    collision_object.id = "box1";
+    collision_object.header.frame_id = move_group_interface_->getPlanningFrame();
+
+    shape_msgs::msg::SolidPrimitive primitive;
+    primitive.type = primitive.BOX;
+    primitive.dimensions = {0.5, 0.1, 0.5}; // meters
+
+    geometry_msgs::msg::Pose box_pose;
+    box_pose.orientation.w = 1.0;
+    box_pose.position.x = 0.2;
+    box_pose.position.y = 0.2;
+    box_pose.position.z = 0.25;
+
+    collision_object.primitives.push_back(primitive);
+    collision_object.primitive_poses.push_back(box_pose);
+    collision_object.operation = collision_object.ADD;
+
+    // Apply the object
+    planning_scene_interface_->applyCollisionObject(collision_object);
+    RCLCPP_INFO(get_logger(), "Applied collision object 'box1' to planning scene.");
   }
 
 private:
   rclcpp::TimerBase::SharedPtr timer_;
   size_t count_;
+
+  std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_interface_;
+  std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_interface_;
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr clicked_point_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_sub_;
@@ -172,27 +222,26 @@ private:
       target.position.y = goal->y;
       target.position.z = goal->z;
 
-      moveit::planning_interface::MoveGroupInterface move_group(
-        shared_from_this(),  
-        "fr3_arm"
-      );
-      move_group.setPoseTarget(target);
-      bool success = (move_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
-
+      move_group_interface_->setPoseTarget(target);
+      bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto result = std::make_shared<hts_robotics::action::MoveToPoint::Result>();
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
       goal_handle->succeed(result);
     }).detach();
-  }
   
+}
+
 };
 
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<hts_node>());
+
+  auto node = std::make_shared<hts_node>();
+  node->init();
+  rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
 }
