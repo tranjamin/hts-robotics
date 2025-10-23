@@ -16,3 +16,14 @@ Inside the docker container,
 2. `colcon build --symlink-install`
 3. `source install/setup.bash`
 4. `ros2 launch hts_robotics hts_bringup.launch.py`
+
+# Finding the Machine ID
+
+1. clone the anygrasp_sdk
+2. enter the required mac address in `docker-compose.yml`
+3. inside the docker container:
+
+`wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb`
+`sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb`
+
+4. inside `anygrasp_sdk/license_registration`, run `./license_checker -f` to extract the machine ID
