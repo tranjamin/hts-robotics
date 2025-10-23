@@ -173,6 +173,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             trajectory_execution,
             moveit_controllers,
             planning_scene_monitor_parameters,
+            {"use_sim_time": True},
         ],
         arguments=[
             '--ros-args', '--log-level', 'info'
@@ -189,7 +190,11 @@ def create_robot_publisher(context: LaunchContext, arm_id, load_gripper, franka_
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='both',
-        parameters=[robot_description],
+        parameters=[
+            robot_description,
+            {"use_sim_time": True},
+            
+            ],
         arguments=[
             '--ros-args', '--log-level', 'warn'
         ]
@@ -350,13 +355,16 @@ def generate_launch_description():
             namespace=namespace,
             parameters=[
                 {'source_list': ['joint_states'],
-                 'rate': 30}],
+                 'rate': 30},
+                {"use_sim_time": True},
+                 
+                 ],
         ),
-        Node(
-            package='hts_robotics',
-            executable='hts_node',
-            name='hts_node',
-            output='screen',
-            namespace=namespace,
-        ),
+        # Node(
+        #     package='hts_robotics',
+        #     executable='hts_node',
+        #     name='hts_node',
+        #     output='screen',
+        #     namespace=namespace,
+        # ),
     ])
