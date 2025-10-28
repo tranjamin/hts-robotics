@@ -8,7 +8,7 @@ services:
         - USER_GID=${USER_GID}
     container_name: franka_ros2
     network_mode: "host"
-    # mac_address: PUT MAC ADDRESS HERE
+    mac_address: 02:42:ac:11:00:02
     privileged: true
     command: /bin/bash
     tty: true
