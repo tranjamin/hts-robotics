@@ -27,6 +27,7 @@
                       no_prefix:='false'
                       arm_prefix:=''
                       description_pkg:='franka_description'
+                      use_camera:='true'
                       connected_to:='base'">
                       
     <xacro:include filename="$(find franka_description)/robots/common/utils.xacro" />
@@ -58,6 +59,12 @@
       <xacro:if value="${arm_id == 'fr3' or arm_id == 'fer' or arm_id == 'fr3v2'}">
         <xacro:property name="ee_color" value="white" />
       </xacro:if>
+
+      <xacro:property name="xyz_ee" value="0.0 0.0 0.0"/>
+      <xacro:if value="${use_camera}">
+        <xacro:property name="xyz_ee" value="0.0 0.0 0.05505"/>
+      </xacro:if>
+
       <xacro:property name="connection" value="${special_connection if special_connection != '' else arm_id + '_link8'}" />
       <xacro:franka_hand
         connected_to="${arm_prefix}${connection}"
@@ -159,6 +166,13 @@
         <xacro:gazebo-friction link="${arm_prefix}${arm_id}_leftfinger" mu="1.13" />
         <xacro:gazebo-friction link="${arm_prefix}${arm_id}_rightfinger" mu="1.13" />
       </xacro:if>
+    </xacro:if>
+
+    <xacro:if value="${use_camera}">
+      <xacro:include filename="$(find realsense2_description)/urdf/_d435.urdf.xacro"/>
+      <xacro:sensor_d435 name="camera" parent="${arm_prefix}${arm_id}_link8">
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+      </xacro:sensor_d435>
     </xacro:if>
 
     <xacro:if value="${ros2_control}">
