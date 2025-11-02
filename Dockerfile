@@ -7,6 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8 \
     ROS_DISTRO=humble
 
+ARG FRANKA_PATH=franka_ros2
+
 ARG USER_UID=1001
 ARG USER_GID=1001
 ARG USERNAME=user
@@ -84,7 +86,7 @@ WORKDIR /ros2_ws
 # Install the missing ROS 2 dependencies
 COPY . /ros2_ws/src
 RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
-    && vcs import src < src/franka.repos --recursive --skip-existing \
+    && vcs import src < src/${FRANKA_PATH}/franka.repos --recursive --skip-existing \
     && sudo apt-get update \
     && rosdep update \
     && rosdep install --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y \
@@ -94,7 +96,7 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rm -rf src \
     && mkdir -p src
 
-COPY ./franka_entrypoint.sh /franka_entrypoint.sh
+COPY ./${FRANKA_PATH}/franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
 
 # Set the default shell to bash and the workdir to the source directory
