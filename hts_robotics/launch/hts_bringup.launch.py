@@ -20,7 +20,7 @@ from launch_ros.actions import Node
 USE_SIM_TIME = True
 
 def get_robot_description(context: LaunchContext, 
-        arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo):
+        arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera):
     arm_id_str = context.perform_substitution(arm_id)
     load_gripper_str = context.perform_substitution(load_gripper)
     franka_hand_str = context.perform_substitution(franka_hand)
@@ -28,6 +28,7 @@ def get_robot_description(context: LaunchContext,
     fake_hardware_str = context.perform_substitution(use_fake_hardware)
     fake_sensor_commands_str = context.perform_substitution(fake_sensor_commands)
     gazebo_str = context.perform_substitution(use_gazebo)
+    camera_str = context.perform_substitution(use_camera)
 
     franka_xacro_file = os.path.join(
         get_package_share_directory('franka_description'),
@@ -47,7 +48,8 @@ def get_robot_description(context: LaunchContext,
             'ee_id': franka_hand_str,
             'use_fake_hardware': fake_hardware_str,
             'fake_sensor_commands': fake_sensor_commands_str,
-            'robot_ip': robot_ip_str
+            'robot_ip': robot_ip_str,
+            'use_camera': camera_str,
         }
     )
 
@@ -65,9 +67,10 @@ def load_yaml(package_name, file_path):
     except EnvironmentError:  # parent of IOError, OSError *and* Windows Error where available
         return None
 
-def get_robot_semantics(context: LaunchContext, arm_id, load_gripper):
+def get_robot_semantics(context: LaunchContext, arm_id, load_gripper, use_camera):
     arm_id_str = context.perform_substitution(arm_id)
     load_gripper_str = context.perform_substitution(load_gripper)
+    camera_str = context.perform_substitution(use_camera)
 
     franka_semantic_xacro_file = os.path.join(
         get_package_share_directory('franka_description'),
@@ -78,7 +81,8 @@ def get_robot_semantics(context: LaunchContext, arm_id, load_gripper):
         franka_semantic_xacro_file,
         mappings={
             'arm_id': arm_id_str,
-            'hand': load_gripper_str
+            'hand': load_gripper_str,
+            'camera': camera_str,
         }
     )
 
@@ -109,14 +113,14 @@ def get_ompl_config():
     ompl_planning_pipeline_config['move_group'].update(ompl_planning_yaml)
     return ompl_planning_pipeline_config
 
-def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
-    robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo)
-    robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper)
+def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
+    robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
+    robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper, use_camera)
     robot_kinematics_yaml = load_yaml('franka_fr3_moveit_config', 'config/kinematics.yaml')
 
     # Trajectory Execution Functionality
     moveit_simple_controllers_yaml = load_yaml(
-        'franka_fr3_moveit_config', 'config/fr3_controllers.yaml'
+        'hts_robotics', 'config/controllers.yaml'
     )
     moveit_controllers = {
         'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
@@ -147,10 +151,10 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        output='log',
+        output='screen',
         arguments=[
             '-d', rviz_full_config,
-            '--ros-args', '--log-level', 'warn'
+            '--ros-args', '--log-level', 'error'
             ],
         parameters=[
             robot_description,
@@ -165,6 +169,7 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
         package='moveit_ros_move_group',
         executable='move_group',
         namespace=namespace,
+        output="screen",
         parameters=[
             robot_description,
             robot_description_semantic,
@@ -182,15 +187,15 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
             }
         ],
         arguments=[
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', 'error'
         ]
     )
 
     return [move_group_node, rviz_node]
 
-def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace):
-    robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo)
-    robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper)
+def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
+    robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
+    robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper, use_camera)
     
     robot_state_publisher = Node(
         package='robot_state_publisher',
@@ -203,7 +208,7 @@ def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand,
             {"use_sim_time": True},
             ],
         arguments=[
-            '--ros-args', '--log-level', 'warn'
+            '--ros-args', '--log-level', 'error'
         ]
     )
 
@@ -216,7 +221,10 @@ def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand,
         parameters=[
             {"use_sim_time": USE_SIM_TIME},
             robot_description,
-            robot_description_semantic
+            robot_description_semantic,
+        ],
+        arguments=[
+            '--ros-args', '--log-level', 'info'
         ]
     )
 
@@ -232,6 +240,7 @@ def generate_launch_description():
     use_fake_hardware_parameter_name = 'use_fake_hardware'
     fake_sensor_commands_parameter_name = 'fake_sensor_commands'
     use_gazebo_parameter_name = 'gazebo'
+    use_camera_parameter_name = 'use_camera'
 
     # parameters for the launch file
     load_gripper = LaunchConfiguration(load_gripper_parameter_name)
@@ -242,11 +251,12 @@ def generate_launch_description():
     use_fake_hardware = LaunchConfiguration(use_fake_hardware_parameter_name)
     fake_sensor_commands = LaunchConfiguration(fake_sensor_commands_parameter_name)
     use_gazebo = LaunchConfiguration(use_gazebo_parameter_name)
+    use_camera = LaunchConfiguration(use_camera_parameter_name)
 
     # define launch arguments
     load_gripper_launch_argument = DeclareLaunchArgument(
             load_gripper_parameter_name,
-            default_value='false',
+            default_value='true',
             description='true/false for activating the gripper')
     franka_hand_launch_argument = DeclareLaunchArgument(
             franka_hand_parameter_name,
@@ -276,6 +286,11 @@ def generate_launch_description():
             use_gazebo_parameter_name,
             default_value='true',
             description='true/false to pass gazebo=true to URDF')
+    use_camera_launch_argument = DeclareLaunchArgument(
+            use_camera_parameter_name,
+            default_value='true',
+            description='true/false to use the D435 camera'
+    )
 
     # Gazebo Sim
     os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
@@ -283,7 +298,12 @@ def generate_launch_description():
     gazebo_empty_world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')),
-        launch_arguments={'gz_args': 'empty.sdf -r', 'ros_clock_publisher': 'true'}.items(),
+        launch_arguments={
+            'gz_args': 'empty.sdf -r', 
+            'ros_clock_publisher': 'true',
+            'ros_args': '--log-level warn',
+            'output': 'both',
+            }.items(),
     )
 
     # Spawn
@@ -313,18 +333,19 @@ def generate_launch_description():
     # Get robot description
     opaque_nodes_moveit = OpaqueFunction(
         function = create_moveit_nodes,
-        args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace]
+        args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera]
     )
 
     base_nodes = OpaqueFunction(
         function = create_base_nodes,
-        args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace]
+        args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera]
     )
 
     publisher_node = Node(
             package='joint_state_publisher',
             executable='joint_state_publisher',
             name='joint_state_publisher',
+            output="screen",
             namespace=namespace,
             parameters=[
                 {'source_list': ['joint_states'],
@@ -354,6 +375,7 @@ def generate_launch_description():
         use_fake_hardware_launch_argument,
         fake_sensor_commands_launch_argument,
         use_gazebo_launch_argument,
+        use_camera_launch_argument,
 
         gazebo_empty_world,
         base_nodes,
