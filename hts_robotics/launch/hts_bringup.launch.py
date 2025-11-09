@@ -6,13 +6,13 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess, RegisterEventHandler
-from launch.event_handlers import OnProcessExit
+from launch.event_handlers import OnProcessExit, OnProcessStart
 
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch import LaunchContext, LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, TimerAction, LogInfo
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import  LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -56,7 +56,6 @@ def get_robot_description(context: LaunchContext,
     robot_description = {'robot_description': robot_description_config.toxml()}
 
     return robot_description
-
 
 def load_yaml(package_name, file_path):
     package_path = get_package_share_directory(package_name)
@@ -108,19 +107,41 @@ def get_ompl_config():
         }
     }
     ompl_planning_yaml = load_yaml(
-        'franka_fr3_moveit_config', 'config/ompl_planning.yaml'
+        'hts_robotics', 'config/ompl_planning.yaml'
     )
     ompl_planning_pipeline_config['move_group'].update(ompl_planning_yaml)
     return ompl_planning_pipeline_config
 
-def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
+def create_hts_node(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
     robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
     robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper, use_camera)
-    robot_kinematics_yaml = load_yaml('franka_fr3_moveit_config', 'config/kinematics.yaml')
+
+    hts_node = Node(
+        package='hts_robotics',
+        executable='hts_node',
+        name='hts_node',
+        output='screen',
+        namespace=namespace,
+        parameters=[
+            {"use_sim_time": USE_SIM_TIME},
+            robot_description,
+            robot_description_semantic,
+        ],
+        arguments=[
+            '--ros-args', '--log-level', 'info'
+        ]
+    )
+
+    return [hts_node]
+
+def create_moveit_node(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
+    robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
+    robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper, use_camera)
+    robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
 
     # Trajectory Execution Functionality
     moveit_simple_controllers_yaml = load_yaml(
-        'hts_robotics', 'config/controllers.yaml'
+        'hts_robotics', 'config/simple_controllers.yaml'
     )
     moveit_controllers = {
         'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
@@ -143,33 +164,13 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
     }
 
     ompl_planning_pipeline_config = get_ompl_config()
-    rviz_full_config = get_rviz_config()
 
     trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
-
-    rviz_node = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        output='screen',
-        arguments=[
-            '-d', rviz_full_config,
-            '--ros-args', '--log-level', 'error'
-            ],
-        parameters=[
-            robot_description,
-            robot_description_semantic,
-            ompl_planning_pipeline_config,
-            robot_kinematics_yaml,
-            {"use_sim_time": USE_SIM_TIME}
-        ],
-    )
 
     move_group_node = Node(
         package='moveit_ros_move_group',
         executable='move_group',
         namespace=namespace,
-        output="screen",
         parameters=[
             robot_description,
             robot_description_semantic,
@@ -191,12 +192,66 @@ def create_moveit_nodes(context: LaunchContext, arm_id, load_gripper, franka_han
         ]
     )
 
-    return [move_group_node, rviz_node]
+    controller_manager = Node(
+        package='controller_manager',
+        executable='ros2_control_node',
+        # namespace=namespace,
+        parameters=[
+            load_yaml('hts_robotics', 'config/controllers.yaml'),
+            {'robot_description': robot_description},
+            {'load_gripper': 'true'}],
+        remappings=[('joint_states', 'franka/joint_states')],
+        output='screen',
+    )
 
-def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
+    joint_broadcaster = Node(
+        package='controller_manager',
+        executable='spawner',
+        namespace=namespace,
+        arguments=['joint_state_broadcaster'],
+        output='screen',
+    )
+    arm_controller = Node(
+        package='controller_manager',
+        executable='spawner',
+        namespace=namespace,
+        arguments=['fr3_arm_controller'],
+        output='screen',
+    )
+
+    return [move_group_node, joint_broadcaster, arm_controller]
+
+def create_rviz_node(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
     robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
     robot_description_semantic = get_robot_semantics(context, arm_id, load_gripper, use_camera)
-    
+    robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
+
+    ompl_planning_pipeline_config = get_ompl_config()
+    rviz_full_config = get_rviz_config()
+
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        output='log',
+        arguments=[
+            '-d', rviz_full_config,
+            '--ros-args', '--log-level', 'error'
+            ],
+        parameters=[
+            robot_description,
+            robot_description_semantic,
+            ompl_planning_pipeline_config,
+            robot_kinematics_yaml,
+            {"use_sim_time": USE_SIM_TIME}
+        ],
+    )
+
+    return [rviz_node]
+
+def create_publisher_node(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
+    robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
+
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -212,26 +267,16 @@ def create_base_nodes(context: LaunchContext, arm_id, load_gripper, franka_hand,
         ]
     )
 
-    hts_node = Node(
-        package='hts_robotics',
-        executable='hts_node',
-        name='hts_node',
-        output='screen',
-        namespace=namespace,
-        parameters=[
-            {"use_sim_time": USE_SIM_TIME},
-            robot_description,
-            robot_description_semantic,
-        ],
-        arguments=[
-            '--ros-args', '--log-level', 'info'
-        ]
-    )
+    return [robot_state_publisher]
 
-    return [robot_state_publisher, hts_node]
+def define_parameters():
+    pass
 
 def generate_launch_description():
+    print("Generating launch description...")
+
     # parameter names for the launch file
+    print("Defining parameter names...")
     load_gripper_parameter_name = 'load_gripper'
     franka_hand_parameter_name = 'franka_hand'
     arm_id_parameter_name = 'arm_id'
@@ -243,6 +288,7 @@ def generate_launch_description():
     use_camera_parameter_name = 'use_camera'
 
     # parameters for the launch file
+    print("Defining launch configuration for each parameter...")
     load_gripper = LaunchConfiguration(load_gripper_parameter_name)
     franka_hand = LaunchConfiguration(franka_hand_parameter_name)
     arm_id = LaunchConfiguration(arm_id_parameter_name)
@@ -254,6 +300,7 @@ def generate_launch_description():
     use_camera = LaunchConfiguration(use_camera_parameter_name)
 
     # define launch arguments
+    print("Declaring launch arguments...")
     load_gripper_launch_argument = DeclareLaunchArgument(
             load_gripper_parameter_name,
             default_value='true',
@@ -293,6 +340,7 @@ def generate_launch_description():
     )
 
     # Gazebo Sim
+    print("Defining Gazebo...")
     os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     gazebo_empty_world = IncludeLaunchDescription(
@@ -302,7 +350,6 @@ def generate_launch_description():
             'gz_args': 'empty.sdf -r', 
             'ros_clock_publisher': 'true',
             'ros_args': '--log-level warn',
-            'output': 'both',
             }.items(),
     )
 
@@ -331,21 +378,30 @@ def generate_launch_description():
     )
 
     # Get robot description
-    opaque_nodes_moveit = OpaqueFunction(
-        function = create_moveit_nodes,
+    moveit_node = OpaqueFunction(
+        function = create_moveit_node,
         args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera]
     )
 
-    base_nodes = OpaqueFunction(
-        function = create_base_nodes,
+    rviz_node = OpaqueFunction(
+        function = create_rviz_node,
         args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera]
     )
 
-    publisher_node = Node(
+    hts_node = OpaqueFunction(
+        function = create_hts_node,
+        args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera]
+    )
+
+    state_publisher_node = OpaqueFunction(
+        function = create_publisher_node,
+        args=[arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera]
+    )
+
+    joint_publisher_node = Node(
             package='joint_state_publisher',
             executable='joint_state_publisher',
             name='joint_state_publisher',
-            output="screen",
             namespace=namespace,
             parameters=[
                 {'source_list': ['joint_states'],
@@ -365,8 +421,6 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        clock_bridge,
-
         load_gripper_launch_argument,
         franka_hand_launch_argument,
         arm_id_launch_argument,
@@ -378,56 +432,70 @@ def generate_launch_description():
         use_camera_launch_argument,
 
         gazebo_empty_world,
-        base_nodes,
-        opaque_nodes_moveit,
-    
-        spawn,
-        publisher_node,
 
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=spawn,
-                on_exit=[arm_controller],
-            )
+        TimerAction(
+            period=5.0,
+            actions=[clock_bridge]
         ),
-
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=arm_controller,
-                on_exit=[state_controller],
-            )
-        ),
-
-    
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=state_controller,
-                on_exit=[state_controller_activate],
-            )
-        ),
-
         
+        TimerAction(
+            period=10.0,
+            actions=[state_publisher_node]
+        ),
+
+        TimerAction(
+            period=15.0,
+            actions=[spawn]
+        ),
+
+        # TimerAction(
+        #     period=15.0,
+        #     actions=[arm_controller, state_controller]
+        # ),
+
+        TimerAction(
+            period=20.0,
+            actions=[joint_publisher_node]
+        ),
+
+        TimerAction(
+            period=25.0,
+            actions=[moveit_node, rviz_node, hts_node]
+        ),
+
         # RegisterEventHandler(
-        #     event_handler=OnProcessExit(
-        #         target_action=controller_actions,
-        #         on_exit = [ExecuteProcess(
-        #             cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
-        #             output=["screen"]
-        #         )]
+        #     event_handler=OnProcessStart(
+        #         target_action=clock_bridge,
+        #         on_start = [state_publisher_node]
         #     )
         # ),
 
-        activate_broadcaster,
-
-        
-        # Node(
-        #     package='hts_robotics',
-        #     executable='hts_node',
-        #     name='hts_node',
-        #     output='screen',
-        #     namespace=namespace,
-        #     parameters=[{
-        #         "use_sim_time": USE_SIM_TIME
-        #     }]
+        # RegisterEventHandler(
+        #     event_handler=OnProcessStart(
+        #         target_action=clock_bridge,
+        #         on_start = [spawn]
+        #     )
         # ),
+
+        # RegisterEventHandler(
+        #     event_handler=OnProcessExit(
+        #         target_action=spawn,
+        #         on_exit=[arm_controller, state_controller],
+        #     )
+        # ),
+
+        # RegisterEventHandler(
+        #     event_handler=OnProcessExit(
+        #         target_action=state_controller,
+        #         on_exit=[state_controller_activate, activate_broadcaster, joint_publisher_node],
+        #     )
+        # ),
+
+        # RegisterEventHandler(
+        #     event_handler=OnProcessStart(
+        #         target_action=joint_publisher_node,
+        #         on_start=[moveit_node, rviz_node, hts_node],
+        #     )
+        # ),
+    
     ])
