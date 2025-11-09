@@ -192,34 +192,7 @@ def create_moveit_node(context: LaunchContext, arm_id, load_gripper, franka_hand
         ]
     )
 
-    controller_manager = Node(
-        package='controller_manager',
-        executable='ros2_control_node',
-        # namespace=namespace,
-        parameters=[
-            load_yaml('hts_robotics', 'config/controllers.yaml'),
-            {'robot_description': robot_description},
-            {'load_gripper': 'true'}],
-        remappings=[('joint_states', 'franka/joint_states')],
-        output='screen',
-    )
-
-    joint_broadcaster = Node(
-        package='controller_manager',
-        executable='spawner',
-        namespace=namespace,
-        arguments=['joint_state_broadcaster'],
-        output='screen',
-    )
-    arm_controller = Node(
-        package='controller_manager',
-        executable='spawner',
-        namespace=namespace,
-        arguments=['fr3_arm_controller'],
-        output='screen',
-    )
-
-    return [move_group_node, joint_broadcaster, arm_controller]
+    return [move_group_node]
 
 def create_rviz_node(context: LaunchContext, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, namespace, use_camera):
     robot_description = get_robot_description(context, arm_id, load_gripper, franka_hand, robot_ip, use_fake_hardware, fake_sensor_commands, use_gazebo, use_camera)
@@ -362,19 +335,19 @@ def generate_launch_description():
         output='screen',
     )
 
-    arm_controller = ExecuteProcess(
-        cmd=["ros2", "control", "load_controller", "--set-state", "active", "fr3_arm_controller"],
-        output="screen"
+    joint_broadcaster = Node(
+        package='controller_manager',
+        executable='spawner',
+        namespace=namespace,
+        arguments=['joint_state_broadcaster'],
+        output='screen',
     )
-
-    state_controller = ExecuteProcess(
-        cmd=["ros2", "control", "load_controller", "--set-state", "inactive", "joint_state_broadcaster"],
-        output="screen"
-    )
-
-    state_controller_activate = ExecuteProcess(
-        cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
-        output="screen"
+    arm_controller = Node(
+        package='controller_manager',
+        executable='spawner',
+        namespace=namespace,
+        arguments=['fr3_arm_controller'],
+        output='screen',
     )
 
     # Get robot description
@@ -414,11 +387,6 @@ def generate_launch_description():
     clock_bridge = ExecuteProcess(
         cmd=["ros2", "run", "ros_gz_bridge", "parameter_bridge", "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"]
     )
-    
-    activate_broadcaster = ExecuteProcess(
-        cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
-        output=["screen"]
-    )
 
     return LaunchDescription([
         load_gripper_launch_argument,
@@ -448,10 +416,10 @@ def generate_launch_description():
             actions=[spawn]
         ),
 
-        # TimerAction(
-        #     period=15.0,
-        #     actions=[arm_controller, state_controller]
-        # ),
+        TimerAction(
+            period=20.0,
+            actions=[arm_controller, joint_broadcaster]
+        ),
 
         TimerAction(
             period=20.0,
@@ -462,40 +430,4 @@ def generate_launch_description():
             period=25.0,
             actions=[moveit_node, rviz_node, hts_node]
         ),
-
-        # RegisterEventHandler(
-        #     event_handler=OnProcessStart(
-        #         target_action=clock_bridge,
-        #         on_start = [state_publisher_node]
-        #     )
-        # ),
-
-        # RegisterEventHandler(
-        #     event_handler=OnProcessStart(
-        #         target_action=clock_bridge,
-        #         on_start = [spawn]
-        #     )
-        # ),
-
-        # RegisterEventHandler(
-        #     event_handler=OnProcessExit(
-        #         target_action=spawn,
-        #         on_exit=[arm_controller, state_controller],
-        #     )
-        # ),
-
-        # RegisterEventHandler(
-        #     event_handler=OnProcessExit(
-        #         target_action=state_controller,
-        #         on_exit=[state_controller_activate, activate_broadcaster, joint_publisher_node],
-        #     )
-        # ),
-
-        # RegisterEventHandler(
-        #     event_handler=OnProcessStart(
-        #         target_action=joint_publisher_node,
-        #         on_start=[moveit_node, rviz_node, hts_node],
-        #     )
-        # ),
-    
     ])

@@ -134,7 +134,7 @@ public:
     collision_object.operation = collision_object.ADD;
 
     // Apply the object
-    planning_scene_interface_->applyCollisionObject(collision_object);
+    // planning_scene_interface_->applyCollisionObject(collision_object);
     RCLCPP_INFO(get_logger(), "Applied collision object 'box1' to planning scene.");
   }
 
