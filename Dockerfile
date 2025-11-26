@@ -15,8 +15,6 @@ ARG USERNAME=user
 
 # Install essential packages and ROS development tools
 RUN apt-get update && \
-        # python3-pip \
-    # && python3 -m pip install pybullet \
     apt-get install -y --no-install-recommends \
         bash-completion \
         curl \
@@ -30,7 +28,6 @@ RUN apt-get update && \
         vim \
         apt-utils \
         python3-pip \
-    && python3 -m pip install pybullet \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -73,11 +70,14 @@ RUN sudo apt-get update \
         ros-humble-moveit-ros-visualization \
         ros-humble-joint-trajectory-controller \
         ros-humble-moveit-simple-controller-manager \
+        ros-humble-moveit-ros-perception \
         ros-humble-rviz2 \
         ros-humble-xacro \
         ros-humble-turtlesim \
         ros-humble-rqt \
         ros-humble-rqt-graph \
+        ros-humble-realsense2-camera \
+        ros-humble-realsense2-description \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
 
