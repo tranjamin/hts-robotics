@@ -20,27 +20,16 @@ from launch_ros.actions import Node
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = False
 
-load_gripper_parameter_name = 'load_gripper'
-franka_hand_parameter_name = 'franka_hand'
-arm_id_parameter_name = 'arm_id'
-namespace_parameter_name = 'namespace'
-robot_ip_parameter_name = 'robot_ip'
-use_fake_hardware_parameter_name = 'use_fake_hardware'
-fake_sensor_commands_parameter_name = 'fake_sensor_commands'
-use_gazebo_parameter_name = 'gazebo'
-use_camera_parameter_name = 'use_camera'
-
 def get_robot_description(context: LaunchContext, launch_configurations):
-    subs = lambda x : context.perform_substitution(launch_configurations.get(x))
-    arm_id_str = subs(arm_id_parameter_name)
-    load_gripper_str = subs(load_gripper_parameter_name)
-    franka_hand_str = subs(franka_hand_parameter_name)
-    robot_ip_str = subs(robot_ip_parameter_name)
-    fake_hardware_str = subs(use_fake_hardware_parameter_name)
-    fake_sensor_commands_str = subs(fake_sensor_commands_parameter_name)
-    gazebo_str = subs(use_gazebo_parameter_name)
-    camera_str = subs(use_camera_parameter_name)
-    namespace_str = subs(namespace_parameter_name)
+    subs = lambda x : context.perform_substitution(launch_configurations[x].get('launch_config'))
+    arm_id_str = subs('arm_id')
+    load_gripper_str = subs('load_gripper')
+    franka_hand_str = subs('franka_hand')
+    robot_ip_str = subs('robot_ip')
+    fake_hardware_str = subs('use_fake_hardware')
+    fake_sensor_commands_str = subs('fake_sensor_commands')
+    gazebo_str = subs('gazebo')
+    camera_str = subs('use_camera')
 
     franka_xacro_file = os.path.join(
         get_package_share_directory('franka_description'),
@@ -79,11 +68,11 @@ def load_yaml(package_name, file_path):
         return None
 
 def get_robot_semantics(context: LaunchContext, launch_configurations):
-    subs = lambda x : context.perform_substitution(launch_configurations.get(x))
-    arm_id_str = subs(arm_id_parameter_name)
-    load_gripper_str = subs(load_gripper_parameter_name)
-    camera_str = subs(use_camera_parameter_name)
-    namespace_str = subs(namespace_parameter_name)
+    subs = lambda x : context.perform_substitution(launch_configurations[x].get('launch_config'))
+    arm_id_str = subs('arm_id')
+    load_gripper_str = subs('load_gripper')
+    camera_str = subs('use_camera')
+    namespace_str = subs('namespace')
 
     franka_semantic_xacro_file = os.path.join(
         get_package_share_directory('franka_description'),
@@ -129,7 +118,7 @@ def get_ompl_config():
 def create_hts_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
-    namespace_str = context.perform_substitution(launch_configurations.get(namespace_parameter_name))
+    namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
     hts_node = Node(
         package='hts_robotics',
@@ -153,70 +142,43 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
     robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
-    namespace_str = context.perform_substitution(launch_configurations.get(namespace_parameter_name))
+    namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
-    # Trajectory Execution Functionality
-    moveit_simple_controllers_yaml = load_yaml(
-        'hts_robotics', 'config/simple_controllers.yaml'
-    )
+    moveit_simple_controllers_yaml = load_yaml('hts_robotics', 'config/simple_controllers.yaml')
+    sensors_yaml = load_yaml("hts_robotics", "config/sensors_kinect_pointcloud.yaml")
+    general_config = load_yaml("hts_robotics", "config/config.yaml")
+    ompl_planning_pipeline_config = get_ompl_config()
+    trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
+
     moveit_controllers = {
         'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
         'moveit_controller_manager': 'moveit_simple_controller_manager'
                                      '/MoveItSimpleControllerManager',
     }
 
-    trajectory_execution = {
-        'moveit_manage_controllers': True,
-        'trajectory_execution.allowed_execution_duration_scaling': 1.2,
-        'trajectory_execution.allowed_goal_duration_margin': 0.5,
-        'trajectory_execution.allowed_start_tolerance': 0.01,
-    }
-
-    sensors_yaml = load_yaml("hts_robotics", "config/sensors_kinect_pointcloud.yaml")
-
     planning_scene_monitor_parameters = {
         'publish_planning_scene': True,
         'publish_geometry_updates': True,
         'publish_state_updates': True,
         'publish_transforms_updates': True,
-        # 'sensors': sensors_yaml
     }
-
-    octomap_config = {
-        'octomap_frame': 'world',
-        'octomap_resolution': 0.05,
-        'max_range': 5.0
-    }
-
-
-    ompl_planning_pipeline_config = get_ompl_config()
-
-    trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
-
-    print("Sensors YAML: ", sensors_yaml)
-    print("Trajectory Config: ", trajectory_config)
 
     move_group_node = Node(
         package='moveit_ros_move_group',
         executable='move_group',
         namespace=namespace_str,
         parameters=[
-            octomap_config,
+            general_config,
             sensors_yaml,
             robot_description,
             robot_description_semantic,
             robot_kinematics_yaml,
             ompl_planning_pipeline_config,
-            trajectory_execution,
+            trajectory_config,
             moveit_controllers,
             planning_scene_monitor_parameters,
             trajectory_config,
             {"use_sim_time": USE_SIM_TIME},
-            {
-                "goal_joint_tolerance": 0.01,
-                "goal_position_tolerance": 0.01,
-                "goal_orientation_tolerance": 0.01
-            }
         ],
         arguments=[
             '--ros-args', '--log-level', 'error'
@@ -229,7 +191,7 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
     robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
-    namespace_str = context.perform_substitution(launch_configurations.get(namespace_parameter_name))
+    namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
     ompl_planning_pipeline_config = get_ompl_config()
     rviz_full_config = get_rviz_config()
@@ -257,7 +219,7 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
 
 def create_publisher_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)    
-    namespace_str = context.perform_substitution(launch_configurations.get(namespace_parameter_name))
+    namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
 
     robot_state_publisher = Node(
@@ -278,74 +240,34 @@ def create_publisher_node(context: LaunchContext, launch_configurations):
     return [robot_state_publisher]
 
 def define_parameters():
-    pass
+    params_yaml = load_yaml('hts_robotics', 'config/launch_params.yaml')
+    params_dict = {}
+    for p in params_yaml:
+        param_name = list(p.keys())[0]
+        param_options = list(p.values())[0]
+
+        launch_config = LaunchConfiguration(param_name)
+        launch_argument = DeclareLaunchArgument(
+            param_name,
+            default_value=str(param_options.get('default_value')),
+            description=str(param_options.get('description', 'no description provided'))
+        )
+
+        params_dict[param_name] = {
+            'name': param_name, 
+            'launch_config': launch_config, 
+            'launch_argument': launch_argument
+            }
+    
+    return params_dict
+
 
 def generate_launch_description():
     print("Generating launch description...")
 
     # parameters for the launch file
     print("Defining launch configuration for each parameter...")
-    load_gripper = LaunchConfiguration(load_gripper_parameter_name)
-    franka_hand = LaunchConfiguration(franka_hand_parameter_name)
-    arm_id = LaunchConfiguration(arm_id_parameter_name)
-    namespace = LaunchConfiguration(namespace_parameter_name)
-    robot_ip = LaunchConfiguration(robot_ip_parameter_name)
-    use_fake_hardware = LaunchConfiguration(use_fake_hardware_parameter_name)
-    fake_sensor_commands = LaunchConfiguration(fake_sensor_commands_parameter_name)
-    use_gazebo = LaunchConfiguration(use_gazebo_parameter_name)
-    use_camera = LaunchConfiguration(use_camera_parameter_name)
-
-    launch_configurations = {
-        load_gripper_parameter_name: load_gripper,
-        franka_hand_parameter_name: franka_hand,
-        arm_id_parameter_name: arm_id,
-        namespace_parameter_name: namespace,
-        robot_ip_parameter_name: robot_ip,
-        use_fake_hardware_parameter_name: use_fake_hardware,
-        fake_sensor_commands_parameter_name: fake_sensor_commands,
-        use_gazebo_parameter_name: use_gazebo,
-        use_camera_parameter_name: use_camera,
-    }
-
-    # define launch arguments
-    print("Declaring launch arguments...")
-    load_gripper_launch_argument = DeclareLaunchArgument(
-            load_gripper_parameter_name,
-            default_value='true',
-            description='true/false for activating the gripper')
-    franka_hand_launch_argument = DeclareLaunchArgument(
-            franka_hand_parameter_name,
-            default_value='franka_hand',
-            description='Default value: franka_hand')
-    arm_id_launch_argument = DeclareLaunchArgument(
-            arm_id_parameter_name,
-            default_value='fr3',
-            description='Available values: fr3, fp3 and fer')
-    namespace_launch_argument = DeclareLaunchArgument(
-            namespace_parameter_name,
-            default_value='',
-            description='Namespace for the robot. If not set, the robot will be launched in the root namespace.')
-    robot_ip_launch_argument = DeclareLaunchArgument(
-            robot_ip_parameter_name,
-            default_value='0',
-            description='the ip of the robot arm')
-    use_fake_hardware_launch_argument = DeclareLaunchArgument(
-            use_fake_hardware_parameter_name,
-            default_value='false',
-            description='true/false to use fake hardware')
-    fake_sensor_commands_launch_argument = DeclareLaunchArgument(
-            fake_sensor_commands_parameter_name,
-            default_value='false',
-            description='unknown')
-    use_gazebo_launch_argument = DeclareLaunchArgument(
-            use_gazebo_parameter_name,
-            default_value='true',
-            description='true/false to pass gazebo=true to URDF')
-    use_camera_launch_argument = DeclareLaunchArgument(
-            use_camera_parameter_name,
-            default_value='true',
-            description='true/false to use the D435 camera'
-    )
+    launch_params = define_parameters()
 
    # Gazebo Sim
     print("Defining Gazebo...")
@@ -365,7 +287,7 @@ def generate_launch_description():
     spawn = Node(
         package='ros_gz_sim',
         executable='create',
-        namespace=namespace,
+        namespace='',
         arguments=['-topic', '/robot_description'],
         output='screen',
     )
@@ -373,14 +295,14 @@ def generate_launch_description():
     joint_broadcaster = Node(
         package='controller_manager',
         executable='spawner',
-        namespace=namespace,
+        namespace='',
         arguments=['joint_state_broadcaster'],
         output='screen',
     )
     arm_controller = Node(
         package='controller_manager',
         executable='spawner',
-        namespace=namespace,
+        namespace='',
         arguments=['fr3_arm_controller'],
         output='screen',
     )
@@ -388,42 +310,36 @@ def generate_launch_description():
     # Get robot description
     moveit_node = OpaqueFunction(
         function = create_moveit_node,
-        args=[launch_configurations]
+        args=[launch_params]
     )
 
     rviz_node = OpaqueFunction(
         function = create_rviz_node,
-        args=[launch_configurations]
+        args=[launch_params]
     )
 
     hts_node = OpaqueFunction(
         function = create_hts_node,
-        args=[launch_configurations]
+        args=[launch_params]
     )
 
     state_publisher_node = OpaqueFunction(
         function = create_publisher_node,
-        args=[launch_configurations]
+        args=[launch_params]
     )
 
     joint_publisher_node = Node(
             package='joint_state_publisher',
             executable='joint_state_publisher',
             name='joint_state_publisher',
-            namespace=namespace,
+            namespace='',
             parameters=[
-                {'source_list': ['joint_states'],
-                 'rate': 30},
+                {'source_list': ['joint_states'], 'rate': 30},
                 {"use_sim_time": USE_SIM_TIME},
-                 
                  ],
         )
 
-    clock_bridge = ExecuteProcess(
-        cmd=["ros2", "run", "ros_gz_bridge", "parameter_bridge", "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"]
-    )
-
-    camera_bridge = Node(
+    topic_bridges = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=[
@@ -444,30 +360,16 @@ def generate_launch_description():
             'align_depth.enable': 'true',
         }.items()
     )
+    
+    all_launch_arguments = [x.get('launch_argument') for (_, x) in launch_params.items()]
 
-
-    return LaunchDescription([
-        load_gripper_launch_argument,
-        franka_hand_launch_argument,
-        arm_id_launch_argument,
-        namespace_launch_argument,
-        robot_ip_launch_argument,
-        use_fake_hardware_launch_argument,
-        fake_sensor_commands_launch_argument,
-        use_gazebo_launch_argument,
-        use_camera_launch_argument,
-
+    return LaunchDescription(all_launch_arguments + [
         gazebo_empty_world,
         realsense_node,
 
-        # TimerAction(
-        #     period=5.0,
-        #     actions=[camera_bridge]
-        # ),
-
         TimerAction(
             period=5.0,
-            actions=[camera_bridge]
+            actions=[topic_bridges]
         ),
         
         TimerAction(
