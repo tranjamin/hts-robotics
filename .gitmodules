@@ -1,12 +1,12 @@
 [submodule "franka_ros2"]
 	path = franka_ros2
 	url = git@github.com:frankarobotics/franka_ros2.git
-[submodule "anygrasp_sdk"]
-	path = anygrasp_sdk
-	url = git@github.com:graspnet/anygrasp_sdk.git
 [submodule "franka_description"]
 	path = franka_description
 	url = git@github.com:tranjamin/franka_description.git
 [submodule "realsense2_description"]
 	path = realsense2_description
 	url = git@github.com:issaiass/realsense2_description.git
+[submodule "anygrasp_sdk"]
+	path = anygrasp_sdk
+	url = git@github.com:graspnet/anygrasp_sdk.git

@@ -2,6 +2,7 @@
 .idea
 .vscode
 .secrets
+.venv
 *.pyc
 COLCON_IGNORE
 AMENT_IGNORE
