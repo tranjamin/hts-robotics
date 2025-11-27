@@ -1,4 +1,5 @@
-# Start with an official ROS 2 base image for the desired distribution
+# Start with an official ROS 2 base image for the desired 
+# Do I need to fix this?
 FROM ros:humble-ros-base
 
 # Set environment variables
@@ -21,6 +22,7 @@ RUN apt-get update && \
         gdb \
         git \
         nano \
+        wget \
         openssh-client \
         python3-colcon-argcomplete \
         python3-colcon-common-extensions \
@@ -28,6 +30,23 @@ RUN apt-get update && \
         vim \
         apt-utils \
         python3-pip \
+
+        # for anygrasp and pyenv
+        dialog \
+        net-tools \
+        build-essential \
+        libncurses-dev \
+        libreadline-dev \
+        libbz2-dev \
+        tk-dev \
+        liblzma-dev \
+        libffi-dev \
+        libsqlite3-dev \
+
+    && wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+    && sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+    && rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -95,6 +114,28 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rm -rf /home/$USERNAME/.ros \
     && rm -rf src \
     && mkdir -p src
+
+# Init pyenv
+RUN curl -fsSL https://pyenv.run | bash
+ENV PYENV_ROOT="/home/$USERNAME/.pyenv"
+ENV PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:${PATH}"
+RUN echo 'eval "$(pyenv init --path)"' >> ~/.bashrc
+
+# Install python 3.8
+RUN pyenv install 3.8
+RUN pyenv global 3.8
+
+# Packages to install for Python 3.8
+RUN python -m pip install --upgrade pip
+RUN python -m pip install \
+    torch \
+    numpy==1.24.0 \
+    open3d
+
+RUN echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc && \
+    echo 'export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"' >> ~/.bashrc && \
+    echo 'eval "$(pyenv init --path)"' >> ~/.bashrc && \
+    echo 'eval "$(pyenv init -)"' >> ~/.bashrc
 
 COPY ./${FRANKA_PATH}/franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
