@@ -122,20 +122,20 @@ ENV PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:${PATH}"
 RUN echo 'eval "$(pyenv init --path)"' >> ~/.bashrc
 
 # Install python 3.8
-RUN pyenv install 3.8
-RUN pyenv global 3.8
+# RUN pyenv install 3.8
+# RUN pyenv global 3.8
 
 # Packages to install for Python 3.8
-RUN python -m pip install --upgrade pip
-RUN python -m pip install \
-    torch \
-    numpy==1.24.0 \
-    open3d
+# RUN python -m pip install --upgrade pip
+# RUN python -m pip install \
+#     torch \
+#     numpy==1.24.0 \
+#     open3d
 
-RUN echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc && \
-    echo 'export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"' >> ~/.bashrc && \
-    echo 'eval "$(pyenv init --path)"' >> ~/.bashrc && \
-    echo 'eval "$(pyenv init -)"' >> ~/.bashrc
+# RUN echo 'export PYENV_ROOT="$HOME/.pyenv"' >> ~/.bashrc && \
+#     echo 'export PATH="$PYENV_ROOT/bin:$PYENV_ROOT/shims:$PATH"' >> ~/.bashrc && \
+#     echo 'eval "$(pyenv init --path)"' >> ~/.bashrc && \
+#     echo 'eval "$(pyenv init -)"' >> ~/.bashrc
 
 COPY ./${FRANKA_PATH}/franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
