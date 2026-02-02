@@ -17,6 +17,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import  LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 
+# SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
 
 def get_robot_description(context: LaunchContext, 
@@ -356,56 +357,35 @@ def generate_launch_description():
         use_gazebo_launch_argument,
 
         gazebo_empty_world,
-        base_nodes,
-        opaque_nodes_moveit,
-    
-        spawn,
-        publisher_node,
+        # realsense_node,
 
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=spawn,
-                on_exit=[arm_controller],
-            )
+        TimerAction(
+            period=5.0,
+            actions=[topic_bridges]
         ),
-
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=arm_controller,
-                on_exit=[state_controller],
-            )
-        ),
-
-    
-        RegisterEventHandler(
-            event_handler=OnProcessExit(
-                target_action=state_controller,
-                on_exit=[state_controller_activate],
-            )
-        ),
-
         
-        # RegisterEventHandler(
-        #     event_handler=OnProcessExit(
-        #         target_action=controller_actions,
-        #         on_exit = [ExecuteProcess(
-        #             cmd=["ros2", "control", "set_controller_state", "joint_state_broadcaster", "active"],
-        #             output=["screen"]
-        #         )]
-        #     )
-        # ),
+        TimerAction(
+            period=10.0,
+            actions=[state_publisher_node]
+        ),
 
-        activate_broadcaster,
+        TimerAction(
+            period=15.0,
+            actions=[spawn]
+        ),
 
-        
-        # Node(
-        #     package='hts_robotics',
-        #     executable='hts_node',
-        #     name='hts_node',
-        #     output='screen',
-        #     namespace=namespace,
-        #     parameters=[{
-        #         "use_sim_time": USE_SIM_TIME
-        #     }]
-        # ),
+        TimerAction(
+            period=20.0,
+            actions=[arm_controller, joint_broadcaster]
+        ),
+
+        TimerAction(
+            period=20.0,
+            actions=[joint_publisher_node]
+        ),
+
+        TimerAction(
+            period=25.0,
+            actions=[moveit_node, rviz_node, hts_node]
+        ),
     ])

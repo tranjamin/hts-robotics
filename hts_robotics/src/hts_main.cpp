@@ -12,7 +12,10 @@
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+
 #include "hts_robotics/action/move_to_point.hpp"
+#include "hts_robotics/action/move_target.hpp"
+#include "hts_robotics/action/pick_up_target.hpp"
 
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
@@ -131,8 +134,65 @@ public:
       rclcpp::shutdown();
       return;
     }
+    RCLCPP_INFO(this->get_logger(), "Created MoveIt2 Client.");
 
+    RCLCPP_INFO(this->get_logger(), "Finished constructing HTS Node.");
+  }
 
+  void init() {
+    RCLCPP_INFO(this->get_logger(), "Starting HTS node initialisation...");
+
+    RCLCPP_INFO(this->get_logger(), "Initialising MoveGroup and Planning SceneInterface...");
+    move_group_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_arm");
+    planning_scene_interface_ = std::make_shared<PlanningSceneInterface>();
+    RCLCPP_INFO(get_logger(), "MoveGroup and PlanningSceneInterface initialized. Planning frame: %s",
+                move_group_interface_->getPlanningFrame().c_str());
+
+    // Build collision object now that move_group_interface_ exists
+    moveit_msgs::msg::CollisionObject collision_object;
+    collision_object.id = "box1";
+    collision_object.header.frame_id = move_group_interface_->getPlanningFrame();
+
+    shape_msgs::msg::SolidPrimitive primitive;
+    primitive.type = primitive.BOX;
+    primitive.dimensions = {0.5, 0.1, 0.5}; // meters
+
+    geometry_msgs::msg::Pose box_pose;
+    box_pose.orientation.w = 1.0;
+    box_pose.position.x = 0.2;
+    box_pose.position.y = 0.2;
+    box_pose.position.z = 0.25;
+
+    collision_object.primitives.push_back(primitive);
+    collision_object.primitive_poses.push_back(box_pose);
+    collision_object.operation = collision_object.ADD;
+
+    // Apply the object
+    // planning_scene_interface_->applyCollisionObject(collision_object);
+    RCLCPP_INFO(get_logger(), "Applied collision object 'box1' to planning scene.");
+
+    // Apply orientation constraints
+    moveit_msgs::msg::OrientationConstraint orientation_constraint;
+    orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+    // orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+    orientation_constraint.link_name = "fr3_hand";
+
+    auto current_pose = move_group_interface_->getCurrentPose();
+    orientation_constraint.orientation = current_pose.pose.orientation;
+    RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
+      current_pose.pose.orientation.x, current_pose.pose.orientation.y,
+      current_pose.pose.orientation.z, current_pose.pose.orientation.w
+    );
+    orientation_constraint.absolute_x_axis_tolerance = 0.02;
+    orientation_constraint.absolute_y_axis_tolerance = 0.02;
+    orientation_constraint.absolute_z_axis_tolerance = 7.0;
+    orientation_constraint.weight = 1.0;
+
+    moveit_msgs::msg::Constraints all_constraints;
+    all_constraints.orientation_constraints.emplace_back(orientation_constraint);
+
+    move_group_interface_->setPathConstraints(all_constraints);
+    RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
   }
 
 private:
@@ -185,6 +245,72 @@ private:
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
       goal_handle->succeed(result);
     }).detach();
+  
+}
+
+  void clicked_point_subscriber_callback_(StampedPoint::UniquePtr msg) {
+    RCLCPP_INFO(this->get_logger(), "Received Clicked Point: (%f, %f, %f)", msg->point.x, msg->point.y, msg->point.z);
+
+    // create a goal message
+    auto goal_msg = CustomAction::Goal();
+    goal_msg.x = 0.5; goal_msg.y = 0.0; goal_msg.z = 0.3;
+
+    // sets callbacks for action
+    auto send_goal_options = rclcpp_action::Client<CustomAction>::SendGoalOptions();
+    send_goal_options.result_callback =
+      [this](const rclcpp_action::ClientGoalHandle<CustomAction>::WrappedResult & result) {
+        if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+          RCLCPP_INFO(this->get_logger(), "Goal succeeded!");
+        } else {
+          RCLCPP_ERROR(this->get_logger(), "Goal failed with code: %d", (int)result.code);
+        }
+      };
+
+    // sends action
+    moveit_client_->async_send_goal(goal_msg, send_goal_options);
+  }
+
+  void joint_states_subscriber_callback_(JointState::UniquePtr msg) {
+    std::ostringstream oss;
+    oss << "JointState: \n";
+    for (size_t i = 0; i < msg->name.size(); ++i) {
+      oss << "  " << msg->name[i] << ": ";
+      if (i < msg->position.size()) oss << "pos=" << msg->position[i] << " ";
+      if (i < msg->velocity.size()) oss << "vel=" << msg->velocity[i] << " ";
+      if (i < msg->effort.size())   oss << "eff=" << msg->effort[i] << " ";
+      oss << "\n";
+    }
+    RCLCPP_DEBUG(this->get_logger(), "%s", oss.str().c_str());
+  }
+
+  void goal_pose_subscriber_callback_(StampedPose::UniquePtr msg) {
+    RCLCPP_DEBUG(this->get_logger(), 
+      "Goal Pose: (%f, %f, %f | %f, %f, %f, %f)", 
+      msg->pose.position.x, msg->pose.position.y, msg->pose.position.z,
+      msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w  
+    );
+  }
+
+  void goal_pose_publisher_callback_() {
+    auto message = StampedPose{};
+      
+    // Fill header
+    message.header.stamp = rclcpp::Clock().now();
+    message.header.frame_id = "base_link";
+
+    // Fill pose
+    message.pose.position.x = 1.0;
+    message.pose.position.y = 2.0;
+    message.pose.position.z = 3.0;
+
+    // Orientation as a quaternion (no rotation)
+    message.pose.orientation.x = 0.0;
+    message.pose.orientation.y = 0.0;
+    message.pose.orientation.z = 0.0;
+    message.pose.orientation.w = 1.0;
+
+    RCLCPP_DEBUG(this->get_logger(), "Publishing a stamped pose");
+    this->goal_pose_pub_->publish(message);
   }
   
 };

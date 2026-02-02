@@ -16,6 +16,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/MoveToPoint.action"
+  "action/MoveTarget.action"
+  "action/PickUpTarget.action"
   DEPENDENCIES geometry_msgs
 )
 
@@ -29,8 +31,12 @@ ament_target_dependencies(hts_node
   moveit_ros_planning_interface
 )
 
-rosidl_target_interfaces(hts_node
+rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
+
+target_link_libraries(hts_node
+  ${cpp_typesupport_target}
 )
 
 install(TARGETS 
