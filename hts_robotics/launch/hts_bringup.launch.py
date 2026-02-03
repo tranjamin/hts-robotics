@@ -393,7 +393,7 @@ def generate_launch_description():
         ),
 
         TimerAction(
-            period=25.0,
+            period=60.0,
             actions=[moveit_node, rviz_node, hts_node]
         ),
     ])
