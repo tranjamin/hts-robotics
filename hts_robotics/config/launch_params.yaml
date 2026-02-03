@@ -1,0 +1,27 @@
+- load_gripper:
+    default_value: true
+    description: 'true/false for activating the gripper'
+- franka_hand:
+    default_value: franka_hand
+    description: 'Default value: franka_hand'
+- arm_id:
+    default_value: 'fr3'
+    description: 'Available values: fr3, fp3 and fer'
+- namespace:
+    default_value: ''
+    description: 'Namespace for the robot. If not set, the robot will be launched in the root namespace.'
+- robot_ip:
+    default_value: 0
+    description: 'the ip of the robot arm'
+- use_fake_hardware:
+    default_value: false
+    description: 'true/false to use fake hardware'
+- fake_sensor_commands:
+    default_value: false
+    description: 'unknown'
+- gazebo:
+    default_value: true
+    description: 'true/false to pass gazebo=true to URDF'
+- use_camera:
+    default_value: true
+    description: 'true/false to use the D435 camera'
