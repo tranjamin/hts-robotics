@@ -1,0 +1,4 @@
+franka_robot.xacro: transmission position interface, no if statements
+franka_arm.ros2_control.xacro: no gazebo effort if statement, no finger configure joint if statement
+franka_hand.srdf.xacro: equal values for group states
+fr3_controllers.yaml in franka_ros2: comment out fr3_gripper

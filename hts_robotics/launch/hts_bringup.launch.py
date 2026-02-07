@@ -10,12 +10,13 @@ from launch.event_handlers import OnProcessExit, OnProcessStart
 
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
 from launch import LaunchContext, LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction, LogInfo
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import  LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch.conditions import IfCondition
+from launch_ros.substitutions import FindPackageShare
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
@@ -239,6 +240,26 @@ def create_publisher_node(context: LaunchContext, launch_configurations):
 
     return [robot_state_publisher]
 
+def include_gripper_launch(context: LaunchContext, launch_configurations):
+    namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
+    load_gripper_param = context.perform_substitution(launch_configurations['load_gripper'].get('launch_config'))
+    robot_ip_str = context.perform_substitution(launch_configurations['robot_ip'].get('launch_config'))
+    fake_hardware_param = context.perform_substitution(launch_configurations['use_fake_hardware'].get('launch_config'))
+
+    gripper_launch_file = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([PathJoinSubstitution(
+                [FindPackageShare('franka_gripper'), 'launch', 'gripper.launch.py'])]),
+            launch_arguments={
+                'namespace': namespace_str,
+                'robot_ip': robot_ip_str,
+                'use_fake_hardware': fake_hardware_param,
+            }.items(),
+            condition=IfCondition(load_gripper_param),
+        )
+    
+    return [gripper_launch_file]
+
+
 def define_parameters():
     params_yaml = load_yaml('hts_robotics', 'config/launch_params.yaml')
     params_dict = {}
@@ -306,6 +327,13 @@ def generate_launch_description():
         arguments=['fr3_arm_controller'],
         output='screen',
     )
+    gripper_controller = Node(
+        package='controller_manager',
+        executable='spawner',
+        namespace='',
+        arguments=['gripper_position_controller'],
+        output='screen',
+    )
 
     # Get robot description
     moveit_node = OpaqueFunction(
@@ -325,6 +353,11 @@ def generate_launch_description():
 
     state_publisher_node = OpaqueFunction(
         function = create_publisher_node,
+        args=[launch_params]
+    )
+
+    gripper_launch = OpaqueFunction(
+        function = include_gripper_launch,
         args=[launch_params]
     )
 
@@ -365,6 +398,7 @@ def generate_launch_description():
 
     return LaunchDescription(all_launch_arguments + [
         gazebo_empty_world,
+        # gripper_launch,
         # realsense_node,
 
         TimerAction(
@@ -384,7 +418,7 @@ def generate_launch_description():
 
         TimerAction(
             period=20.0,
-            actions=[arm_controller, joint_broadcaster]
+            actions=[arm_controller, joint_broadcaster, gripper_controller]
         ),
 
         TimerAction(

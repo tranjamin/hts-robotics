@@ -17,6 +17,8 @@
 #include "hts_robotics/action/move_to_point.hpp"
 #include "hts_robotics/action/move_target.hpp"
 #include "hts_robotics/action/pick_up_target.hpp"
+#include "hts_robotics/action/gripper_open.hpp"
+#include "hts_robotics/action/gripper_close.hpp"
 
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
@@ -50,6 +52,8 @@ public:
   using JointState = sensor_msgs::msg::JointState;
   using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
   using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
+  using CustomActionOpen = hts_robotics::action::GripperOpen;
+  using CustomActionClose = hts_robotics::action::GripperClose;
 
   // constructor
   hts_node():Node("hts_node") {
@@ -127,17 +131,35 @@ public:
     );
     RCLCPP_INFO(this->get_logger(), "Created Move Server.");
 
+    // create move server
+    RCLCPP_INFO(this->get_logger(), "Creating Gripper Servers...");
+    gripper_open_server_ = rclcpp_action::create_server<CustomActionOpen>(
+      this, "gripper_open",
+      std::bind(&hts_node::handle_goal_open_, this, std::placeholders::_1, std::placeholders::_2),
+      std::bind(&hts_node::handle_cancel_open_, this, std::placeholders::_1),
+      std::bind(&hts_node::handle_accepted_open_, this, std::placeholders::_1)
+    );
+    gripper_close_server_ = rclcpp_action::create_server<CustomActionClose>(
+      this, "gripper_close",
+      std::bind(&hts_node::handle_goal_close_, this, std::placeholders::_1, std::placeholders::_2),
+      std::bind(&hts_node::handle_cancel_close_, this, std::placeholders::_1),
+      std::bind(&hts_node::handle_accepted_close_, this, std::placeholders::_1)
+    );
+    RCLCPP_INFO(this->get_logger(), "Created Gripper Servers.");
+
     RCLCPP_INFO(this->get_logger(), "Finished constructing HTS Node.");
   }
 
   void init() {
     RCLCPP_INFO(this->get_logger(), "Starting HTS node initialisation...");
-
     RCLCPP_INFO(this->get_logger(), "Initialising MoveGroup and Planning SceneInterface...");
     move_group_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_arm");
     planning_scene_interface_ = std::make_shared<PlanningSceneInterface>();
     RCLCPP_INFO(get_logger(), "MoveGroup and PlanningSceneInterface initialized. Planning frame: %s",
                 move_group_interface_->getPlanningFrame().c_str());
+
+    RCLCPP_INFO(this->get_logger(), "Initialising Gripper MoveGroup...");
+    gripper_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_hand");
 
     // Build collision object now that move_group_interface_ exists
     moveit_msgs::msg::CollisionObject collision_object;
@@ -195,6 +217,7 @@ private:
 
   std::shared_ptr<MoveGroupInterface> move_group_interface_;
   std::shared_ptr<PlanningSceneInterface> planning_scene_interface_;
+  std::shared_ptr<MoveGroupInterface> gripper_interface_;
 
   rclcpp::Subscription<StampedPoint>::SharedPtr clicked_point_sub_;
   rclcpp::Subscription<StampedPose>::SharedPtr goal_pose_sub_;
@@ -206,6 +229,69 @@ private:
 
   rclcpp_action::Server<CustomActionPickup>::SharedPtr pickup_server_;
   rclcpp_action::Server<CustomActionMove>::SharedPtr move_server_;
+
+  rclcpp_action::Server<CustomActionOpen>::SharedPtr gripper_open_server_;
+  rclcpp_action::Server<CustomActionClose>::SharedPtr gripper_close_server_;
+
+  // Server Callbacks for Gripper Close Action
+  rclcpp_action::GoalResponse handle_goal_close_(
+    const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionClose::Goal> goal
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Received Gripper Close Request");
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  }
+
+  rclcpp_action::CancelResponse handle_cancel_close_(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Received request to cancel gripper close");
+    return rclcpp_action::CancelResponse::REJECT;
+  }
+
+  void handle_accepted_close_(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
+  ) {
+    std::thread([this, goal_handle]() {
+
+      gripper_interface_->setNamedTarget("close");
+      bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
+
+      auto result = std::make_shared<CustomActionClose::Result>();
+      result->success = success;
+      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+      goal_handle->succeed(result);
+    }).detach();
+  }
+
+  // Server Callbacks for Gripper Open Action
+  rclcpp_action::GoalResponse handle_goal_open_(
+    const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionOpen::Goal> goal
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Received Gripper Open Request");
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  }
+
+  rclcpp_action::CancelResponse handle_cancel_open_(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Received request to cancel gripper open");
+    return rclcpp_action::CancelResponse::REJECT;
+  }
+
+  void handle_accepted_open_(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
+  ) {
+    std::thread([this, goal_handle]() {
+
+      gripper_interface_->setNamedTarget("open");
+      bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
+
+      auto result = std::make_shared<CustomActionOpen::Result>();
+      result->success = success;
+      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+      goal_handle->succeed(result);
+    }).detach();
+  }
 
   // Server Callbacks for Pickup Target Action
   rclcpp_action::GoalResponse handle_goal_pickup_(
@@ -425,7 +511,33 @@ int main(int argc, char * argv[])
   rclcpp::init(argc, argv);
 
   auto node = std::make_shared<hts_node>();
+  
   node->init();
+
+  auto node2 = rclcpp::Node::make_shared("gripper_moveit_node");
+
+  // Hand group from SRDF
+  moveit::planning_interface::MoveGroupInterface hand_group(node2, "fr3_hand");
+
+  RCLCPP_INFO(node2->get_logger(), "Waiting for a bit...");
+  rclcpp::sleep_for(std::chrono::seconds(30));
+
+  RCLCPP_INFO(node2->get_logger(), "Starting opening gripper:");
+  // // Open gripper
+  hand_group.setNamedTarget("open");
+  bool success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
+  RCLCPP_INFO(node2->get_logger(), "Gripper open: %s", success ? "OK" : "FAILED");
+
+  // // Wait a bit
+  rclcpp::sleep_for(std::chrono::seconds(120));
+
+  RCLCPP_INFO(node2->get_logger(), "Starting closing gripper:");
+
+  // // Close gripper
+  hand_group.setNamedTarget("close");
+  success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
+  RCLCPP_INFO(node2->get_logger(), "Gripper close: %s", success ? "OK" : "FAILED");
+
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
