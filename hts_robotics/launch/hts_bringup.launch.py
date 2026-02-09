@@ -418,7 +418,7 @@ def generate_launch_description():
 
         TimerAction(
             period=20.0,
-            actions=[arm_controller, joint_broadcaster, gripper_controller]
+            actions=[joint_broadcaster, gripper_controller, arm_controller]
         ),
 
         TimerAction(

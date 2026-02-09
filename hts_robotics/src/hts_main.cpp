@@ -13,6 +13,7 @@
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include <tf2/LinearMath/Quaternion.h>
 
 #include "hts_robotics/action/move_to_point.hpp"
 #include "hts_robotics/action/move_target.hpp"
@@ -160,6 +161,9 @@ public:
 
     RCLCPP_INFO(this->get_logger(), "Initialising Gripper MoveGroup...");
     gripper_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_hand");
+    gripper_interface_->setGoalPositionTolerance(0.01);
+    gripper_interface_->setGoalJointTolerance(0.01);
+
 
     // Build collision object now that move_group_interface_ exists
     moveit_msgs::msg::CollisionObject collision_object;
@@ -253,12 +257,31 @@ private:
   ) {
     std::thread([this, goal_handle]() {
 
+      auto joints = gripper_interface_->getCurrentJointValues();
+      for (size_t i = 0; i < joints.size(); ++i)
+        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
+
+      auto joint_values = gripper_interface_->getNamedTargetValues("close");
+      RCLCPP_INFO(get_logger(), "Joint values for 'close':");
+      for (const auto &pair : joint_values) {
+          RCLCPP_INFO(get_logger(), "  %s = %f", pair.first.c_str(), pair.second);
+      }
+
+      auto active_joints = gripper_interface_->getActiveJoints();
+      for (size_t i = 0; i < active_joints.size(); ++i)
+        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, active_joints[i]);      
+
       gripper_interface_->setNamedTarget("close");
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto result = std::make_shared<CustomActionClose::Result>();
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+
+      joints = gripper_interface_->getCurrentJointValues();
+      for (size_t i = 0; i < joints.size(); ++i)
+        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
+
       goal_handle->succeed(result);
     }).detach();
   }
@@ -283,12 +306,27 @@ private:
   ) {
     std::thread([this, goal_handle]() {
 
+      auto joints = gripper_interface_->getCurrentJointValues();
+      for (size_t i = 0; i < joints.size(); ++i)
+        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
+      
+      std::map<std::string, double> joint_values = gripper_interface_->getNamedTargetValues("open");
+      RCLCPP_INFO(get_logger(), "Joint values for 'open':");
+      for (const auto &pair : joint_values) {
+          RCLCPP_INFO(get_logger(), "  %s = %f", pair.first.c_str(), pair.second);
+      }
+
       gripper_interface_->setNamedTarget("open");
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto result = std::make_shared<CustomActionOpen::Result>();
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+
+      joints = gripper_interface_->getCurrentJointValues();
+      for (size_t i = 0; i < joints.size(); ++i)
+        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
+
       goal_handle->succeed(result);
     }).detach();
   }
@@ -318,18 +356,41 @@ private:
       target.position.x = goal->x;
       target.position.y = goal->y;
       target.position.z = goal->z;
-      target.orientation.x = goal->ox;
-      target.orientation.y = goal->oy;
-      target.orientation.z = goal->oz;
-      target.orientation.w = goal->ow;
+
+      tf2::Quaternion q;
+      q.setRPY(goal->ox, goal->oy, goal->oz);
+
+      target.orientation.x = q.x();
+      target.orientation.y = q.y();
+      target.orientation.z = q.z();
+      target.orientation.w = q.w();
+
+      RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
+      RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
+      RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", q.x(), q.y(), q.z(), q.w());
 
       move_group_interface_->clearPathConstraints();
+      RCLCPP_INFO(this->get_logger(), "Cleared Path Constraints");
       move_group_interface_->setPoseTarget(target);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto result = std::make_shared<CustomActionPickup::Result>();
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+
+      auto current_position = move_group_interface_->getCurrentPose().pose;
+      // tf2::Quaternion q_end;
+      // tf2::fromMsg(quat_msg, q_end);
+      double roll, pitch, yaw;
+      // tf2::Matrix3x3(current_position.orientation).getRPY(roll, pitch, yaw);
+
+      RCLCPP_INFO(this->get_logger(), "End Position is (%.2f, %.2f, %.2f)", 
+        current_position.position.x, current_position.position.y, current_position.position.z);
+      // RCLCPP_INFO(this->get_logger(), "End Angle is (%.2f, %.2f, %.2f)", 
+        // roll, pitch, yaw);
+      RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
+        current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
+
       goal_handle->succeed(result);
     }).detach();
   
@@ -377,9 +438,9 @@ private:
               current_pose.pose.orientation.x, current_pose.pose.orientation.y,
               current_pose.pose.orientation.z, current_pose.pose.orientation.w
             );
-            orientation_constraint.absolute_x_axis_tolerance = 0.02;
-            orientation_constraint.absolute_y_axis_tolerance = 0.02;
-            orientation_constraint.absolute_z_axis_tolerance = 0.02;
+            orientation_constraint.absolute_x_axis_tolerance = 0.2;
+            orientation_constraint.absolute_y_axis_tolerance = 0.2;
+            orientation_constraint.absolute_z_axis_tolerance = 0.2;
             orientation_constraint.weight = 1.0;
 
             moveit_msgs::msg::Constraints all_constraints;
@@ -393,6 +454,12 @@ private:
       target.orientation.z = current_pose.pose.orientation.z; // maybe remove this
       target.orientation.w = current_pose.pose.orientation.w;
 
+      // double roll, pitch, yaw;
+      // tf2::Matrix3x3(current_pose.pose.orientation).getRPY(roll, pitch, yaw);
+      RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
+      // RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
+      RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", target.orientation.x, target.orientation.y, target.orientation.z, target.orientation.w);
+
       move_group_interface_->setPoseTarget(target);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
@@ -400,6 +467,21 @@ private:
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
       goal_handle->succeed(result);
+
+      auto current_position = move_group_interface_->getCurrentPose().pose;
+      // tf2::Quaternion q_end;
+      // tf2::fromMsg(quat_msg, q_end);
+      double roll2, pitch2, yaw2;
+      // tf2::Matrix3x3(current_position.orientation).getRPY(roll, pitch, yaw);
+
+      RCLCPP_INFO(this->get_logger(), "End Position is (%.2f, %.2f, %.2f)", 
+        current_position.position.x, current_position.position.y, current_position.position.z);
+      // RCLCPP_INFO(this->get_logger(), "End Angle is (%.2f, %.2f, %.2f)", 
+        // roll2, pitch2, yaw2);
+      RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
+        current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
+
+
     }).detach();
   }
 
@@ -514,29 +596,29 @@ int main(int argc, char * argv[])
   
   node->init();
 
-  auto node2 = rclcpp::Node::make_shared("gripper_moveit_node");
+  // auto node2 = rclcpp::Node::make_shared("gripper_moveit_node");
 
-  // Hand group from SRDF
-  moveit::planning_interface::MoveGroupInterface hand_group(node2, "fr3_hand");
+  // // Hand group from SRDF
+  // moveit::planning_interface::MoveGroupInterface hand_group(node2, "fr3_hand");
 
-  RCLCPP_INFO(node2->get_logger(), "Waiting for a bit...");
-  rclcpp::sleep_for(std::chrono::seconds(30));
+  // RCLCPP_INFO(node2->get_logger(), "Waiting for a bit...");
+  // rclcpp::sleep_for(std::chrono::seconds(30));
 
-  RCLCPP_INFO(node2->get_logger(), "Starting opening gripper:");
-  // // Open gripper
-  hand_group.setNamedTarget("open");
-  bool success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
-  RCLCPP_INFO(node2->get_logger(), "Gripper open: %s", success ? "OK" : "FAILED");
+  // RCLCPP_INFO(node2->get_logger(), "Starting opening gripper:");
+  // // // Open gripper
+  // hand_group.setNamedTarget("open");
+  // bool success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
+  // RCLCPP_INFO(node2->get_logger(), "Gripper open: %s", success ? "OK" : "FAILED");
 
-  // // Wait a bit
-  rclcpp::sleep_for(std::chrono::seconds(120));
+  // // // Wait a bit
+  // rclcpp::sleep_for(std::chrono::seconds(120));
 
-  RCLCPP_INFO(node2->get_logger(), "Starting closing gripper:");
+  // RCLCPP_INFO(node2->get_logger(), "Starting closing gripper:");
 
-  // // Close gripper
-  hand_group.setNamedTarget("close");
-  success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
-  RCLCPP_INFO(node2->get_logger(), "Gripper close: %s", success ? "OK" : "FAILED");
+  // // // Close gripper
+  // hand_group.setNamedTarget("close");
+  // success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
+  // RCLCPP_INFO(node2->get_logger(), "Gripper close: %s", success ? "OK" : "FAILED");
 
   rclcpp::spin(node);
   rclcpp::shutdown();
