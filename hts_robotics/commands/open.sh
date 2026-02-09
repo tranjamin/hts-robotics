@@ -1,0 +1,1 @@
+ros2 action send_goal /gripper_open hts_robotics/action/GripperOpen "{}"
