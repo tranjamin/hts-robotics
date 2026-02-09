@@ -5,7 +5,7 @@
     default_value: franka_hand
     description: 'Default value: franka_hand'
 - arm_id:
-    default_value: 'fr3'
+    default_value: fr3
     description: 'Available values: fr3, fp3 and fer'
 - namespace:
     default_value: ''
