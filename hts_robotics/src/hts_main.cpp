@@ -161,8 +161,8 @@ public:
 
     RCLCPP_INFO(this->get_logger(), "Initialising Gripper MoveGroup...");
     gripper_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_hand");
-    gripper_interface_->setGoalPositionTolerance(0.01);
-    gripper_interface_->setGoalJointTolerance(0.01);
+    gripper_interface_->setGoalPositionTolerance(0.001);
+    gripper_interface_->setGoalJointTolerance(0.001);
 
 
     // Build collision object now that move_group_interface_ exists
@@ -595,30 +595,6 @@ int main(int argc, char * argv[])
   auto node = std::make_shared<hts_node>();
   
   node->init();
-
-  // auto node2 = rclcpp::Node::make_shared("gripper_moveit_node");
-
-  // // Hand group from SRDF
-  // moveit::planning_interface::MoveGroupInterface hand_group(node2, "fr3_hand");
-
-  // RCLCPP_INFO(node2->get_logger(), "Waiting for a bit...");
-  // rclcpp::sleep_for(std::chrono::seconds(30));
-
-  // RCLCPP_INFO(node2->get_logger(), "Starting opening gripper:");
-  // // // Open gripper
-  // hand_group.setNamedTarget("open");
-  // bool success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
-  // RCLCPP_INFO(node2->get_logger(), "Gripper open: %s", success ? "OK" : "FAILED");
-
-  // // // Wait a bit
-  // rclcpp::sleep_for(std::chrono::seconds(120));
-
-  // RCLCPP_INFO(node2->get_logger(), "Starting closing gripper:");
-
-  // // // Close gripper
-  // hand_group.setNamedTarget("close");
-  // success = (hand_group.move() == moveit::core::MoveItErrorCode::SUCCESS);
-  // RCLCPP_INFO(node2->get_logger(), "Gripper close: %s", success ? "OK" : "FAILED");
 
   rclcpp::spin(node);
   rclcpp::shutdown();
