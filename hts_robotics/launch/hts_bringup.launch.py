@@ -312,6 +312,19 @@ def generate_launch_description():
         arguments=['-topic', '/robot_description'],
         output='screen',
     )
+    spawn_target = Node(
+        package='ros_gz_sim',
+        executable='create',
+        arguments=[
+            '-file', os.path.join(get_package_share_directory("hts_robotics"), "objects", "box.sdf"),
+            '-name', 'target_block',
+            '-x', '0.2',
+            '-y', '0.2',
+            '-z', '0.2', 
+            '-ros'
+        ],
+        output="screen"
+        )
 
     joint_broadcaster = Node(
         package='controller_manager',
@@ -379,7 +392,10 @@ def generate_launch_description():
             # "/camera/color@sensor_msgs/msg/Image@gz.msgs.Image",
             "/camera/camera/depth/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloud2",
             # "/camera/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
-            "/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock"
+            "/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock",
+            "/ros_gz/model/pose@ros_gz_interfaces/msg/Entity@gz.msgs.Entity",
+            "/world/empty/pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
+            "/world/empty/dynamic_pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V"
         ],
         output="screen",
     )
@@ -413,7 +429,7 @@ def generate_launch_description():
 
         TimerAction(
             period=15.0,
-            actions=[spawn]
+            actions=[spawn, spawn_target]
         ),
 
         TimerAction(
