@@ -81,3 +81,118 @@ ros2 launch hts_robotics hts_bringup.launch.py
 ```bash
 ffmpeg -f x11grab -video_size <3840x2160> -framerate 30 -i <:0.0+2880,0> -pix_fmt yuv420p <video.mp4>
 ```
+
+# Set up a Conda Environment for Anygrasp
+
+1. Install Miniconda:
+
+```bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+rm Miniconda3-latest-Linux-x86_64.sh
+```
+
+2. Install GCC-11:
+
+```bash
+sudo apt install gcc-11 g++-11
+export CC=gcc-11 && CXX=g++-11 # either set this in the ~/.bashrc file or manually export it every time
+```
+
+3. Install NVIDIA Drivers:
+
+```bash
+# first, clean the workspace from any CUDA artifacts
+sudo apt install nvidia-driver-590 # you can browse other driver options with ubuntu-drivers devices
+sudo reboot
+nvidia-smi # verify that the drivers are installed
+```
+
+4. Install NVIDIA Toolkit (11.8):
+
+For instructions on how to install other toolkit versions, see https://developer.nvidia.com/cuda-toolkit-archive
+
+```bash
+# install prerequisites
+vim /etc/apt/soruces.list.d/ubuntu.sources
+```
+Append to the bottom:
+```
+Types: deb
+URIs: http://old-releases.ubuntu.com/ubuntu/
+Suites: lunar
+Components: universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+```
+Then,
+
+```bash
+# install toolkit
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
+sudo mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+sudo dpkg -i cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+sudo cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
+sudo apt update
+sudo apt install cuda-toolkit-11-8 # DO NOT `sudo apt install cuda` if you do not wish to change your drivers
+```
+
+```bash
+vim ~/.bashrc
+```
+Append to the bottom:
+```bash
+export CUDA_HOME=/usr/local/cuda-11.8
+export PATH=/usr/local/cuda-11.8/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+```
+
+Then,
+```bash
+source ~/.bashrc # to reload
+nvcc --version # verify toolkit install
+```
+
+2. Create Conda Environment
+
+Using the `environment.yaml` file:
+
+```bash
+conda env create -n anygrasp -f anygrasp_env.yaml
+conda activate anygrasp
+```
+
+Without the  `environment.yaml` file:
+```bash
+conda create -n py3.8 python=3.8
+conda activate py3.8
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118 # replace cu118 with whichever version of CUDA you have, look at the pytorch website for more details
+conda install openblas-devel -c anaconda
+```
+
+3. Register the license
+
+```bash
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+./license_checker -f ## use this ID to request a license from AnyGrasp
+```
+
+4. Download AnyGrasp Dependencies
+
+```bash
+cd anygrasp_sdk
+mkdir dependencies && cd dependencies
+git clone git@github.com:chenxi-wang/MinkowskiEngine.git
+conda install openblas-devel -c anaconda
+export CUDA_HOME=/usr/bin
+python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas_library_dirs=${CONDA_PREFIX}/lib --blas=openblas
+pip install graspnetapi==1.2.11
+pip install numpy==1.23.5
+cd ../../pointnet2
+python setup.py install
+```
+
+
+
