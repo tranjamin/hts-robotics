@@ -172,6 +172,9 @@ public:
 
     RCLCPP_INFO(this->get_logger(), "Initialising Gripper MoveGroup...");
     gripper_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_hand");
+    planning_scene_diff_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>(
+      "/planning_scene", 10
+    );
     gripper_interface_->setGoalPositionTolerance(0.001);
     gripper_interface_->setGoalJointTolerance(0.001);
 
@@ -182,13 +185,13 @@ public:
 
     shape_msgs::msg::SolidPrimitive primitive;
     primitive.type = primitive.BOX;
-    primitive.dimensions = {0.5, 0.1, 0.5}; // meters
+    primitive.dimensions = {10, 10, 0.25}; // meters
 
     geometry_msgs::msg::Pose box_pose;
     box_pose.orientation.w = 1.0;
-    box_pose.position.x = -0.2;
-    box_pose.position.y = -0.2;
-    box_pose.position.z = 0.25;
+    box_pose.position.x = 0;
+    box_pose.position.y = 0;
+    box_pose.position.z = -0.25;
 
     collision_object.primitives.push_back(primitive);
     collision_object.primitive_poses.push_back(box_pose);
@@ -268,6 +271,7 @@ private:
 
   rclcpp_action::Server<CustomActionOpen>::SharedPtr gripper_open_server_;
   rclcpp_action::Server<CustomActionClose>::SharedPtr gripper_close_server_;
+  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_diff_publisher_;
 
   // Server Callbacks for Gripper Close Action
   rclcpp_action::GoalResponse handle_goal_close_(
@@ -304,11 +308,40 @@ private:
         RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, active_joints[i]);      
 
       gripper_interface_->setNamedTarget("close");
+
+      std::vector<std::string> all_links = gripper_interface_->getLinkNames();
+      moveit_msgs::msg::AllowedCollisionEntry entry;
+      entry.enabled = std::vector<bool>(all_links.size(), true);
+
+      moveit_msgs::msg::PlanningScene ps;
+      ps.is_diff = true;
+
+      ps.allowed_collision_matrix.entry_names.push_back("target");
+      ps.allowed_collision_matrix.entry_values.push_back(entry);
+
+      std::vector<std::string> gripper_links = {"fr3_leftfinger", "fr3_rightfinger", "fr3_hand"};
+
+      for (auto &link : gripper_links) {
+        ps.allowed_collision_matrix.entry_names.push_back(link);
+
+        std::vector<std::string> all_links = gripper_interface_->getLinkNames();
+        moveit_msgs::msg::AllowedCollisionEntry e;
+        e.enabled = std::vector<bool>(all_links.size(), true);
+        ps.allowed_collision_matrix.entry_values.push_back(e);
+      }
+
+      planning_scene_diff_publisher_->publish(ps);
+      rclcpp::sleep_for(std::chrono::milliseconds(100));
+
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto result = std::make_shared<CustomActionClose::Result>();
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+
+      gripper_interface_->attachObject("target", "fr3_hand", {
+        "fr3_leftfinger", "fr3_rightfinger", "fr3_hand"
+      });
 
       joints = gripper_interface_->getCurrentJointValues();
       for (size_t i = 0; i < joints.size(); ++i)
@@ -348,12 +381,38 @@ private:
           RCLCPP_INFO(get_logger(), "  %s = %f", pair.first.c_str(), pair.second);
       }
 
+      gripper_interface_->detachObject("target");
+
       gripper_interface_->setNamedTarget("open");
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto result = std::make_shared<CustomActionOpen::Result>();
       result->success = success;
       RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+
+      std::vector<std::string> all_links = gripper_interface_->getLinkNames();
+      moveit_msgs::msg::AllowedCollisionEntry entry;
+      entry.enabled = std::vector<bool>(all_links.size(), false);
+
+      moveit_msgs::msg::PlanningScene ps;
+      ps.is_diff = true;
+
+      ps.allowed_collision_matrix.entry_names.push_back("target");
+      ps.allowed_collision_matrix.entry_values.push_back(entry);
+
+      std::vector<std::string> gripper_links = {"fr3_leftfinger", "fr3_rightfinger", "fr3_hand"};
+
+      for (auto &link : gripper_links) {
+        ps.allowed_collision_matrix.entry_names.push_back(link);
+
+        std::vector<std::string> all_links = gripper_interface_->getLinkNames();
+        moveit_msgs::msg::AllowedCollisionEntry e;
+        e.enabled = std::vector<bool>(all_links.size(), false);
+        ps.allowed_collision_matrix.entry_values.push_back(e);
+      }
+
+      planning_scene_diff_publisher_->publish(ps);
+      rclcpp::sleep_for(std::chrono::milliseconds(100));
 
       joints = gripper_interface_->getCurrentJointValues();
       for (size_t i = 0; i < joints.size(); ++i)
@@ -630,24 +689,24 @@ private:
           gazebo_pose.orientation.z == target_moveit.orientation.z &&
           gazebo_pose.orientation.w == target_moveit.orientation.w
         ) {
-          RCLCPP_INFO(this->get_logger(), "Received unchanged Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
-            gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
-            gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
-          );
-          RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
-            target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
-            target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
-          );
+          // RCLCPP_INFO(this->get_logger(), "Received unchanged Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
+          //   gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
+          //   gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
+          // );
+          // RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
+          //   target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
+          //   target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
+          // );
           return;
         } else {
-          RCLCPP_INFO(this->get_logger(), "Received changed Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
-            gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
-            gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
-          );
-          RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
-            target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
-            target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
-          );
+          // RCLCPP_INFO(this->get_logger(), "Received changed Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
+          //   gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
+          //   gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
+          // );
+          // RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
+          //   target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
+          //   target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
+          // );
 
 
     // Add target object as collision object
