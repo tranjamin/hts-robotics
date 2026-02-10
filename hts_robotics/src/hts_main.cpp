@@ -623,7 +623,7 @@ private:
         // get current pose
         auto map = planning_scene_interface_->getObjectPoses({"target"});
         if (map.empty()) {
-          RCLCPP_INFO(this->get_logger(), "Scene Not Ready");
+          // RCLCPP_INFO(this->get_logger(), "Scene Not Ready");
           return;
         }
         geometry_msgs::msg::Pose target_moveit = map.at("target");
@@ -652,31 +652,24 @@ private:
           gazebo_pose.orientation.w == target_moveit.orientation.w
         ) return;
 
-        // // remove old object
-        // planning_scene_interface_->removeCollisionObjects({"target"});
 
-        // // add new object
-        // moveit_msgs::msg::CollisionObject co_target;
-        // co_target.id = "target";
-        // co_target.header.frame_id = move_group_interface_->getPlanningFrame();
+        // move target object
+        moveit_msgs::msg::CollisionObject co_target;
+        co_target.id = "target";
+        co_target.header.frame_id = move_group_interface_->getPlanningFrame();
 
-        // shape_msgs::msg::SolidPrimitive primitive_target;
-        // primitive_target.type = primitive_target.BOX;
-        // primitive_target.dimensions = {0.05, 0.05, 0.05};
+        geometry_msgs::msg::Pose pose_target;
+        pose_target.position.x = gazebo_pose.position.x;
+        pose_target.position.y = gazebo_pose.position.y;
+        pose_target.position.z = gazebo_pose.position.z;
+        pose_target.orientation.x = gazebo_pose.orientation.x;
+        pose_target.orientation.y = gazebo_pose.orientation.y;
+        pose_target.orientation.z = gazebo_pose.orientation.z;
+        pose_target.orientation.w = gazebo_pose.orientation.w;
 
-        // geometry_msgs::msg::Pose pose_target;
-        // pose_target.position.x = gazebo_pose.position.x;
-        // pose_target.position.y = gazebo_pose.position.y;
-        // pose_target.position.z = gazebo_pose.position.z;
-        // pose_target.orientation.x = gazebo_pose.orientation.x;
-        // pose_target.orientation.y = gazebo_pose.orientation.y;
-        // pose_target.orientation.z = gazebo_pose.orientation.z;
-        // pose_target.orientation.w = gazebo_pose.orientation.w;
-
-        // co_target.primitives.push_back(primitive_target);
-        // co_target.primitive_poses.push_back(pose_target);
-        // co_target.operation = co_target.ADD;
-        // planning_scene_interface_->applyCollisionObject(co_target);
+        co_target.operation = co_target.MOVE;
+        co_target.pose = pose_target;
+        planning_scene_interface_->applyCollisionObject(co_target);
 
         return;
       }
