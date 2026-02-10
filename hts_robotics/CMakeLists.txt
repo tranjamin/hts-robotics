@@ -9,6 +9,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
@@ -30,6 +31,7 @@ ament_target_dependencies(hts_node
   std_msgs
   geometry_msgs
   sensor_msgs
+  moveit_ros_planning
   moveit_ros_planning_interface
 )
 

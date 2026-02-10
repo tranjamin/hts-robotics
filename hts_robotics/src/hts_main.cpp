@@ -8,6 +8,7 @@
 #include "std_msgs/msg/string.hpp"
 #include <moveit/move_group_interface/move_group_interface.h>
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/point.hpp"
@@ -54,6 +55,7 @@ public:
   using JointState = sensor_msgs::msg::JointState;
   using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
   using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
+  using PlanningSceneMonitor = planning_scene_monitor::PlanningSceneMonitor;
   using CustomActionOpen = hts_robotics::action::GripperOpen;
   using CustomActionClose = hts_robotics::action::GripperClose;
 
@@ -94,7 +96,7 @@ public:
     );
     RCLCPP_INFO(this->get_logger(), "Created goal pose publisher.");
 
-    // create a subscrier for the gazebo scene
+    // create a subscriber for the gazebo scene
     RCLCPP_INFO(this->get_logger(), "Creating Gazebo scene subscriber...");
     gazebo_scene_sub_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
       "/world/empty/dynamic_pose/info", 1,
@@ -112,6 +114,7 @@ public:
     );
     RCLCPP_INFO(this->get_logger(), "Created MoveIt2 Server.");
 
+    // create moveit client
     RCLCPP_INFO(this->get_logger(), "Creating MoveIt2 Client...");
     moveit_client_ = rclcpp_action::create_client<CustomActionPoint>(this, "hts_moveit_action");    
     if (!moveit_client_->wait_for_action_server(5s)) {
@@ -141,7 +144,7 @@ public:
     );
     RCLCPP_INFO(this->get_logger(), "Created Move Server.");
 
-    // create move server
+    // create gripper servers
     RCLCPP_INFO(this->get_logger(), "Creating Gripper Servers...");
     gripper_open_server_ = rclcpp_action::create_server<CustomActionOpen>(
       this, "gripper_open",
@@ -160,118 +163,133 @@ public:
     RCLCPP_INFO(this->get_logger(), "Finished constructing HTS Node.");
   }
 
+  // initialise
   void init() {
     last_update_ = this->now();
 
     RCLCPP_INFO(this->get_logger(), "Starting HTS node initialisation...");
-    RCLCPP_INFO(this->get_logger(), "Initialising MoveGroup and Planning SceneInterface...");
-    move_group_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_arm");
-    planning_scene_interface_ = std::make_shared<PlanningSceneInterface>();
-    RCLCPP_INFO(get_logger(), "MoveGroup and PlanningSceneInterface initialized. Planning frame: %s",
-                move_group_interface_->getPlanningFrame().c_str());
 
-    RCLCPP_INFO(this->get_logger(), "Initialising Gripper MoveGroup...");
+    move_group_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_arm");
     gripper_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_hand");
-    planning_scene_diff_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>(
-      "/planning_scene", 10
-    );
+    planning_scene_interface_ = std::make_shared<PlanningSceneInterface>();
+    planning_scene_monitor_ = std::make_shared<PlanningSceneMonitor>(shared_from_this(), "robot_description");
+    RCLCPP_INFO(this->get_logger(), "Initialised move groups and planning scenes.");
+
+    // start planning scene monitor
+    planning_scene_monitor_->startSceneMonitor();
+    planning_scene_monitor_->startWorldGeometryMonitor();
+    planning_scene_monitor_->startStateMonitor();
+
+    // set tolerances
     gripper_interface_->setGoalPositionTolerance(0.001);
     gripper_interface_->setGoalJointTolerance(0.001);
 
-    // Build collision object now that move_group_interface_ exists
-    moveit_msgs::msg::CollisionObject collision_object;
-    collision_object.id = "box1";
-    collision_object.header.frame_id = move_group_interface_->getPlanningFrame();
+    // for dynamically updating the planning scene (enabling and disabling collisions)
+    planning_scene_diff_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>("/planning_scene", 10);
 
-    shape_msgs::msg::SolidPrimitive primitive;
-    primitive.type = primitive.BOX;
-    primitive.dimensions = {10, 10, 0.25}; // meters
+    // Register the ground as a collision object
+    moveit_msgs::msg::CollisionObject co_ground;
+    shape_msgs::msg::SolidPrimitive primitive_ground;
+    geometry_msgs::msg::Pose pose_ground;
 
-    geometry_msgs::msg::Pose box_pose;
-    box_pose.orientation.w = 1.0;
-    box_pose.position.x = 0;
-    box_pose.position.y = 0;
-    box_pose.position.z = -0.25;
+    primitive_ground.type = primitive_ground.BOX;
+    primitive_ground.dimensions = {10, 10, 0.25};
 
-    collision_object.primitives.push_back(primitive);
-    collision_object.primitive_poses.push_back(box_pose);
-    collision_object.operation = collision_object.ADD;
-    // Apply the object
-    planning_scene_interface_->applyCollisionObject(collision_object);
-    RCLCPP_INFO(get_logger(), "Applied collision object 'box1' to planning scene.");
+    pose_ground.orientation.w = 1.0;
+    pose_ground.position.x = 0;
+    pose_ground.position.y = 0;
+    pose_ground.position.z = -0.25;
 
-    // Add target object as collision object
-    moveit_msgs::msg::CollisionObject target_object;
-    target_object.id = "target";
-    target_object.header.frame_id = move_group_interface_->getPlanningFrame();
+    co_ground.id = "ground";
+    co_ground.header.frame_id = move_group_interface_->getPlanningFrame();
+    co_ground.primitives.push_back(primitive_ground);
+    co_ground.primitive_poses.push_back(pose_ground);
+    co_ground.operation = co_ground.ADD;
+    planning_scene_interface_->applyCollisionObject(co_ground);
+    RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    shape_msgs::msg::SolidPrimitive primitive2;
-    primitive2.type = primitive2.BOX;
-    primitive2.dimensions = {0.05, 0.05, 0.05}; // meters
-
-    geometry_msgs::msg::Pose box_pose2;
-    box_pose2.orientation.w = 1.0;
-    box_pose2.position.x = 0.2;
-    box_pose2.position.y = 0.2;
-    box_pose2.position.z = 0.2;
-
-    target_object.primitives.push_back(primitive2);
-    target_object.primitive_poses.push_back(box_pose2);
-    target_object.operation = target_object.ADD;
-
-    planning_scene_interface_->applyCollisionObject(target_object);
+    // Register the target as a collision object
+    moveit_msgs::msg::CollisionObject co_target;
+    shape_msgs::msg::SolidPrimitive primitive_target;
+    geometry_msgs::msg::Pose pose_target;
+    
+    primitive_target.type = primitive_target.BOX;
+    primitive_target.dimensions = {0.05, 0.05, 0.05};
+    
+    pose_target.orientation.w = 1.0;
+    pose_target.position.x = 0.2;
+    pose_target.position.y = 0.2;
+    pose_target.position.z = 0.025;
+    
+    co_target.id = "target";
+    co_target.header.frame_id = move_group_interface_->getPlanningFrame();
+    co_target.primitives.push_back(primitive_target);
+    co_target.primitive_poses.push_back(pose_target);
+    co_target.operation = co_target.ADD;
+    planning_scene_interface_->applyCollisionObject(co_target);
+    planning_scene_monitor_->requestPlanningSceneState();
 
     // Apply orientation constraints
     moveit_msgs::msg::OrientationConstraint orientation_constraint;
-    // orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
-    // orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+    moveit_msgs::msg::Constraints all_constraints;
+    geometry_msgs::msg::PoseStamped current_pose = move_group_interface_->getCurrentPose();
+
     orientation_constraint.header.frame_id = "world"; // or base
     orientation_constraint.link_name = "fr3_hand"; // or fr3_link8
-
-    RCLCPP_INFO(get_logger(), "EEF link: %s", move_group_interface_->getEndEffectorLink().c_str());
-    RCLCPP_INFO(get_logger(), "REF frame: %s", move_group_interface_->getPoseReferenceFrame().c_str());
-
-    auto current_pose = move_group_interface_->getCurrentPose();
     orientation_constraint.orientation = current_pose.pose.orientation;
-    RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
-      current_pose.pose.orientation.x, current_pose.pose.orientation.y,
-      current_pose.pose.orientation.z, current_pose.pose.orientation.w
-    );
     orientation_constraint.absolute_x_axis_tolerance = 0.02;
     orientation_constraint.absolute_y_axis_tolerance = 0.02;
     orientation_constraint.absolute_z_axis_tolerance = 0.02;
     orientation_constraint.weight = 1.0;
-
-    moveit_msgs::msg::Constraints all_constraints;
     all_constraints.orientation_constraints.emplace_back(orientation_constraint);
-
     move_group_interface_->setPathConstraints(all_constraints);
+
+    RCLCPP_INFO(get_logger(), "EEF link: %s", move_group_interface_->getEndEffectorLink().c_str()); // should be world or base
+    RCLCPP_INFO(get_logger(), "REF frame: %s", move_group_interface_->getPoseReferenceFrame().c_str()); // should be fr3_hand or fr3_link8
     RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
+
+                // Get all known objects in the world
+                std::vector<std::string> known_objects = planning_scene_interface_->getKnownObjectNames();
+
+                bool target_exists = (std::find(known_objects.begin(),
+                                                known_objects.end(),
+                                                "target") != known_objects.end());
+
+                if (target_exists)
+                {
+                    RCLCPP_INFO(this->get_logger(), "'target' exists in the planning scene");
+                }
+                else
+                {
+                    RCLCPP_WARN(this->get_logger(), "'target' does NOT exist yet");
+                }
   }
 
 private:
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Time last_update_;
 
+  // move groups and planning scenes
   std::shared_ptr<MoveGroupInterface> move_group_interface_;
   std::shared_ptr<PlanningSceneInterface> planning_scene_interface_;
   std::shared_ptr<MoveGroupInterface> gripper_interface_;
+  std::shared_ptr<PlanningSceneMonitor> planning_scene_monitor_;
 
+  // subscribers and publishers
   rclcpp::Subscription<StampedPoint>::SharedPtr clicked_point_sub_;
   rclcpp::Subscription<StampedPose>::SharedPtr goal_pose_sub_;
   rclcpp::Subscription<JointState>::SharedPtr joint_states_sub_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr gazebo_scene_sub_;
   rclcpp::Publisher<StampedPose>::SharedPtr goal_pose_pub_;
-  rclcpp::Time last_update_;
+  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_diff_publisher_;
   
+  // action servers and clients
   rclcpp_action::Client<CustomActionPoint>::SharedPtr moveit_client_;
   rclcpp_action::Server<CustomActionPoint>::SharedPtr moveit_server_;
-
   rclcpp_action::Server<CustomActionPickup>::SharedPtr pickup_server_;
   rclcpp_action::Server<CustomActionMove>::SharedPtr move_server_;
-
   rclcpp_action::Server<CustomActionOpen>::SharedPtr gripper_open_server_;
   rclcpp_action::Server<CustomActionClose>::SharedPtr gripper_close_server_;
-  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_diff_publisher_;
 
   // Server Callbacks for Gripper Close Action
   rclcpp_action::GoalResponse handle_goal_close_(
@@ -292,60 +310,29 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
-
-      auto joints = gripper_interface_->getCurrentJointValues();
-      for (size_t i = 0; i < joints.size(); ++i)
-        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
-
-      auto joint_values = gripper_interface_->getNamedTargetValues("close");
-      RCLCPP_INFO(get_logger(), "Joint values for 'close':");
-      for (const auto &pair : joint_values) {
-          RCLCPP_INFO(get_logger(), "  %s = %f", pair.first.c_str(), pair.second);
-      }
-
-      auto active_joints = gripper_interface_->getActiveJoints();
-      for (size_t i = 0; i < active_joints.size(); ++i)
-        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, active_joints[i]);      
-
       gripper_interface_->setNamedTarget("close");
 
-      std::vector<std::string> all_links = gripper_interface_->getLinkNames();
-      moveit_msgs::msg::AllowedCollisionEntry entry;
-      entry.enabled = std::vector<bool>(all_links.size(), true);
+      // disable collisions
+      planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
+      auto &acm = scene->getAllowedCollisionMatrixNonConst();
+      acm.setEntry("target", "fr3_hand", true);
+      acm.setEntry("target", "fr3_leftfinger", true);
+      acm.setEntry("target", "fr3_rightfinger", true);
+      moveit_msgs::msg::PlanningScene ps_msg;
+      ps_msg.is_diff = true;
+      scene->getPlanningSceneMsg(ps_msg);
+      planning_scene_interface_->applyPlanningScene(ps_msg);
 
-      moveit_msgs::msg::PlanningScene ps;
-      ps.is_diff = true;
-
-      ps.allowed_collision_matrix.entry_names.push_back("target");
-      ps.allowed_collision_matrix.entry_values.push_back(entry);
-
-      std::vector<std::string> gripper_links = {"fr3_leftfinger", "fr3_rightfinger", "fr3_hand"};
-
-      for (auto &link : gripper_links) {
-        ps.allowed_collision_matrix.entry_names.push_back(link);
-
-        std::vector<std::string> all_links = gripper_interface_->getLinkNames();
-        moveit_msgs::msg::AllowedCollisionEntry e;
-        e.enabled = std::vector<bool>(all_links.size(), true);
-        ps.allowed_collision_matrix.entry_values.push_back(e);
-      }
-
-      planning_scene_diff_publisher_->publish(ps);
-      rclcpp::sleep_for(std::chrono::milliseconds(100));
-
+      // move
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
+      // attach object
+      gripper_interface_->attachObject("target");
+
+      // log results
       auto result = std::make_shared<CustomActionClose::Result>();
       result->success = success;
-      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-
-      gripper_interface_->attachObject("target", "fr3_hand", {
-        "fr3_leftfinger", "fr3_rightfinger", "fr3_hand"
-      });
-
-      joints = gripper_interface_->getCurrentJointValues();
-      for (size_t i = 0; i < joints.size(); ++i)
-        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
+      RCLCPP_INFO(this->get_logger(), success ? "Goal reached successfully" : "Goal failed");
 
       goal_handle->succeed(result);
     }).detach();
@@ -370,54 +357,29 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      gripper_interface_->setNamedTarget("open");
 
-      auto joints = gripper_interface_->getCurrentJointValues();
-      for (size_t i = 0; i < joints.size(); ++i)
-        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
-      
-      std::map<std::string, double> joint_values = gripper_interface_->getNamedTargetValues("open");
-      RCLCPP_INFO(get_logger(), "Joint values for 'open':");
-      for (const auto &pair : joint_values) {
-          RCLCPP_INFO(get_logger(), "  %s = %f", pair.first.c_str(), pair.second);
-      }
-
+      // detach object
       gripper_interface_->detachObject("target");
 
-      gripper_interface_->setNamedTarget("open");
+      // move
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
+      // enable collisions
+      planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
+      auto &acm = scene->getAllowedCollisionMatrixNonConst();
+      acm.setEntry("target", "fr3_hand", false);
+      acm.setEntry("target", "fr3_leftfinger", false);
+      acm.setEntry("target", "fr3_rightfinger", false);
+      moveit_msgs::msg::PlanningScene ps_msg;
+      ps_msg.is_diff = true;
+      scene->getPlanningSceneMsg(ps_msg);
+      planning_scene_interface_->applyPlanningScene(ps_msg);
+
+      // log results
       auto result = std::make_shared<CustomActionOpen::Result>();
       result->success = success;
-      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-
-      std::vector<std::string> all_links = gripper_interface_->getLinkNames();
-      moveit_msgs::msg::AllowedCollisionEntry entry;
-      entry.enabled = std::vector<bool>(all_links.size(), false);
-
-      moveit_msgs::msg::PlanningScene ps;
-      ps.is_diff = true;
-
-      ps.allowed_collision_matrix.entry_names.push_back("target");
-      ps.allowed_collision_matrix.entry_values.push_back(entry);
-
-      std::vector<std::string> gripper_links = {"fr3_leftfinger", "fr3_rightfinger", "fr3_hand"};
-
-      for (auto &link : gripper_links) {
-        ps.allowed_collision_matrix.entry_names.push_back(link);
-
-        std::vector<std::string> all_links = gripper_interface_->getLinkNames();
-        moveit_msgs::msg::AllowedCollisionEntry e;
-        e.enabled = std::vector<bool>(all_links.size(), false);
-        ps.allowed_collision_matrix.entry_values.push_back(e);
-      }
-
-      planning_scene_diff_publisher_->publish(ps);
-      rclcpp::sleep_for(std::chrono::milliseconds(100));
-
-      joints = gripper_interface_->getCurrentJointValues();
-      for (size_t i = 0; i < joints.size(); ++i)
-        RCLCPP_INFO(this->get_logger(), "Gripper %zu: %f", i, joints[i]);
-
+      RCLCPP_INFO(this->get_logger(), success ? "Goal reached successfully" : "Goal failed");
       goal_handle->succeed(result);
     }).detach();
   }
@@ -656,11 +618,11 @@ private:
 
     for (const auto &obj : msg->transforms) {
 
-
       if (obj.child_frame_id == "target_block") {
+
+        // get current pose
         auto map = planning_scene_interface_->getObjectPoses({"target"});
         if (map.empty()) {
-          // scene not ready yet — skip
           RCLCPP_INFO(this->get_logger(), "Scene Not Ready");
           return;
         }
@@ -668,7 +630,6 @@ private:
 
         moveit_msgs::msg::CollisionObject target_gazebo;
         target_gazebo.id = "target";
-        // target_gazebo.header.frame_id = move_group_interface_->getPlanningFrame();
         target_gazebo.header.frame_id = "world";
 
         geometry_msgs::msg::Pose gazebo_pose;
@@ -680,6 +641,7 @@ private:
         gazebo_pose.position.y = obj.transform.translation.y;
         gazebo_pose.position.z = obj.transform.translation.z;
 
+        // exit early if no change
         if (
           gazebo_pose.position.x == target_moveit.position.x &&
           gazebo_pose.position.y == target_moveit.position.y &&
@@ -688,80 +650,35 @@ private:
           gazebo_pose.orientation.y == target_moveit.orientation.y &&
           gazebo_pose.orientation.z == target_moveit.orientation.z &&
           gazebo_pose.orientation.w == target_moveit.orientation.w
-        ) {
-          // RCLCPP_INFO(this->get_logger(), "Received unchanged Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
-          //   gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
-          //   gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
-          // );
-          // RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
-          //   target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
-          //   target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
-          // );
-          return;
-        } else {
-          // RCLCPP_INFO(this->get_logger(), "Received changed Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
-          //   gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
-          //   gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
-          // );
-          // RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
-          //   target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
-          //   target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
-          // );
+        ) return;
 
+        // // remove old object
+        // planning_scene_interface_->removeCollisionObjects({"target"});
 
-    // Add target object as collision object
-    planning_scene_interface_->removeCollisionObjects({"target"});
-    moveit_msgs::msg::CollisionObject target_object;
-    target_object.id = "target";
-    target_object.header.frame_id = move_group_interface_->getPlanningFrame();
+        // // add new object
+        // moveit_msgs::msg::CollisionObject co_target;
+        // co_target.id = "target";
+        // co_target.header.frame_id = move_group_interface_->getPlanningFrame();
 
-    shape_msgs::msg::SolidPrimitive primitive2;
-    primitive2.type = primitive2.BOX;
-    primitive2.dimensions = {0.05, 0.05, 0.05}; // meters
+        // shape_msgs::msg::SolidPrimitive primitive_target;
+        // primitive_target.type = primitive_target.BOX;
+        // primitive_target.dimensions = {0.05, 0.05, 0.05};
 
-    geometry_msgs::msg::Pose box_pose2;
-    box_pose2.position.x = gazebo_pose.position.x;
-    box_pose2.position.y = gazebo_pose.position.y;
-    box_pose2.position.z = gazebo_pose.position.z;
-    box_pose2.orientation.x = gazebo_pose.orientation.x;
-    box_pose2.orientation.y = gazebo_pose.orientation.y;
-    box_pose2.orientation.z = gazebo_pose.orientation.z;
-    box_pose2.orientation.w = gazebo_pose.orientation.w;
+        // geometry_msgs::msg::Pose pose_target;
+        // pose_target.position.x = gazebo_pose.position.x;
+        // pose_target.position.y = gazebo_pose.position.y;
+        // pose_target.position.z = gazebo_pose.position.z;
+        // pose_target.orientation.x = gazebo_pose.orientation.x;
+        // pose_target.orientation.y = gazebo_pose.orientation.y;
+        // pose_target.orientation.z = gazebo_pose.orientation.z;
+        // pose_target.orientation.w = gazebo_pose.orientation.w;
 
-    target_object.primitives.push_back(primitive2);
-    target_object.primitive_poses.push_back(box_pose2);
-    target_object.operation = target_object.ADD;
+        // co_target.primitives.push_back(primitive_target);
+        // co_target.primitive_poses.push_back(pose_target);
+        // co_target.operation = co_target.ADD;
+        // planning_scene_interface_->applyCollisionObject(co_target);
 
-    planning_scene_interface_->applyCollisionObject(target_object);
-
-          // target_gazebo.primitives.resize(1);
-          // target_gazebo.primitive_poses.push_back(gazebo_pose);
-          // target_gazebo.operation = target_gazebo.MOVE;
-          // planning_scene_interface_->applyCollisionObject(target_gazebo);
-
-          // Add target object as collision object
-          // moveit_msgs::msg::CollisionObject target_object;
-          // target_object.id = "target10";
-          // target_object.header.frame_id = move_group_interface_->getPlanningFrame();
-
-          // shape_msgs::msg::SolidPrimitive primitive2;
-          // primitive2.type = primitive2.BOX;
-          // primitive2.dimensions = {0.05, 0.05, 0.05}; // meters
-
-          // geometry_msgs::msg::Pose box_pose2;
-          // box_pose2.orientation.w = 1.0;
-          // box_pose2.position.x = 0.2;
-          // box_pose2.position.y = 0.2;
-          // box_pose2.position.z = 0.2;
-
-          // target_object.primitives.push_back(primitive2);
-          // target_object.primitive_poses.push_back(gazebo_pose);
-          // target_object.operation = target_object.ADD;
-
-          // planning_scene_interface_->applyCollisionObject(target_object);
-
-          return;
-        }
+        return;
       }
     }
   }
@@ -801,11 +718,8 @@ private:
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-
   auto node = std::make_shared<hts_node>();
-  
   node->init();
-
   rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
