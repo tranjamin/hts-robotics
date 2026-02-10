@@ -13,6 +13,7 @@
 #include "geometry_msgs/msg/point.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include <tf2_msgs/msg/tf_message.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
 #include "hts_robotics/action/move_to_point.hpp"
@@ -93,6 +94,14 @@ public:
     );
     RCLCPP_INFO(this->get_logger(), "Created goal pose publisher.");
 
+    // create a subscrier for the gazebo scene
+    RCLCPP_INFO(this->get_logger(), "Creating Gazebo scene subscriber...");
+    gazebo_scene_sub_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
+      "/world/empty/dynamic_pose/info", 1,
+      std::bind(&hts_node::gazebo_scene_subscriber_callback_, this, std::placeholders::_1)
+    );
+    RCLCPP_INFO(this->get_logger(), "Created Gazebo scene subscriber.");
+
     // create moveit server
     RCLCPP_INFO(this->get_logger(), "Creating MoveIt2 Server...");
     moveit_server_ = rclcpp_action::create_server<CustomActionPoint>(
@@ -152,6 +161,8 @@ public:
   }
 
   void init() {
+    last_update_ = this->now();
+
     RCLCPP_INFO(this->get_logger(), "Starting HTS node initialisation...");
     RCLCPP_INFO(this->get_logger(), "Initialising MoveGroup and Planning SceneInterface...");
     move_group_interface_ = std::make_shared<MoveGroupInterface>(shared_from_this(), "fr3_arm");
@@ -164,7 +175,6 @@ public:
     gripper_interface_->setGoalPositionTolerance(0.001);
     gripper_interface_->setGoalJointTolerance(0.001);
 
-
     // Build collision object now that move_group_interface_ exists
     moveit_msgs::msg::CollisionObject collision_object;
     collision_object.id = "box1";
@@ -176,17 +186,37 @@ public:
 
     geometry_msgs::msg::Pose box_pose;
     box_pose.orientation.w = 1.0;
-    box_pose.position.x = 0.2;
-    box_pose.position.y = 0.2;
+    box_pose.position.x = -0.2;
+    box_pose.position.y = -0.2;
     box_pose.position.z = 0.25;
 
     collision_object.primitives.push_back(primitive);
     collision_object.primitive_poses.push_back(box_pose);
     collision_object.operation = collision_object.ADD;
-
     // Apply the object
-    // planning_scene_interface_->applyCollisionObject(collision_object);
+    planning_scene_interface_->applyCollisionObject(collision_object);
     RCLCPP_INFO(get_logger(), "Applied collision object 'box1' to planning scene.");
+
+    // Add target object as collision object
+    moveit_msgs::msg::CollisionObject target_object;
+    target_object.id = "target";
+    target_object.header.frame_id = move_group_interface_->getPlanningFrame();
+
+    shape_msgs::msg::SolidPrimitive primitive2;
+    primitive2.type = primitive2.BOX;
+    primitive2.dimensions = {0.05, 0.05, 0.05}; // meters
+
+    geometry_msgs::msg::Pose box_pose2;
+    box_pose2.orientation.w = 1.0;
+    box_pose2.position.x = 0.2;
+    box_pose2.position.y = 0.2;
+    box_pose2.position.z = 0.2;
+
+    target_object.primitives.push_back(primitive2);
+    target_object.primitive_poses.push_back(box_pose2);
+    target_object.operation = target_object.ADD;
+
+    planning_scene_interface_->applyCollisionObject(target_object);
 
     // Apply orientation constraints
     moveit_msgs::msg::OrientationConstraint orientation_constraint;
@@ -226,8 +256,10 @@ private:
   rclcpp::Subscription<StampedPoint>::SharedPtr clicked_point_sub_;
   rclcpp::Subscription<StampedPose>::SharedPtr goal_pose_sub_;
   rclcpp::Subscription<JointState>::SharedPtr joint_states_sub_;
+  rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr gazebo_scene_sub_;
   rclcpp::Publisher<StampedPose>::SharedPtr goal_pose_pub_;
-
+  rclcpp::Time last_update_;
+  
   rclcpp_action::Client<CustomActionPoint>::SharedPtr moveit_client_;
   rclcpp_action::Server<CustomActionPoint>::SharedPtr moveit_server_;
 
@@ -554,6 +586,125 @@ private:
       oss << "\n";
     }
     RCLCPP_DEBUG(this->get_logger(), "%s", oss.str().c_str());
+  }
+
+  void gazebo_scene_subscriber_callback_(tf2_msgs::msg::TFMessage::UniquePtr msg) {
+    rclcpp::Time now = this->now();
+    if ((now - last_update_).seconds() < 1) {
+      return;
+    }
+    last_update_ = now;
+
+    for (const auto &obj : msg->transforms) {
+
+
+      if (obj.child_frame_id == "target_block") {
+        auto map = planning_scene_interface_->getObjectPoses({"target"});
+        if (map.empty()) {
+          // scene not ready yet — skip
+          RCLCPP_INFO(this->get_logger(), "Scene Not Ready");
+          return;
+        }
+        geometry_msgs::msg::Pose target_moveit = map.at("target");
+
+        moveit_msgs::msg::CollisionObject target_gazebo;
+        target_gazebo.id = "target";
+        // target_gazebo.header.frame_id = move_group_interface_->getPlanningFrame();
+        target_gazebo.header.frame_id = "world";
+
+        geometry_msgs::msg::Pose gazebo_pose;
+        gazebo_pose.orientation.x = obj.transform.rotation.x;
+        gazebo_pose.orientation.y = obj.transform.rotation.y;
+        gazebo_pose.orientation.z = obj.transform.rotation.z;
+        gazebo_pose.orientation.w = obj.transform.rotation.w;
+        gazebo_pose.position.x = obj.transform.translation.x;
+        gazebo_pose.position.y = obj.transform.translation.y;
+        gazebo_pose.position.z = obj.transform.translation.z;
+
+        if (
+          gazebo_pose.position.x == target_moveit.position.x &&
+          gazebo_pose.position.y == target_moveit.position.y &&
+          gazebo_pose.position.z == target_moveit.position.z &&
+          gazebo_pose.orientation.x == target_moveit.orientation.x &&
+          gazebo_pose.orientation.y == target_moveit.orientation.y &&
+          gazebo_pose.orientation.z == target_moveit.orientation.z &&
+          gazebo_pose.orientation.w == target_moveit.orientation.w
+        ) {
+          RCLCPP_INFO(this->get_logger(), "Received unchanged Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
+            gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
+            gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
+          );
+          RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
+            target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
+            target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
+          );
+          return;
+        } else {
+          RCLCPP_INFO(this->get_logger(), "Received changed Gazebo scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f", 
+            gazebo_pose.position.x, gazebo_pose.position.y, gazebo_pose.position.z,
+            gazebo_pose.orientation.x, gazebo_pose.orientation.y, gazebo_pose.orientation.z, gazebo_pose.orientation.w
+          );
+          RCLCPP_INFO(this->get_logger(), "Previous MoveIt scene at %.2f, %.2f, %.2f | %.2f, %.2f, %.2f, %.2f",
+            target_moveit.position.x, target_moveit.position.y, target_moveit.position.z,
+            target_moveit.orientation.x, target_moveit.orientation.y, target_moveit.orientation.z, target_moveit.orientation.w        
+          );
+
+
+    // Add target object as collision object
+    planning_scene_interface_->removeCollisionObjects({"target"});
+    moveit_msgs::msg::CollisionObject target_object;
+    target_object.id = "target";
+    target_object.header.frame_id = move_group_interface_->getPlanningFrame();
+
+    shape_msgs::msg::SolidPrimitive primitive2;
+    primitive2.type = primitive2.BOX;
+    primitive2.dimensions = {0.05, 0.05, 0.05}; // meters
+
+    geometry_msgs::msg::Pose box_pose2;
+    box_pose2.position.x = gazebo_pose.position.x;
+    box_pose2.position.y = gazebo_pose.position.y;
+    box_pose2.position.z = gazebo_pose.position.z;
+    box_pose2.orientation.x = gazebo_pose.orientation.x;
+    box_pose2.orientation.y = gazebo_pose.orientation.y;
+    box_pose2.orientation.z = gazebo_pose.orientation.z;
+    box_pose2.orientation.w = gazebo_pose.orientation.w;
+
+    target_object.primitives.push_back(primitive2);
+    target_object.primitive_poses.push_back(box_pose2);
+    target_object.operation = target_object.ADD;
+
+    planning_scene_interface_->applyCollisionObject(target_object);
+
+          // target_gazebo.primitives.resize(1);
+          // target_gazebo.primitive_poses.push_back(gazebo_pose);
+          // target_gazebo.operation = target_gazebo.MOVE;
+          // planning_scene_interface_->applyCollisionObject(target_gazebo);
+
+          // Add target object as collision object
+          // moveit_msgs::msg::CollisionObject target_object;
+          // target_object.id = "target10";
+          // target_object.header.frame_id = move_group_interface_->getPlanningFrame();
+
+          // shape_msgs::msg::SolidPrimitive primitive2;
+          // primitive2.type = primitive2.BOX;
+          // primitive2.dimensions = {0.05, 0.05, 0.05}; // meters
+
+          // geometry_msgs::msg::Pose box_pose2;
+          // box_pose2.orientation.w = 1.0;
+          // box_pose2.position.x = 0.2;
+          // box_pose2.position.y = 0.2;
+          // box_pose2.position.z = 0.2;
+
+          // target_object.primitives.push_back(primitive2);
+          // target_object.primitive_poses.push_back(gazebo_pose);
+          // target_object.operation = target_object.ADD;
+
+          // planning_scene_interface_->applyCollisionObject(target_object);
+
+          return;
+        }
+      }
+    }
   }
 
   void goal_pose_subscriber_callback_(StampedPose::UniquePtr msg) {

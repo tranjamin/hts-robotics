@@ -49,7 +49,7 @@ install(TARGETS
 # Install project launch files
 install(
   DIRECTORY
-    launch config
+    launch config objects
   DESTINATION share/${PROJECT_NAME}
 )
 
