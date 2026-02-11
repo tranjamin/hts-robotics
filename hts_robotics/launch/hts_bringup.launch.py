@@ -19,7 +19,7 @@ from launch.conditions import IfCondition
 from launch_ros.substitutions import FindPackageShare
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
-USE_SIM_TIME = True
+USE_SIM_TIME = False
 
 def get_robot_description(context: LaunchContext, launch_configurations):
     subs = lambda x : context.perform_substitution(launch_configurations[x].get('launch_config'))
@@ -389,9 +389,9 @@ def generate_launch_description():
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=[
-            # "/camera/color@sensor_msgs/msg/Image@gz.msgs.Image",
+            "/camera/color@sensor_msgs/msg/Image@gz.msgs.Image",
             "/camera/camera/depth/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloud2",
-            # "/camera/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
+            "/camera/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
             "/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock",
             "/ros_gz/model/pose@ros_gz_interfaces/msg/Entity@gz.msgs.Entity",
             "/world/empty/pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
@@ -415,7 +415,7 @@ def generate_launch_description():
     return LaunchDescription(all_launch_arguments + [
         gazebo_empty_world,
         # gripper_launch,
-        # realsense_node,
+        realsense_node,
 
         TimerAction(
             period=5.0,
