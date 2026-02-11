@@ -227,6 +227,24 @@ Visualization Manager:
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
+    - Class: rviz_default_plugins/Camera
+      Name: RGB Camera
+      Enabled: true
+      Topic:
+        Value: /camera/camera/color/image_raw
+    - Class: rviz_default_plugins/Camera
+      Name: Depth Camera
+      Enabled: true
+      Topic:
+        Value: /camera/camera/aligned_depth_to_color/image_raw
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Realsense PointCloud
+      Enabled: true
+      Topic:
+        Value: /camera/camera/depth/color/points
+      Size (m): 0.01
+      Style: Points
+    
     - Acceleration_Scaling_Factor: 0.1
       Class: moveit_rviz_plugin/MotionPlanning
       Enabled: false

@@ -93,7 +93,7 @@ def get_robot_semantics(context: LaunchContext, launch_configurations):
     return robot_description_semantic
 
 def get_rviz_config():
-    rviz_base = os.path.join(get_package_share_directory('franka_fr3_moveit_config'), 'rviz')
+    rviz_base = os.path.join(get_package_share_directory('hts_robotics'), 'config')
     rviz_full_config = os.path.join(rviz_base, 'moveit.rviz')
     return rviz_full_config
 
