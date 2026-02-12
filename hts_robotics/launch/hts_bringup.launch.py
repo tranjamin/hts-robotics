@@ -409,13 +409,21 @@ def generate_launch_description():
             'align_depth.enable': 'true',
         }.items()
     )
+
+    anygrasp_node = Node(
+        package='hts_anygrasp',
+        executable='anygrasp_node',
+        output='screen',
+        parameters=[{'param1': 'value1'}]
+    )
     
     all_launch_arguments = [x.get('launch_argument') for (_, x) in launch_params.items()]
 
     return LaunchDescription(all_launch_arguments + [
         gazebo_empty_world,
         # gripper_launch,
-        realsense_node,
+        # realsense_node,
+        anygrasp_node,
 
         TimerAction(
             period=5.0,
