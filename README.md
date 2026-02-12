@@ -114,7 +114,7 @@ For instructions on how to install other toolkit versions, see https://developer
 
 ```bash
 # install prerequisites
-vim /etc/apt/soruces.list.d/ubuntu.sources
+vim /etc/apt/sources.list.d/ubuntu.sources
 ```
 Append to the bottom:
 ```

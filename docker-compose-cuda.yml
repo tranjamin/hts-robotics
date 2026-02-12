@@ -2,7 +2,7 @@ services:
   hts_robotics:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: CUDADockerfile
       args:
         - USER_UID=${USER_UID}
         - USER_GID=${USER_GID}
