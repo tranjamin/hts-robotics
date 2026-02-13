@@ -7,7 +7,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DISTRO=humble \
     CUDA_HOME=/usr/local/cuda-11.8 \
     PATH=/usr/local/cuda-11.8/bin:$PATH \
-    LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+    LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH \
+    SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True \
+    CC=gcc-11 \
+    CXX=g++-11 \
+    TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0" \
+    FORCE_CUDA=1
 
 ARG FRANKA_PATH=franka_ros2
 
@@ -16,8 +21,8 @@ ARG USER_GID=1001
 ARG USERNAME=user
 
 # Install essential packages and ROS development tools
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends -qq \
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
         apt-utils \
         bash-completion \
         curl \
@@ -36,21 +41,14 @@ RUN apt-get update -qq && \
         net-tools \
         build-essential \
         libopenblas-dev \
+        gcc-11 \
+        g++-11 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Setup user configuration
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
-    && echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /home/$USERNAME/.bashrc \
-    && echo "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash" >> /home/$USERNAME/.bashrc
-    
-USER $USERNAME
-
 # Install some ROS 2 dependencies to create a cache layer
-RUN sudo apt-get update -qq \
-    && sudo apt-get install -y --no-install-recommends -qq \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         ros-humble-ros-gz \
         ros-humble-sdformat-urdf \
         ros-humble-joint-state-publisher-gui \
@@ -87,58 +85,56 @@ RUN sudo apt-get update -qq \
         ros-humble-realsense2-camera \
         ros-humble-realsense2-description \
         python3-rosdep \
-    && sudo apt-get clean \
-    && sudo rm -rf /var/lib/apt/lists/*
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install CUDA toolkit 11.8
 RUN wget -O /tmp/cuda-ubuntu2204.pin https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin \
-    && sudo mv /tmp/cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600 \
+    && mv /tmp/cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600 \
     && wget -O /tmp/cuda-repo.deb https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb \
-    && sudo dpkg -i /tmp/cuda-repo.deb \
-    && sudo cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/ \
-    && sudo apt-get update \
-    && sudo apt-get install -y --no-install-recommends cuda-toolkit-11-8 \
-    && sudo rm -f /tmp/cuda-repo.deb \
-    && sudo apt-get clean \
-    && sudo rm -rf /var/lib/apt/lists/* \
+    && dpkg -i /tmp/cuda-repo.deb \
+    && cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/ \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends cuda-toolkit-11-8 \
+    && rm -f /tmp/cuda-repo.deb \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
     && nvcc --version
 
-# Install PyTorch with CUDA 11.8
-RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-
 # Install old libssl for license checking
-RUN sudo wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    && sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
-    && sudo rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+RUN wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+    && dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+    && rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+# Setup user configuration
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+    && echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /home/$USERNAME/.bashrc \
+    && echo "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash" >> /home/$USERNAME/.bashrc
+    
+USER $USERNAME
+
+# Install PyTorch with CUDA 11.8 both locally and in root
+RUN sudo python3 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+RUN python3 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+ENV PATH=/home/$USERNAME/.local/bin:$PATH
+ENV PYTHONPATH=/home/$USERNAME/.local/lib/python3.10/site-packages:$PYTHONPATH
 
 # Copy MinkowskiEngine source
-WORKDIR /build/MinkowskiEngine
-COPY anygrasp_sdk/dependencies/MinkowskiEngine .
-RUN sudo chown -R $USERNAME:$USERNAME /build
-ENV TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0" 
-RUN sudo apt-get update && sudo apt-get install gcc-11 g++-11
-RUN export CC=gcc-11 && export CXX=g++-11 && python3 setup.py install --user \
-    --blas_include_dirs=/usr/include \
-    --blas_library_dirs=/usr/lib \
-    --blas=openblas \
-    --force_cuda
+RUN pip install -U git+https://github.com/NVIDIA/MinkowskiEngine --no-deps
 
-# # Build GraspNetAPI
-# WORKDIR /build/GraspnetAPI
-# RUN sudo chown -R $USERNAME:$USERNAME .
-# COPY anygrasp_sdk/dependencies/graspnetAPI .
-# ENV SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True CC=gcc-11 CXX=g++-11
-# RUN sudo mkdir -p /home/$USERNAME/.local && \
-#     sudo chown -R $USERNAME:$USERNAME /home/$USERNAME/.local && \
-#     export PATH=/home/$USERNAME/.local/bin:$PATH && \
-#     pip install .
-# # RUN pip install .
+# Build GraspNetAPI
+WORKDIR /build/GraspnetAPI
+COPY anygrasp_sdk/dependencies/graspnetAPI .
+RUN python3 -m pip install numpy==1.23.4 opencv-python scikit-image scipy open3d tqdm Pillow autolab_core autolab-perception cvxopt dill grasp_nms h5py pywavefront sklearn transforms3d==0.3.1 trimesh
+RUN sudo -E python3 setup.py install --user
 
-# # Build PointNet2
-# WORKDIR /build/pointnet2
-# RUN sudo chown -R $USERNAME:$USERNAME .
-# COPY anygrasp_sdk/pointnet2 .
-# RUN python3 setup.py install --user
+# Build PointNet2
+WORKDIR /build/pointnet2
+COPY anygrasp_sdk/pointnet2 .
+RUN sudo python3 setup.py install
 
 WORKDIR /
 RUN sudo rm -rf /build
@@ -163,11 +159,6 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
 # RUN cd src/anygrasp_sdk/license_registration
 # RUN sudo src/anygrasp_sdk/license_registration/license_checker -f
 # # RUN cd src/anygrasp_sdk/license_registration && sudo ./license_checker -f
-
-# RUN pip install graspnetapi==1.2.11 \
-#     && pip install numpy==1.23.5 \
-#     && cd src/anygrasp_sdk/pointnet2 \
-#     && python3 setup.py install
 
 RUN rm -rf /home/$USERNAME/.ros \
     && rm -rf src \

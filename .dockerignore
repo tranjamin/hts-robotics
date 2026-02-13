@@ -1,3 +1,16 @@
 build/
 install/
 log/
+
+anygrasp/dependencies/MinkowskiEngine
+anygrasp/grasp_detection
+anygrasp/grasp_tracking
+anygrasp/pointnet2/build
+
+.dockerignore
+.gitignore
+.gitmodules
+*Dockerfile*
+*docker-compose*
+README.md
+

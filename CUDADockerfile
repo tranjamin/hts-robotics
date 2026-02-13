@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-devel AS minkowski_build
+FROM pytorch/pytorch:2.7.1-cuda11.8-cudnn9-devel
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -8,8 +8,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda-11.8 \
     PATH=/usr/local/cuda-11.8/bin:$PATH \
     LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH \
-    TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0"
-
+    TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0" \
+    SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True \
+    CC=gcc-11 \
+    CXX=g++-11 \
+    TZ=Australia/Brisbane
 
 ARG FRANKA_PATH=franka_ros2
 ARG USER_UID=1001
@@ -39,6 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ninja-build \
         cmake \
+        software-properties-common \
+        locales \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -47,6 +52,8 @@ RUN python3 -m pip install \
     colcon-core \
     colcon-argcomplete \
     colcon-common-extensions
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Copy MinkowskiEngine source
 WORKDIR /build/MinkowskiEngine
@@ -61,7 +68,6 @@ WORKDIR /
 # Build GraspNetAPI
 WORKDIR /build/GraspnetAPI
 COPY anygrasp_sdk/dependencies/graspnetAPI .
-ENV SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True CC=gcc-11 CXX=g++-11
 RUN pip install .
 
 # Build PointNet2
@@ -70,24 +76,21 @@ COPY anygrasp_sdk/pointnet2 .
 RUN python3 setup.py install
 RUN rm -rf /build
 
-ENV TZ=America/New_York
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Install ROS 2
-RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends locales \
-    && sudo locale-gen en_US en_US.UTF-8 \
-    && sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
+RUN apt-get update \
+    && locale-gen en_US en_US.UTF-8 \
+    && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
     && export LANG=en_US.UTF-8 \
-    && sudo apt-get install -y --no-install-recommends software-properties-common \
-    && sudo add-apt-repository universe \
-    && sudo apt-get update \
+    && add-apt-repository universe \
+    && apt-get update \
     && export ROS_APT_SOURCE_VERSION=$(curl -s https://api.github.com/repos/ros-infrastructure/ros-apt-source/releases/latest | grep -F "tag_name" | awk -F\" '{print $4}') \
     && curl -L -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo ${UBUNTU_CODENAME:-${VERSION_CODENAME}})_all.deb" \
-    && sudo dpkg -i /tmp/ros2-apt-source.deb \
-    && sudo apt-get remove tzdata \
-    && sudo apt-get update \
-    && sudo apt-get install -y --no-install-recommends ros-humble-ros-base \
-    && sudo apt install -y --no-install-recommends ros-dev-tools
+    && dpkg -i /tmp/ros2-apt-source.deb \
+    && apt-get remove tzdata \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ros-humble-ros-base \
+    && apt install -y --no-install-recommends ros-dev-tools
 
 # Install some ROS 2 dependencies to create a cache layer
 RUN sudo apt-get update -qq \
@@ -173,7 +176,7 @@ RUN rm -rf /home/$USERNAME/.ros \
     && rm -rf src \
     && mkdir -p src
 
-COPY ./${FRANKA_PATH}/franka_entrypoint.sh /franka_entrypoint.sh
+COPY franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
 
 # Set the default shell to bash and the workdir to the source directory

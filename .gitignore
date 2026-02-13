@@ -10,5 +10,8 @@ cmake-build-*/
 build/
 install/
 log/
-libfranka
-franka_description
+
+hts_anygrasp/hts_anygasp/*.so
+hts_anygrasp/hts_anygasp/license
+hts_anygrasp/hts_anygasp/log
+
