@@ -28,6 +28,16 @@ This repository is designed to be run within a Docker container.
 git clone git@github.com:tranjamin/hts-robotics.git
 cd hts-robotics
 git submodule init && git submodule update --remote
+
+# copy anygrasp .so files (change depending on python version)
+cp anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-310-x86_64-linux-gnu.so hts_anygrasp/hts_anygrasp/gsnet.so
+cp anygrasp_sdk/license_registration/lib_cxx_versions/lib_cxx.cpython-310-x86_64-linux-gnu.so hts_anygrasp/hts_anygrasp/lib_cxx.so
+
+# --- copy model weights to hts_anygrasp/hts_anygrasp/log
+# --- copy license to hts_anygrasp/hts_anygrasp/license
+
+cd anygrasp_sdk && touch COLCON_IGNORE
+cd dependencies && git clone https://github.com/graspnet/graspnetAPI.git
 ```
 
 This repository contains a `.repos` file that helps you clone the required dependencies for Franka ROS 2.
@@ -194,5 +204,17 @@ cd ../../pointnet2
 python setup.py install
 ```
 
+New rules for downloading AnyGrasp:
+```bash
+# add local to PYTHONPATH
+pip install -U git+https://github.com/NVIDIA/MinkowskiEngine --no-deps
 
+cd graspnetAPI/
+pip install numpy==1.23.4 opencv-python scikit-image scipy open3d tqdm Pillow
+python3 setup.py install --user
+
+cd pointnet2/
+sudo python3 -m pip install torch torchvision --indux-url https://download.pytorch.org/whl/cu118
+sudo pip install .
+```
 

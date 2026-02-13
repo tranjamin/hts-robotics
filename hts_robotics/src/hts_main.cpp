@@ -491,9 +491,9 @@ private:
               current_pose.pose.orientation.x, current_pose.pose.orientation.y,
               current_pose.pose.orientation.z, current_pose.pose.orientation.w
             );
-            orientation_constraint.absolute_x_axis_tolerance = 0.2;
-            orientation_constraint.absolute_y_axis_tolerance = 0.2;
-            orientation_constraint.absolute_z_axis_tolerance = 0.2;
+            orientation_constraint.absolute_x_axis_tolerance = 0.3;
+            orientation_constraint.absolute_y_axis_tolerance = 0.3;
+            orientation_constraint.absolute_z_axis_tolerance = 1000;
             orientation_constraint.weight = 1.0;
 
             moveit_msgs::msg::Constraints all_constraints;

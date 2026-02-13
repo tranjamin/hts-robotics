@@ -1,12 +1,12 @@
 services:
-  hts_robotics:
+  hts_anygrasp:
     build:
       context: .
       dockerfile: CUDADockerfile
       args:
         - USER_UID=${USER_UID}
         - USER_GID=${USER_GID}
-    container_name: hts_robotics
+    container_name: hts_grasp
     network_mode: bridge
     mac_address: 02:42:ac:11:00:02
     privileged: true
