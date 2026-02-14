@@ -1,14 +1,15 @@
 import rclpy
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.node import Node
 from hts_msgs.srv import RequestGrasp
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import PointCloud2, Image
 import os
 
 import argparse
-import torch
 import numpy as np
 import open3d as o3d
-from PIL import Image
+import cv2
+from cv_bridge import CvBridge
 from ament_index_python.packages import get_package_prefix
 from graspnetAPI import GraspGroup
 
@@ -19,26 +20,171 @@ os.environ["LD_LIBRARY_PATH"] = (
     lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", "")
 )
 
+checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
+
+qos = QoSProfile(depth=10)
+qos.reliability = ReliabilityPolicy.BEST_EFFORT
+
 from gsnet import AnyGrasp
 
 class AnyGraspNode(Node):
-    def __init__(self):
+    def __init__(self, args):
         super().__init__('hts_anygrasp')
+        self.depth_pointcloud_: PointCloud2 = None
+        self.depth_image_: Image = None
+        self.rgb_image_: Image = None
+        
+        self.anygrasp = AnyGrasp(args)
+        self.anygrasp.load_net()
 
-        self.depth_listener_ = self.create_subscription(PointCloud2, "/camera/camera/depth/color/points", self.depth_callback_, 1)
+        self.cfgs = args
+        self.bridge = CvBridge()
+
+        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/camera/camera/depth/color/points", self.pointcloud_callback_, 1)
+        self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
+        self.depth_listener_ = self.create_subscription(Image, "/camera/camera/aligned_depth_to_color/image_raw", self.depth_callback_, 1)
+        self.rgb_listener_ = self.create_subscription(Image, "/camera/camera/color/image_raw", self.rgb_callback_, 1)
         self.grasp_service_ = self.create_service(RequestGrasp, 'request_grasp', self.grasp_callback_)
 
-    def depth_callback_(self, msg):
+        self.get_logger().info("Started AnyGrasp Node")
+
+    def pointcloud_callback_(self, msg):
         self.depth_pointcloud_ = msg
 
+    def depth_callback_(self, msg):
+        self.depth_image_ = msg
+
+    def rgb_callback_(self, msg):
+        self.rgb_image_ = msg
+
+    def fast_filtered_pc2_to_numpy(self, msg):
+        # structured dtype matching your fields
+        dtype = np.dtype([
+            ('x', np.float32),
+            ('y', np.float32),
+            ('z', np.float32),
+            ('pad', np.float32),   # offset 12–15 unused
+        ])
+
+        # self.get_logger().info(str(msg.data.size))
+        # self.get_logger().info(str(msg.width * msg.point_step))
+
+        cloud = np.frombuffer(msg.data, dtype=dtype)
+
+        points = np.stack([cloud['x'], cloud['y'], cloud['z']], axis=-1)
+
+        mask = np.isfinite(points).all(axis=1)
+        points = points[mask]
+
+        return points.astype(np.float32), np.zeros_like(points, dtype=np.float32)
+
+    def fast_pc2_to_numpy(self, msg):
+        # structured dtype matching your fields
+        dtype = np.dtype([
+            ('x', np.float32),
+            ('y', np.float32),
+            ('z', np.float32),
+            ('pad', np.float32),   # offset 12–15 unused
+            ('rgb', np.float32),
+        ])
+
+        cloud = np.frombuffer(msg.data, dtype=dtype)
+
+        points = np.stack([cloud['x'], cloud['y'], cloud['z']], axis=-1)
+
+        mask = np.isfinite(points).all(axis=1)
+        points = points[mask]
+
+        rgb_uint = cloud['rgb'].view(np.uint32)
+
+        r = ((rgb_uint >> 16) & 255).astype(np.float32) / 255.0
+        g = ((rgb_uint >> 8) & 255).astype(np.float32) / 255.0
+        b = (rgb_uint & 255).astype(np.float32) / 255.0
+
+        colors = np.stack([r, g, b], axis=-1)[mask]
+
+        return points.astype(np.float32), colors.astype(np.float32)
+
+    def generate_pose_(self):
+        points, colors = self.fast_filtered_pc2_to_numpy(self.depth_pointcloud_)
+
+        np.savez("/ros2_ws/src/cloud.npz", points=points, colors=colors)
+
+        # xyz and colors must be float32 or float64
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors)  # RGB normalized 0–1
+        o3d.io.write_point_cloud("cloud.pcd", pcd, write_ascii=True)
+
+        depth_img = self.bridge.imgmsg_to_cv2(self.depth_image_, desired_encoding='32FC1')
+        rgb_img = self.bridge.imgmsg_to_cv2(self.rgb_image_, desired_encoding='bgr8')
+
+        if self.cfgs.debug:
+            cv2.imwrite("/ros2_ws/src/Depth Image.png", depth_img / depth_img.max() * 255)
+            cv2.imwrite("/ros2_ws/src/RGB Image.png", rgb_img)
+
+        # set workspace to filter output grasps
+        xmin, xmax = -0.19, 0.12
+        ymin, ymax = 0.02, 0.15
+        zmin, zmax = 0.0, 1.0
+        lims = [xmin, xmax, ymin, ymax, zmin, zmax]
+
+        gg, cloud = self.anygrasp.get_grasp(points, colors, lims=lims, apply_object_mask=True, dense_grasp=False, collision_detection=True)
+
+        if gg is None or len(gg) == 0:
+            self.get_logger().info('No Grasp detected after collision detection!')
+            return None
+
+        gg = gg.nms().sort_by_score()
+        gg_pick = gg[0:20]
+        self.get_logger().info(str(gg_pick.scores))
+        self.get_logger().info('grasp score:' + str(gg_pick[0].score))
+
+        # visualization
+        if self.cfgs.debug:
+            trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,-1,0],[0,0,0,1]])
+            cloud.transform(trans_mat)
+            grippers = gg.to_open3d_geometry_list()
+            for gripper in grippers:
+                gripper.transform(trans_mat)
+            o3d.visualization.draw_geometries([*grippers, cloud])
+            o3d.visualization.draw_geometries([grippers[0], cloud])
+
+        return gg_pick[0]
+
     def grasp_callback_(self, request, response):
+        if self.depth_pointcloud_ is None:
+            self.get_logger().info("PointCloud Not Available")
+            response.success = False
+            return response
+
         self.get_logger().info("Requested pose for object %d" % (request.id,))
 
-def main(args=None):
-    print("Starting AnyGrasp Node")
-    rclpy.init(args=args)
-    node = AnyGraspNode()
-    print("Started AnyGrasp Node")
+        grasp = self.generate_pose_()
+        self.get_logger().info(str(grasp))
+
+        if grasp is None:
+            self.get_logger().info("Grasp Failed")
+            response.success = False
+            return response
+
+        response.success = True
+        return response
+        
+def main():
+    rclpy.init(args=None)
+
+    cfgs = argparse.Namespace(
+        checkpoint_path=checkpoint_path,
+        max_gripper_width=0.1,
+        gripper_height=0.03,
+        top_down_grasp=False,
+        debug=True,
+    )
+    cfgs.max_gripper_width = max(0, min(0.1, cfgs.max_gripper_width))
+
+    node = AnyGraspNode(cfgs)
+
     rclpy.spin(node)
     rclpy.shutdown()
     print("Stopped AnyGrasp Node")

@@ -1,5 +1,6 @@
 from setuptools import setup
 import os
+from glob import glob
 
 package_name = 'hts_anygrasp'
 
@@ -11,6 +12,8 @@ setup(
      ('share/' + package_name, ['package.xml']),
      ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
      ("lib/" + package_name, ["hts_anygrasp/gsnet.so", "hts_anygrasp/lib_cxx.so"]),
+     ("lib/" + package_name + '/license', glob("hts_anygrasp/license/*")),
+     ("share/" + package_name, ['hts_anygrasp/log/checkpoint_detection.tar']),
    ],
  install_requires=['setuptools'],
  zip_safe=False,

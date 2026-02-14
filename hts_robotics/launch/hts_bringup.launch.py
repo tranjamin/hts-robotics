@@ -422,7 +422,7 @@ def generate_launch_description():
     return LaunchDescription(all_launch_arguments + [
         gazebo_empty_world,
         # gripper_launch,
-        # realsense_node,
+        realsense_node,
         anygrasp_node,
 
         TimerAction(
