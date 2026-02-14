@@ -12,7 +12,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CC=gcc-11 \
     CXX=g++-11 \
     TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0" \
-    FORCE_CUDA=1
+    FORCE_CUDA=1 \
+    ME_CUDA=1 \
+    OMP_NUM_THREADS=16
 
 ARG FRANKA_PATH=franka_ros2
 
@@ -123,12 +125,30 @@ ENV PATH=/home/$USERNAME/.local/bin:$PATH
 ENV PYTHONPATH=/home/$USERNAME/.local/lib/python3.10/site-packages:$PYTHONPATH
 
 # Copy MinkowskiEngine source
-RUN pip install -U git+https://github.com/NVIDIA/MinkowskiEngine --no-deps
+RUN pip install ninja && \
+    pip install -U git+https://github.com/NVIDIA/MinkowskiEngine -v --no-deps --install-option="--force_cuda"
 
 # Build GraspNetAPI
 WORKDIR /build/GraspnetAPI
 COPY anygrasp_sdk/dependencies/graspnetAPI .
-RUN python3 -m pip install numpy==1.23.4 opencv-python scikit-image scipy open3d tqdm Pillow autolab_core autolab-perception cvxopt dill grasp_nms h5py pywavefront sklearn transforms3d==0.3.1 trimesh
+RUN python3 -m pip install \
+    numpy==1.23.4 \
+    opencv-python \
+    scikit-image \
+    scipy \
+    open3d \
+    tqdm \
+    Pillow \
+    autolab_core \
+    autolab-perception \
+    cvxopt \
+    dill \
+    grasp_nms \
+    h5py \
+    pywavefront \
+    sklearn \
+    transforms3d==0.3.1 \
+    trimesh
 RUN sudo -E python3 setup.py install --user
 
 # Build PointNet2
@@ -152,13 +172,6 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rosdep install --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
-
-# # Check license registration
-# RUN ls src/anygrasp_sdk/license_registration
-# RUN sudo chmod +x src/anygrasp_sdk/license_registration/license_checker
-# RUN cd src/anygrasp_sdk/license_registration
-# RUN sudo src/anygrasp_sdk/license_registration/license_checker -f
-# # RUN cd src/anygrasp_sdk/license_registration && sudo ./license_checker -f
 
 RUN rm -rf /home/$USERNAME/.ros \
     && rm -rf src \

@@ -14,6 +14,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+find_package(hts_msgs REQUIRED)
+
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/MoveToPoint.action"
@@ -33,6 +35,7 @@ ament_target_dependencies(hts_node
   sensor_msgs
   moveit_ros_planning
   moveit_ros_planning_interface
+  hts_msgs
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target
