@@ -396,6 +396,7 @@ def generate_launch_description():
             "/ros_gz/model/pose@ros_gz_interfaces/msg/Entity@gz.msgs.Entity",
             "/world/empty/pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
             "/world/empty/dynamic_pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
+            
             "/custom_topic/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
             "/custom_topic/color/depth_image@sensor_msgs/msg/Image@gz.msgs.Image",
             "/custom_topic/color/image@sensor_msgs/msg/Image@gz.msgs.Image",
@@ -427,7 +428,7 @@ def generate_launch_description():
         gazebo_empty_world,
         # gripper_launch,
         # realsense_node,
-        # anygrasp_node,
+        anygrasp_node,
 
         TimerAction(
             period=5.0,
