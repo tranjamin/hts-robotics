@@ -9,6 +9,7 @@ find_package(rosidl_default_generators REQUIRED)
 # Generate services
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RequestGrasp.srv"
+  "srv/DisplayCloud.srv"
 )
 
 ament_package()

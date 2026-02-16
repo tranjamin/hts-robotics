@@ -1,8 +1,9 @@
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.node import Node
-from hts_msgs.srv import RequestGrasp
+from hts_msgs.srv import RequestGrasp, DisplayCloud
 from sensor_msgs.msg import PointCloud2, Image
+import sensor_msgs_py.point_cloud2 as pc2
 import os
 
 import argparse
@@ -40,16 +41,31 @@ class AnyGraspNode(Node):
         self.cfgs = args
         self.bridge = CvBridge()
 
-        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/camera/camera/depth/color/points", self.pointcloud_callback_, 1)
-        self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
+        self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/custom_topic/color/points", self.pointcloud_callback_, 1)
+        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
         self.depth_listener_ = self.create_subscription(Image, "/camera/camera/aligned_depth_to_color/image_raw", self.depth_callback_, 1)
         self.rgb_listener_ = self.create_subscription(Image, "/camera/camera/color/image_raw", self.rgb_callback_, 1)
         self.grasp_service_ = self.create_service(RequestGrasp, 'request_grasp', self.grasp_callback_)
+        self.display_service_ = self.create_service(DisplayCloud, 'display_cloud', self.display_callback_)
 
         self.get_logger().info("Started AnyGrasp Node")
 
     def pointcloud_callback_(self, msg):
         self.depth_pointcloud_ = msg
+
+    def display_callback_(self, request, response):
+        # Convert PointCloud2 to numpy array
+        points, colors = self.fast_filtered_pc2_to_numpy(self.depth_pointcloud_)
+
+        if points.shape[0] == 0:
+            return response
+
+        # Open3D visualization
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        o3d.visualization.draw_geometries([pcd])
+
+        return response
 
     def depth_callback_(self, msg):
         self.depth_image_ = msg
