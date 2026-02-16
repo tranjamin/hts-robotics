@@ -1,0 +1,35 @@
+<sdf version="1.8">
+  <world name="default">
+
+    <model name="d435_test">
+      <pose>0 0 1 0 0 0</pose>
+      <link name="camera_link">
+        <sensor name="d435_rgbd" type="rgbd_camera">
+          <always_on>true</always_on>
+          <update_rate>30</update_rate>
+          <topic>/test_d435/depth</topic>
+          <camera name="color">
+            <image>
+              <width>640</width>
+              <height>480</height>
+              <format>RGB_INT8</format>
+            </image>
+            <clip>
+              <near>0.1</near>
+              <far>10</far>
+            </clip>
+          </camera>
+          <visualize>true</visualize>
+        </sensor>
+
+        <plugin filename="libignition-sensors6-rgbd_camera.so"
+                name="ignition::sensors::RGBDCamera">
+                    <prefix>d435/</prefix>          <!-- All topics will start with this -->
+                    <colorTopicName>d435/color</colorTopicName>
+                    <depthTopicName>d435/depth</depthTopicName>
+                    <pointCloud>true</pointCloud>   <!-- Optional: publishes a point cloud -->
+        </plugin>
+      </link>
+    </model>
+  </world>
+</sdf>
