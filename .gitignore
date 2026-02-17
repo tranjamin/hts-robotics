@@ -11,7 +11,9 @@ build/
 install/
 log/
 
-hts_anygrasp/hts_anygasp/*.so
-hts_anygrasp/hts_anygasp/license/
-hts_anygrasp/hts_anygasp/log/
+hts_anygrasp/hts_anygrasp/*.so
+hts_anygrasp/hts_anygrasp/license/
+hts_anygrasp/hts_anygrasp/log/
 
+*.png
+*.npz

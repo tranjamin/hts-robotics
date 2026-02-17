@@ -173,6 +173,11 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
 
+RUN sudo apt-get update && sudo apt-get install -y \
+    libusb-1.0-0-dev libudev-dev pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev cmake \
+    freeglut3-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev mesa-common-dev \
+    libgl1-mesa-dev mesa-common-dev
+
 RUN rm -rf /home/$USERNAME/.ros \
     && rm -rf src \
     && mkdir -p src
