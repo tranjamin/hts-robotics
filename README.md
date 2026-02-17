@@ -238,3 +238,15 @@ sudo python3 -m pip install torch torchvision --indux-url https://download.pytor
 sudo pip install .
 ```
 
+Additional Installs:
+```bash
+sudo apt install libusb-1.0-0-dev libudev-dev pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev cmake
+sudo apt install freeglut3-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev mesa-common-dev
+sudo apt install libgl1-mesa-dev mesa-common-dev
+
+cd src/librealsense
+rm -rf build && mkdir build && cd build
+cmake ..
+cmake --build .
+
+```
