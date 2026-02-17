@@ -398,14 +398,11 @@ def generate_launch_description():
             "/world/empty/pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
             "/world/empty/dynamic_pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
             
-            "/custom_topic/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
-            "/custom_topic/color/depth_image@sensor_msgs/msg/Image@gz.msgs.Image",
-            "/custom_topic/color/image@sensor_msgs/msg/Image@gz.msgs.Image",
-            "/custom_topic/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",
+            "/camera_sim/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
+            "/camera_sim/depth_image@sensor_msgs/msg/Image@gz.msgs.Image",
+            "/camera_sim/image@sensor_msgs/msg/Image@gz.msgs.Image",
+            "/camera_sim/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",
         ],
-        # remappings=[
-        #     ("/custom_topic/color/points", "/camera/camera/depth/color/points")
-        # ],
         output="screen",
     )
 
@@ -439,32 +436,13 @@ def generate_launch_description():
             executable="static_transform_publisher",
             name="sim_camera_static_tf",
             arguments=[
-            "0", "0", "0",      # xyz
-            "0", "0", "0",      # rpy
-            "camera_depth_frame",           # parent
-            "fr3/fr3_link7/custom_camera_rgbd"      # child (sim cloud frame)
+            "0", "0", "0",
+            "0", "0", "0",
+            "camera_depth_frame",
+            "fr3/fr3_link7/custom_camera_rgbd"
             ],
             output="screen"
         ),
-
-        Node(
-            package="octomap_server",
-            executable="octomap_server_node",
-            name="octomap_server",
-            parameters=[{
-            "frame_id": "world",
-            "use_sim_time": True,
-            "resolution": 0.02,
-            "queue_size": 50,
-            "cloud_in": "/custom_topic/color/points",
-        }],
-            remappings=[
-                ("/cloud_in", "/custom_topic/color/points"),  # remap input cloud
-                ("/octomap_binary", "/filtered_cloud_sim")  # remap octomap output
-            ],
-        ),
-
-
 
         TimerAction(
             period=5.0,

@@ -41,7 +41,7 @@ class AnyGraspNode(Node):
         self.cfgs = args
         self.bridge = CvBridge()
 
-        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/custom_topic/color/points", self.pointcloud_callback_, 1)
+        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/camera_sim/points", self.pointcloud_callback_, 1)
         self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
         self.depth_listener_ = self.create_subscription(Image, "/camera/camera/aligned_depth_to_color/image_raw", self.depth_callback_, 1)
         self.rgb_listener_ = self.create_subscription(Image, "/camera/camera/color/image_raw", self.rgb_callback_, 1)
