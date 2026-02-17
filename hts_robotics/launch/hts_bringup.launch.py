@@ -19,7 +19,7 @@ from launch.conditions import IfCondition
 from launch_ros.substitutions import FindPackageShare
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
-USE_SIM_TIME = False
+USE_SIM_TIME = True
 
 def get_robot_description(context: LaunchContext, launch_configurations):
     subs = lambda x : context.perform_substitution(launch_configurations[x].get('launch_config'))
@@ -389,9 +389,10 @@ def generate_launch_description():
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=[
-            "/camera/color@sensor_msgs/msg/Image@gz.msgs.Image",
-            "/camera/camera/depth/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloud2",
-            "/camera/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
+            # "/camera/color@sensor_msgs/msg/Image@gz.msgs.Image",
+            # "/camera/camera/depth/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloud2",
+            # "/camera/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
+
             "/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock",
             "/ros_gz/model/pose@ros_gz_interfaces/msg/Entity@gz.msgs.Entity",
             "/world/empty/pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
@@ -402,6 +403,9 @@ def generate_launch_description():
             "/custom_topic/color/image@sensor_msgs/msg/Image@gz.msgs.Image",
             "/custom_topic/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",
         ],
+        # remappings=[
+        #     ("/custom_topic/color/points", "/camera/camera/depth/color/points")
+        # ],
         output="screen",
     )
 
@@ -429,6 +433,38 @@ def generate_launch_description():
         # gripper_launch,
         # realsense_node,
         anygrasp_node,
+
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            name="sim_camera_static_tf",
+            arguments=[
+            "0", "0", "0",      # xyz
+            "0", "0", "0",      # rpy
+            "camera_depth_frame",           # parent
+            "fr3/fr3_link7/custom_camera_rgbd"      # child (sim cloud frame)
+            ],
+            output="screen"
+        ),
+
+        Node(
+            package="octomap_server",
+            executable="octomap_server_node",
+            name="octomap_server",
+            parameters=[{
+            "frame_id": "world",
+            "use_sim_time": True,
+            "resolution": 0.02,
+            "queue_size": 50,
+            "cloud_in": "/custom_topic/color/points",
+        }],
+            remappings=[
+                ("/cloud_in", "/custom_topic/color/points"),  # remap input cloud
+                ("/octomap_binary", "/filtered_cloud_sim")  # remap octomap output
+            ],
+        ),
+
+
 
         TimerAction(
             period=5.0,

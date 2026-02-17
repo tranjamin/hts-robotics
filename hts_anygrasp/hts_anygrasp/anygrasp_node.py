@@ -41,8 +41,8 @@ class AnyGraspNode(Node):
         self.cfgs = args
         self.bridge = CvBridge()
 
-        self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/custom_topic/color/points", self.pointcloud_callback_, 1)
-        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
+        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/custom_topic/color/points", self.pointcloud_callback_, 1)
+        self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
         self.depth_listener_ = self.create_subscription(Image, "/camera/camera/aligned_depth_to_color/image_raw", self.depth_callback_, 1)
         self.rgb_listener_ = self.create_subscription(Image, "/camera/camera/color/image_raw", self.rgb_callback_, 1)
         self.grasp_service_ = self.create_service(RequestGrasp, 'request_grasp', self.grasp_callback_)
@@ -55,15 +55,22 @@ class AnyGraspNode(Node):
 
     def display_callback_(self, request, response):
         # Convert PointCloud2 to numpy array
+        self.get_logger().info("Displaying...")
+        if self.depth_pointcloud_ is None:
+            self.get_logger().info("Found no points")
+
         points, colors = self.fast_filtered_pc2_to_numpy(self.depth_pointcloud_)
 
         if points.shape[0] == 0:
+            self.get_logger().info("No points found")
             return response
 
         # Open3D visualization
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
         o3d.visualization.draw_geometries([pcd])
+
+        self.get_logger().info("done")
 
         return response
 
@@ -102,6 +109,7 @@ class AnyGraspNode(Node):
             ('z', np.float32),
             ('pad', np.float32),   # offset 12–15 unused
             ('rgb', np.float32),
+            ('pad2', np.float32),
         ])
 
         cloud = np.frombuffer(msg.data, dtype=dtype)
