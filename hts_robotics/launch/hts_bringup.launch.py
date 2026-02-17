@@ -170,7 +170,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
         namespace=namespace_str,
         parameters=[
             general_config,
-            sensors_yaml,
+            # sensors_yaml,
             robot_description,
             robot_description_semantic,
             robot_kinematics_yaml,
@@ -442,6 +442,26 @@ def generate_launch_description():
             "fr3/fr3_link7/custom_camera_rgbd"
             ],
             output="screen"
+        ),
+
+        Node(
+            package='octomap_server',
+            executable='octomap_server_node',
+            name="octomap_sim",
+            output="screen",
+            parameters=[{
+                'frame_id': 'world',             # global frame
+                'sensor_model/max_range': 2.0,   # max sensor range
+                'sensor_model/min_range': 0.1,
+                'sensor_model/inf_is_valid': True,
+                'sensor_model/z_hit': 0.7,
+                'sensor_model/z_rand': 0.1,
+                'resolution': 0.05,              # voxel size in meters
+                'use_sim_time': True,
+            }],
+            remappings=[
+                ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
+            ]
         ),
 
         TimerAction(
