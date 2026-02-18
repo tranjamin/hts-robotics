@@ -731,8 +731,7 @@ private:
         // get current pose
         auto map = planning_scene_interface_->getObjectPoses({obj.child_frame_id});
         if (map.empty()) {
-          // RCLCPP_INFO(this->get_logger(), "Not a valid transform: %s", obj.child_frame_id.c_str());
-          return;
+          continue;
         }
         geometry_msgs::msg::Pose target_moveit = map.at(obj.child_frame_id);
 
