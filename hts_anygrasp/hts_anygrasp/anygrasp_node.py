@@ -4,7 +4,7 @@ from rclpy.node import Node
 from hts_msgs.srv import RequestGrasp, DisplayCloud
 from sensor_msgs.msg import PointCloud2, Image
 import sensor_msgs_py.point_cloud2 as pc2
-from geometry_msgs.msg import Pose, Point
+from geometry_msgs.msg import Pose
 import os
 
 import argparse
@@ -18,11 +18,7 @@ from scipy.spatial.transform import Rotation
 
 pkg_prefix = get_package_prefix("hts_anygrasp")
 lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
-
-os.environ["LD_LIBRARY_PATH"] = (
-    lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", "")
-)
-
+os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
 checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
 
 qos = QoSProfile(depth=10)
@@ -44,7 +40,6 @@ class AnyGraspNode(Node):
         self.bridge = CvBridge()
 
         # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/camera_sim/points", self.pointcloud_callback_, 1)
-        # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/filtered_cloud", self.pointcloud_callback_, qos)
         self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/octomap_point_cloud_centers", self.pointcloud_callback_, qos)
         self.depth_listener_ = self.create_subscription(Image, "/camera/camera/aligned_depth_to_color/image_raw", self.depth_callback_, 1)
         self.rgb_listener_ = self.create_subscription(Image, "/camera/camera/color/image_raw", self.rgb_callback_, 1)
@@ -62,7 +57,7 @@ class AnyGraspNode(Node):
         if self.depth_pointcloud_ is None:
             self.get_logger().info("Found no points")
 
-        points, colors = self.fast_filtered_pc2_to_numpy(self.depth_pointcloud_)
+        points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
 
         if points.shape[0] == 0:
             self.get_logger().info("No points found")
@@ -83,7 +78,7 @@ class AnyGraspNode(Node):
     def rgb_callback_(self, msg):
         self.rgb_image_ = msg
 
-    def fast_filtered_pc2_to_numpy(self, msg):
+    def fast_norgb_pc2_to_numpy(self, msg):
         # structured dtype matching your fields
         dtype = np.dtype([
             ('x', np.float32),
@@ -92,13 +87,8 @@ class AnyGraspNode(Node):
             ('pad', np.float32),   # offset 12–15 unused
         ])
 
-        # self.get_logger().info(str(msg.data.size))
-        # self.get_logger().info(str(msg.width * msg.point_step))
-
         cloud = np.frombuffer(msg.data, dtype=dtype)
-
         points = np.stack([cloud['x'], cloud['y'], cloud['z']], axis=-1)
-
         mask = np.isfinite(points).all(axis=1)
         points = points[mask]
 
@@ -133,18 +123,20 @@ class AnyGraspNode(Node):
         return points.astype(np.float32), colors.astype(np.float32)
 
     def generate_pose_(self):
-        points, colors = self.fast_filtered_pc2_to_numpy(self.depth_pointcloud_)
+        points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+
+        # filter according to z
+        z_coords = points[:, 2]
+        mask = (z_coords > 0.03) & (z_coords < 0.2)
+        points = points[mask].astype(np.float32)
+        colors = colors[mask].astype(np.float32)
 
         self.get_logger().info("Finished converting pointcloud")
 
         np.savez("/ros2_ws/src/cloud.npz", points=points, colors=colors)
-        
-        self.get_logger().info("Finished saving pointcloud")
-
-        # xyz and colors must be float32 or float64
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(colors)  # RGB normalized 0–1
+        pcd.colors = o3d.utility.Vector3dVector(colors) 
         o3d.io.write_point_cloud("/ros2_ws/src/cloud.pcd", pcd, write_ascii=True)
 
         # depth_img = self.bridge.imgmsg_to_cv2(self.depth_image_, desired_encoding='32FC1')
@@ -155,9 +147,9 @@ class AnyGraspNode(Node):
         #     cv2.imwrite("/ros2_ws/src/RGB Image.png", rgb_img)
 
         # set workspace to filter output grasps
-        xmin, xmax = -10, 10
-        ymin, ymax = -10, 10
-        zmin, zmax = 0.0, 1.0
+        xmin, xmax = -2, 2
+        ymin, ymax = -2, 2
+        zmin, zmax = 0.03, 0.2
         lims = [xmin, xmax, ymin, ymax, zmin, zmax]
 
         gg, cloud = self.anygrasp.get_grasp(points, colors, lims=lims, apply_object_mask=True, dense_grasp=False, collision_detection=True)

@@ -462,12 +462,12 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 'frame_id': 'world',             # global frame
-                'sensor_model/max_range': 0.5,   # max sensor range
-                'sensor_model/min_range': 0.01,
+                'sensor_model/max_range': 2.0,   # max sensor range
+                'sensor_model/min_range': 0.05,
                 'sensor_model/inf_is_valid': True,
-                'sensor_model/z_hit': 0.7,
-                'sensor_model/z_rand': 0.1,
-                'resolution': 0.1,              # voxel size in meters
+                'sensor_model/z_hit': 0.9,
+                'sensor_model/z_rand': 0.05,
+                'resolution': 0.005,              # voxel size in meters
                 'use_sim_time': True,
             }],
             remappings=[
