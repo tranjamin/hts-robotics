@@ -4,6 +4,7 @@ from rclpy.node import Node
 from hts_msgs.srv import RequestGrasp, DisplayCloud
 from sensor_msgs.msg import PointCloud2, Image
 import sensor_msgs_py.point_cloud2 as pc2
+from geometry_msgs.msg import Pose, Point
 import os
 
 import argparse
@@ -13,6 +14,7 @@ import cv2
 from cv_bridge import CvBridge
 from ament_index_python.packages import get_package_prefix
 from graspnetAPI import GraspGroup
+from scipy.spatial.transform import Rotation
 
 pkg_prefix = get_package_prefix("hts_anygrasp")
 lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
@@ -133,24 +135,28 @@ class AnyGraspNode(Node):
     def generate_pose_(self):
         points, colors = self.fast_filtered_pc2_to_numpy(self.depth_pointcloud_)
 
+        self.get_logger().info("Finished converting pointcloud")
+
         np.savez("/ros2_ws/src/cloud.npz", points=points, colors=colors)
+        
+        self.get_logger().info("Finished saving pointcloud")
 
         # xyz and colors must be float32 or float64
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(colors)  # RGB normalized 0–1
-        o3d.io.write_point_cloud("cloud.pcd", pcd, write_ascii=True)
+        o3d.io.write_point_cloud("/ros2_ws/src/cloud.pcd", pcd, write_ascii=True)
 
-        depth_img = self.bridge.imgmsg_to_cv2(self.depth_image_, desired_encoding='32FC1')
-        rgb_img = self.bridge.imgmsg_to_cv2(self.rgb_image_, desired_encoding='bgr8')
+        # depth_img = self.bridge.imgmsg_to_cv2(self.depth_image_, desired_encoding='32FC1')
+        # rgb_img = self.bridge.imgmsg_to_cv2(self.rgb_image_, desired_encoding='bgr8')
 
-        if self.cfgs.debug:
-            cv2.imwrite("/ros2_ws/src/Depth Image.png", depth_img / depth_img.max() * 255)
-            cv2.imwrite("/ros2_ws/src/RGB Image.png", rgb_img)
+        # if self.cfgs.debug:
+        #     cv2.imwrite("/ros2_ws/src/Depth Image.png", depth_img / depth_img.max() * 255)
+        #     cv2.imwrite("/ros2_ws/src/RGB Image.png", rgb_img)
 
         # set workspace to filter output grasps
-        xmin, xmax = -0.19, 0.12
-        ymin, ymax = 0.02, 0.15
+        xmin, xmax = -10, 10
+        ymin, ymax = -10, 10
         zmin, zmax = 0.0, 1.0
         lims = [xmin, xmax, ymin, ymax, zmin, zmax]
 
@@ -193,6 +199,18 @@ class AnyGraspNode(Node):
             response.success = False
             return response
 
+        quaternion = Rotation.from_matrix(grasp.rotation_matrix).as_quat()
+
+        pose = Pose()
+        pose.position.x = grasp.translation[0]
+        pose.position.y = grasp.translation[1]
+        pose.position.z = grasp.translation[2]
+        pose.orientation.x = quaternion[0]
+        pose.orientation.y = quaternion[1]
+        pose.orientation.z = quaternion[2]
+        pose.orientation.w = quaternion[3]
+
+        response.grasp_pose = pose
         response.success = True
         return response
         
