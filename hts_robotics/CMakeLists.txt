@@ -23,6 +23,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/PickUpTarget.action"
   "action/GripperClose.action"
   "action/GripperOpen.action"
+  "action/GraspObject.action"
   DEPENDENCIES geometry_msgs
 )
 

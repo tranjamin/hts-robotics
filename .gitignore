@@ -17,3 +17,7 @@ hts_anygrasp/hts_anygrasp/log/
 
 *.png
 *.npz
+*.pcd
+
+realsense-ros/
+librealsense/

@@ -22,6 +22,8 @@
 #include "hts_robotics/action/pick_up_target.hpp"
 #include "hts_robotics/action/gripper_open.hpp"
 #include "hts_robotics/action/gripper_close.hpp"
+#include "hts_robotics/action/grasp_object.hpp"
+#include "hts_msgs/srv/request_grasp.hpp"
 
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
@@ -58,12 +60,11 @@ public:
   using PlanningSceneMonitor = planning_scene_monitor::PlanningSceneMonitor;
   using CustomActionOpen = hts_robotics::action::GripperOpen;
   using CustomActionClose = hts_robotics::action::GripperClose;
+  using CustomActionGraspObject = hts_robotics::action::GraspObject;
 
   // constructor
   hts_node():Node("hts_node") {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
-
-    // this->allow_undeclared_parameters(true);
 
     // create a subscriber to take in a clicked point and move the robot
     RCLCPP_INFO(this->get_logger(), "Creating clicked point subscriber...");
@@ -161,6 +162,24 @@ public:
       std::bind(&hts_node::handle_accepted_close_, this, std::placeholders::_1)
     );
     RCLCPP_INFO(this->get_logger(), "Created Gripper Servers.");
+
+    // create grasping servers
+    RCLCPP_INFO(this->get_logger(), "Creating Grasping Servers...");
+    grasp_object_server_ = rclcpp_action::create_server<CustomActionGraspObject>(
+      this, "grasp_object",
+      std::bind(&hts_node::handle_goal_grasp_object_, this, std::placeholders::_1, std::placeholders::_2),
+      std::bind(&hts_node::handle_cancel_grasp_object_, this, std::placeholders::_1),
+      std::bind(&hts_node::handle_accepted_grasp_object_, this, std::placeholders::_1)
+    );
+    grasp_request_client_ = this->create_client<hts_msgs::srv::RequestGrasp>("/request_grasp");
+    grasp_request_client_->wait_for_service();
+    
+    pickup_client_ = rclcpp_action::create_client<CustomActionPickup>(this, "hts_pickup_action");
+    move_client_ = rclcpp_action::create_client<CustomActionMove>(this, "hts_move_action");
+    open_client_ = rclcpp_action::create_client<CustomActionOpen>(this, "gripper_open");
+    close_client_ = rclcpp_action::create_client<CustomActionClose>(this, "gripper_close");
+
+    RCLCPP_INFO(this->get_logger(), "Created Grasper Clients and Servers.");
 
     RCLCPP_INFO(this->get_logger(), "Finished constructing HTS Node.");
   }
@@ -337,10 +356,185 @@ private:
   rclcpp_action::Server<CustomActionOpen>::SharedPtr gripper_open_server_;
   rclcpp_action::Server<CustomActionClose>::SharedPtr gripper_close_server_;
 
+  // for the top-level actions
+  rclcpp_action::Server<CustomActionGraspObject>::SharedPtr grasp_object_server_;
+  rclcpp::Client<hts_msgs::srv::RequestGrasp>::SharedPtr grasp_request_client_;
+  rclcpp_action::Client<CustomActionPickup>::SharedPtr pickup_client_;
+  rclcpp_action::Client<CustomActionMove>::SharedPtr move_client_;
+  rclcpp_action::Client<CustomActionOpen>::SharedPtr open_client_;
+  rclcpp_action::Client<CustomActionClose>::SharedPtr close_client_;
+
   // // Server Callbacks
-  // void handle_accepted_grasp_object_(
-  //   const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>>
-  // )
+  rclcpp_action::GoalResponse handle_goal_grasp_object_(
+    const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionGraspObject::Goal> goal
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Received Grasp Object Request");
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  }
+
+  rclcpp_action::CancelResponse handle_cancel_grasp_object_(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Received request to cancel grasp object");
+    return rclcpp_action::CancelResponse::REJECT;
+  }
+  void handle_accepted_grasp_object_(
+    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
+  ) {
+    std::thread([this, goal_handle] () {
+      auto result = std::make_shared<CustomActionGraspObject::Result>();
+
+      // get the grasp for the ID
+      auto grasp_request = std::make_shared<hts_msgs::srv::RequestGrasp::Request>();
+      grasp_request->id = goal_handle->get_goal()->object_id;
+      auto grasp_future = grasp_request_client_->async_send_request(grasp_request);
+      auto grasp_response = grasp_future.get();
+
+      if (!grasp_response->success) {
+        RCLCPP_INFO(this->get_logger(), "AnyGrasp Failed to Identify Pose");
+        result->success = false;
+        goal_handle->succeed(result);
+        return;
+      }
+
+      geometry_msgs::msg::Pose grasp_pose = grasp_response->grasp_pose;
+      RCLCPP_INFO(this->get_logger(), "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
+        grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
+        grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
+      );
+
+      auto pickup_goal = CustomActionPickup::Goal();
+      pickup_goal.x = grasp_pose.position.x;
+      pickup_goal.y = grasp_pose.position.y;
+      pickup_goal.z = grasp_pose.position.z;
+      pickup_goal.ox = grasp_pose.orientation.x;
+      pickup_goal.oy = grasp_pose.orientation.y;
+      pickup_goal.oz = grasp_pose.orientation.z;
+      pickup_goal.ow = grasp_pose.orientation.w;
+
+      auto open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
+      open_send_goal_options.result_callback =
+        [this, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &result) {
+          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)result.code);
+          } else {
+            RCLCPP_INFO(this->get_logger(), "Gripper opened on target");
+          }
+        };    
+
+      auto move_send_goal_options = rclcpp_action::Client<CustomActionMove>::SendGoalOptions();
+      move_send_goal_options.result_callback =
+        [this, open_send_goal_options, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &result) {
+          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "MoveIt failed to move with code: %d", (int)result.code);
+          } else {
+            RCLCPP_INFO(this->get_logger(), "MoveIt moved to target");
+
+            auto open_goal = CustomActionOpen::Goal();
+
+            open_client_->async_send_goal(open_goal, open_send_goal_options);
+          }
+        };
+
+      auto close_send_goal_options = rclcpp_action::Client<CustomActionClose>::SendGoalOptions();
+      close_send_goal_options.result_callback =
+        [this, move_send_goal_options, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &result) {
+          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)result.code);
+          } else {
+            RCLCPP_INFO(this->get_logger(), "Gripper closed on target");
+
+            auto move_goal = CustomActionMove::Goal();
+            move_goal.x = goal_handle->get_goal()->x;
+            move_goal.y = goal_handle->get_goal()->y;
+            move_goal.z = goal_handle->get_goal()->z;
+
+            move_client_->async_send_goal(move_goal, move_send_goal_options);
+          }
+        };
+
+      auto pickup_send_goal_options = rclcpp_action::Client<CustomActionPickup>::SendGoalOptions();
+      pickup_send_goal_options.result_callback =
+        [this, close_send_goal_options, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &result) {
+          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Movet failed to move with code: %d", (int)result.code);
+          } else {
+            RCLCPP_INFO(this->get_logger(), "MoveIt Moved to Target");
+
+            auto close_goal = CustomActionClose::Goal();
+            close_client_->async_send_goal(close_goal, close_send_goal_options);
+          }
+        };
+
+      // sends action
+      pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
+
+      // rclcpp_action::Client<hts_robotics::action::PickUpTarget>::SendGoalOptions pickup_send_options;
+      // rclcpp_action::ClientGoalHandle<hts_robotics::action::PickUpTarget>::SharedPtr pickup_goal_handle;
+      // pickup_goal_handle = pickup_client_->async_send_goal(pickup_goal, pickup_send_options);
+      // auto pickup_future_result = pickup_goal_handle->async_get_result();
+      // auto pickup_wrapped_result = pickup_future_result.get();
+
+      // if (!pickup_wrapped_result->success) {
+      //   RCLCPP_INFO(this->get_logger(), "MoveIt Failed to Move");
+      //     result->success = false;
+      //   goal_handle->succeed(result);
+      //   return;
+      // }
+      // RCLCPP_INFO(this->get_logger(), "MoveIt Moved to Target");
+
+      // // close gripper
+      // hts_robotics::action::GripperClose::Goal close_goal;
+      // rclcpp_action::Client<hts_robotics::action::GripperClose>::SendGoalOptions close_send_options;
+      // rclcpp_action::Client<hts_robotics::action::GripperClose>::SharedPtr close_goal_handle;
+      // close_goal_handle = close_client_->async_send_goal(close_goal, close_send_options);
+      // auto close_future_result = close_goal_handle->async_get_result();
+      // auto close_wrapped_result = close_future_result.get();
+
+      // if (!closed_wrapped_result->success) {
+      //   RCLCPP_INFO(this->get_logger(), "Gripper Failed to Close");
+      //   result->success = false;
+      //   goal_handle->succeed(result);
+      //   return;
+      // }
+      // RCLCPP_INFO(this->get_logger(), "Gripper Closed");
+
+      // // move object
+      // rclcpp_action::Client<hts_robotics::action::MoveTarget>::SendGoalOptions move_send_options;
+      // rclcpp_action::ClientGoalHandle<hts_robotics::action::MoveTarget>::SharedPtr move_goal_handle;
+      // move_goal_handle = move_client_->async_send_goal(move_goal, move_send_options);
+      // auto move_future_result = move_goal_handle->async_get_result();
+      // auto move_wrapped_result = move_future_result.get();
+
+      // if (!move_wrapped_result->success) {
+      //   RCLCPP_INFO(this->get_logger(), "MoveIt Failed to Move");
+      //   result->success = false;
+      //   goal_handle->succeed(result);
+      //   return;
+      // }
+      // RCLCPP_INFO(this->get_logger(), "MoveIt Moved to Target");
+
+      // hts_robotics::action::GripperOpen::Goal open_goal;
+      // rclcpp_action::Client<hts_robotics::action::GripperOpen>::SendGoalOptions open_send_options;
+      // rclcpp_action::Client<hts_robotics::action::GripperOpen>::SharedPtr open_goal_handle;
+      // open_goal_handle = open_client_->async_send_goal(open_goal, open_send_options);
+      // auto open_future_result = open_goal_handle->async_get_result();
+      // auto open_wrapped_result = open_future_result.get();
+
+      // if (!open_wrapped_result->success) {
+      //   result->success = false;
+      //   goal_handle->succeed(result);
+      //   return;
+      // }
+      // RCLCPP_INFO(this->get_logger(), "Gripper Opened");
+
+      // RCLCPP_INFO(this->get_logger(), "Successfully Executed!");
+      
+      // result->success = true;
+      // goal_handle->succeed(result);
+
+    }).detach();
+  }
 
   // Server Callbacks for Gripper Close Action
   rclcpp_action::GoalResponse handle_goal_close_(
@@ -671,7 +865,7 @@ private:
         // get current pose
         auto map = planning_scene_interface_->getObjectPoses({obj.child_frame_id});
         if (map.empty()) {
-          RCLCPP_INFO(this->get_logger(), "Not a valid transform: %s", obj.child_frame_id.c_str());
+          // RCLCPP_INFO(this->get_logger(), "Not a valid transform: %s", obj.child_frame_id.c_str());
           return;
         }
         geometry_msgs::msg::Pose target_moveit = map.at(obj.child_frame_id);
