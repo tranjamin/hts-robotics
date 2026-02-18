@@ -332,26 +332,41 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
   ) {
     std::thread([this, goal_handle] () {
+      // the result and feedback objects
       auto result = std::make_shared<CustomActionGraspObject::Result>();
+      auto progress = std::make_shared<CustomActionGraspObject::Feedback>();
 
-      // get the grasp for the ID
+      // get the grasp for the target object
       auto grasp_request = std::make_shared<hts_msgs::srv::RequestGrasp::Request>();
       grasp_request->id = goal_handle->get_goal()->object_id;
       auto grasp_future = grasp_request_client_->async_send_request(grasp_request);
       auto grasp_response = grasp_future.get();
 
+      // if anygrasp failed
       if (!grasp_response->success) {
-        RCLCPP_INFO(this->get_logger(), "AnyGrasp Failed to Identify Pose");
+        RCLCPP_ERROR(this->get_logger(), "Anygrasp failed to identify pose");
         result->success = false;
-        goal_handle->succeed(result);
+        result->message = "Anygrasp failed to identify pose";
+        goal_handle->abort(result);
         return;
       }
 
       geometry_msgs::msg::Pose grasp_pose = grasp_response->grasp_pose;
+
+      // update progress
       RCLCPP_INFO(this->get_logger(), "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
         grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
         grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
       );
+      char buf[150];
+      std::snprintf(buf, sizeof(buf),
+        "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
+        grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
+        grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
+      );
+      progress->progress = std::string(buf);
+      goal_handle->publish_feedback(progress);
+
 
       auto pickup_goal = CustomActionPickup::Goal();
       pickup_goal.x = grasp_pose.position.x;
@@ -364,35 +379,49 @@ private:
 
       auto open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
       open_send_goal_options.result_callback =
-        [this, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &result) {
-          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)result.code);
+        [this, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
+          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
+            result->success = false;
+            result->message = "Gripper failed to open";
+            goal_handle->abort(result);
           } else {
             RCLCPP_INFO(this->get_logger(), "Gripper opened on target");
+            progress->progress = "Gripper opened on target";
+            goal_handle->publish_feedback(progress);
           }
         };    
 
       auto move_send_goal_options = rclcpp_action::Client<CustomActionMove>::SendGoalOptions();
       move_send_goal_options.result_callback =
-        [this, open_send_goal_options, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &result) {
-          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "MoveIt failed to move with code: %d", (int)result.code);
+        [this, open_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &r) {
+          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "MoveIt failed to move with code: %d", (int)r.code);
+            result->success = false;
+            result->message = "MoveIt failed to move";
+            goal_handle->abort(result);
           } else {
-            RCLCPP_INFO(this->get_logger(), "MoveIt moved to target");
+            RCLCPP_INFO(this->get_logger(), "MoveIt moved target");
+            progress->progress = "MoveIt moved target";
+            goal_handle->publish_feedback(progress);
 
             auto open_goal = CustomActionOpen::Goal();
-
             open_client_->async_send_goal(open_goal, open_send_goal_options);
           }
         };
 
       auto close_send_goal_options = rclcpp_action::Client<CustomActionClose>::SendGoalOptions();
       close_send_goal_options.result_callback =
-        [this, move_send_goal_options, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &result) {
-          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)result.code);
+        [this, move_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
+          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)r.code);
+            result->success = false;
+            result->message = "Gripper failed to close";
+            goal_handle->abort(result);
           } else {
             RCLCPP_INFO(this->get_logger(), "Gripper closed on target");
+            progress->progress = "Gripper closed on target";
+            goal_handle->publish_feedback(progress);
 
             auto move_goal = CustomActionMove::Goal();
             move_goal.x = goal_handle->get_goal()->x;
@@ -405,11 +434,16 @@ private:
 
       auto pickup_send_goal_options = rclcpp_action::Client<CustomActionPickup>::SendGoalOptions();
       pickup_send_goal_options.result_callback =
-        [this, close_send_goal_options, goal_handle](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &result) {
-          if (result.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "Movet failed to move with code: %d", (int)result.code);
+        [this, close_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &r) {
+          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Movet failed to move to target with code: %d", (int)r.code);
+            result->success = false;
+            result->message = "MoveIt failed to move to target";
+            goal_handle->abort(result);
           } else {
-            RCLCPP_INFO(this->get_logger(), "MoveIt Moved to Target");
+            RCLCPP_INFO(this->get_logger(), "MoveIt moved to target");            
+            progress->progress = "MoveIt moved to target";
+            goal_handle->publish_feedback(progress);
 
             auto close_goal = CustomActionClose::Goal();
             close_client_->async_send_goal(close_goal, close_send_goal_options);
@@ -462,9 +496,15 @@ private:
       // log results
       auto result = std::make_shared<CustomActionClose::Result>();
       result->success = success;
-      RCLCPP_INFO(this->get_logger(), success ? "Goal reached successfully" : "Goal failed");
-
-      goal_handle->succeed(result);
+      if (success) {
+        RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+        result->message = "Goal reached successfully";
+        goal_handle->succeed(result);
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Goal failed");
+        result->message = "Goal failed";
+        goal_handle->abort(result);
+      }
     }).detach();
   }
 
@@ -509,8 +549,15 @@ private:
       // log results
       auto result = std::make_shared<CustomActionOpen::Result>();
       result->success = success;
-      RCLCPP_INFO(this->get_logger(), success ? "Goal reached successfully" : "Goal failed");
-      goal_handle->succeed(result);
+      if (success) {
+        RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+        result->message = "Goal reached successfully";
+        goal_handle->succeed(result);
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Goal failed");
+        result->message = "Goal failed";
+        goal_handle->abort(result);
+      }
     }).detach();
   }
 
@@ -557,24 +604,24 @@ private:
       move_group_interface_->setPoseTarget(target);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
-      auto result = std::make_shared<CustomActionPickup::Result>();
-      result->success = success;
-      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-
       auto current_position = move_group_interface_->getCurrentPose().pose;
-      // tf2::Quaternion q_end;
-      // tf2::fromMsg(quat_msg, q_end);
-      double roll, pitch, yaw;
-      // tf2::Matrix3x3(current_position.orientation).getRPY(roll, pitch, yaw);
-
       RCLCPP_INFO(this->get_logger(), "End Position is (%.2f, %.2f, %.2f)", 
         current_position.position.x, current_position.position.y, current_position.position.z);
-      // RCLCPP_INFO(this->get_logger(), "End Angle is (%.2f, %.2f, %.2f)", 
-        // roll, pitch, yaw);
       RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
         current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
+      
+      auto result = std::make_shared<CustomActionPickup::Result>();
+      result->success = success;
+      if (success) {
+        RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+        result->message = "Goal reached successfully";
+        goal_handle->succeed(result);
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Goal failed");
+        result->message = "Goal failed";
+        goal_handle->abort(result);
+      }
 
-      goal_handle->succeed(result);
     }).detach();
   
   }
@@ -605,66 +652,58 @@ private:
       target.position.y = goal->y;
       target.position.z = goal->z;
 
-            // Apply orientation constraints
-            moveit_msgs::msg::OrientationConstraint orientation_constraint;
-            // orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
-            // orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
-            orientation_constraint.header.frame_id = "world"; // or base
-            orientation_constraint.link_name = "fr3_hand"; // or fr3_link8
+      // Apply orientation constraints
+      moveit_msgs::msg::OrientationConstraint orientation_constraint;
+      orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+      orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
 
-            RCLCPP_INFO(get_logger(), "EEF link: %s", move_group_interface_->getEndEffectorLink().c_str());
-            RCLCPP_INFO(get_logger(), "REF frame: %s", move_group_interface_->getPoseReferenceFrame().c_str());
+      auto current_pose = move_group_interface_->getCurrentPose();
+      orientation_constraint.orientation = current_pose.pose.orientation;
+      RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
+        current_pose.pose.orientation.x, current_pose.pose.orientation.y,
+        current_pose.pose.orientation.z, current_pose.pose.orientation.w
+      );
+      orientation_constraint.absolute_x_axis_tolerance = 0.3;
+      orientation_constraint.absolute_y_axis_tolerance = 0.3;
+      orientation_constraint.absolute_z_axis_tolerance = 1000;
+      orientation_constraint.weight = 1.0;
 
-            auto current_pose = move_group_interface_->getCurrentPose();
-            orientation_constraint.orientation = current_pose.pose.orientation;
-            RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
-              current_pose.pose.orientation.x, current_pose.pose.orientation.y,
-              current_pose.pose.orientation.z, current_pose.pose.orientation.w
-            );
-            orientation_constraint.absolute_x_axis_tolerance = 0.3;
-            orientation_constraint.absolute_y_axis_tolerance = 0.3;
-            orientation_constraint.absolute_z_axis_tolerance = 1000;
-            orientation_constraint.weight = 1.0;
+      moveit_msgs::msg::Constraints all_constraints;
+      all_constraints.orientation_constraints.emplace_back(orientation_constraint);
 
-            moveit_msgs::msg::Constraints all_constraints;
-            all_constraints.orientation_constraints.emplace_back(orientation_constraint);
-
-            move_group_interface_->setPathConstraints(all_constraints);
-            RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
+      move_group_interface_->setPathConstraints(all_constraints);
+      RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
 
       target.orientation.x = current_pose.pose.orientation.x;
       target.orientation.y = current_pose.pose.orientation.y;
-      target.orientation.z = current_pose.pose.orientation.z; // maybe remove this
+      target.orientation.z = current_pose.pose.orientation.z;
       target.orientation.w = current_pose.pose.orientation.w;
 
-      // double roll, pitch, yaw;
-      // tf2::Matrix3x3(current_pose.pose.orientation).getRPY(roll, pitch, yaw);
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
-      // RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
       RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", target.orientation.x, target.orientation.y, target.orientation.z, target.orientation.w);
 
       move_group_interface_->setPoseTarget(target);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
-      auto result = std::make_shared<CustomActionMove::Result>();
-      result->success = success;
-      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-      goal_handle->succeed(result);
-
       auto current_position = move_group_interface_->getCurrentPose().pose;
-      // tf2::Quaternion q_end;
-      // tf2::fromMsg(quat_msg, q_end);
       double roll2, pitch2, yaw2;
-      // tf2::Matrix3x3(current_position.orientation).getRPY(roll, pitch, yaw);
 
       RCLCPP_INFO(this->get_logger(), "End Position is (%.2f, %.2f, %.2f)", 
         current_position.position.x, current_position.position.y, current_position.position.z);
-      // RCLCPP_INFO(this->get_logger(), "End Angle is (%.2f, %.2f, %.2f)", 
-        // roll2, pitch2, yaw2);
       RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
         current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
-
-
+      
+      auto result = std::make_shared<CustomActionMove::Result>();
+      result->success = success;
+      if (success) {
+        RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
+        result->message = "Goal reached successfully";
+        goal_handle->succeed(result);
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Goal failed");
+        result->message = "Goal failed";
+        goal_handle->abort(result);
+      }
     }).detach();
   }
 

@@ -7,5 +7,6 @@ float64 oz
 float64 ow
 ---
 bool success
+string message
 ---
 float32 progress
