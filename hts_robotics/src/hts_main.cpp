@@ -66,22 +66,6 @@ public:
   hts_node():Node("hts_node") {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
 
-    // create a subscriber to take in a clicked point and move the robot
-    RCLCPP_INFO(this->get_logger(), "Creating clicked point subscriber...");
-    clicked_point_sub_ = this->create_subscription<StampedPoint>(
-      "/clicked_point", 10,
-      std::bind(&hts_node::clicked_point_subscriber_callback_, this, std::placeholders::_1)
-    );
-    RCLCPP_INFO(this->get_logger(), "Created clicked point subscriber.");
-
-    // create a subscriber to read in the goal pose and log info
-    RCLCPP_INFO(this->get_logger(), "Creating goal pose subscriber...");
-    goal_pose_sub_ = this->create_subscription<StampedPose>(
-      "/goal_pose", 10,
-      std::bind(&hts_node::goal_pose_subscriber_callback_, this, std::placeholders::_1)
-    );
-    RCLCPP_INFO(this->get_logger(), "Created goal pose subscriber.");
-
     // create a subscriber to read in the joint states and log info
     RCLCPP_INFO(this->get_logger(), "Creating joint states subscriber...");
     joint_states_sub_ = this->create_subscription<JointState>(
@@ -90,15 +74,6 @@ public:
     );
     RCLCPP_INFO(this->get_logger(), "Created joint states subscriber.");
 
-    // create a publisher for the goal pose
-    RCLCPP_INFO(this->get_logger(), "Creating goal pose publisher...");
-    goal_pose_pub_ = this->create_publisher<StampedPose>("/goal_pose", 10);
-    timer_ = this->create_wall_timer(
-      500ms,
-      std::bind(&hts_node::goal_pose_publisher_callback_, this)
-    );
-    RCLCPP_INFO(this->get_logger(), "Created goal pose publisher.");
-
     // create a subscriber for the gazebo scene
     RCLCPP_INFO(this->get_logger(), "Creating Gazebo scene subscriber...");
     gazebo_scene_sub_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
@@ -106,26 +81,6 @@ public:
       std::bind(&hts_node::gazebo_scene_subscriber_callback_, this, std::placeholders::_1)
     );
     RCLCPP_INFO(this->get_logger(), "Created Gazebo scene subscriber.");
-
-    // create moveit server
-    RCLCPP_INFO(this->get_logger(), "Creating MoveIt2 Server...");
-    moveit_server_ = rclcpp_action::create_server<CustomActionPoint>(
-      this, "hts_moveit_action",
-      std::bind(&hts_node::handle_goal_point_, this, std::placeholders::_1, std::placeholders::_2),
-      std::bind(&hts_node::handle_cancel_point_, this, std::placeholders::_1),
-      std::bind(&hts_node::handle_accepted_point_, this, std::placeholders::_1)
-    );
-    RCLCPP_INFO(this->get_logger(), "Created MoveIt2 Server.");
-
-    // create moveit client
-    RCLCPP_INFO(this->get_logger(), "Creating MoveIt2 Client...");
-    moveit_client_ = rclcpp_action::create_client<CustomActionPoint>(this, "hts_moveit_action");    
-    if (!moveit_client_->wait_for_action_server(5s)) {
-      RCLCPP_ERROR(this->get_logger(), "Failed to connect to action server");
-      rclcpp::shutdown();
-      return;
-    }
-    RCLCPP_INFO(this->get_logger(), "Created MoveIt2 Client.");
 
     // create pickup server
     RCLCPP_INFO(this->get_logger(), "Creating Pickup Server...");
@@ -341,16 +296,11 @@ private:
   std::shared_ptr<PlanningSceneMonitor> planning_scene_monitor_;
 
   // subscribers and publishers
-  rclcpp::Subscription<StampedPoint>::SharedPtr clicked_point_sub_;
-  rclcpp::Subscription<StampedPose>::SharedPtr goal_pose_sub_;
   rclcpp::Subscription<JointState>::SharedPtr joint_states_sub_;
   rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr gazebo_scene_sub_;
-  rclcpp::Publisher<StampedPose>::SharedPtr goal_pose_pub_;
   rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_diff_publisher_;
   
   // action servers and clients
-  rclcpp_action::Client<CustomActionPoint>::SharedPtr moveit_client_;
-  rclcpp_action::Server<CustomActionPoint>::SharedPtr moveit_server_;
   rclcpp_action::Server<CustomActionPickup>::SharedPtr pickup_server_;
   rclcpp_action::Server<CustomActionMove>::SharedPtr move_server_;
   rclcpp_action::Server<CustomActionOpen>::SharedPtr gripper_open_server_;
@@ -468,71 +418,6 @@ private:
 
       // sends action
       pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
-
-      // rclcpp_action::Client<hts_robotics::action::PickUpTarget>::SendGoalOptions pickup_send_options;
-      // rclcpp_action::ClientGoalHandle<hts_robotics::action::PickUpTarget>::SharedPtr pickup_goal_handle;
-      // pickup_goal_handle = pickup_client_->async_send_goal(pickup_goal, pickup_send_options);
-      // auto pickup_future_result = pickup_goal_handle->async_get_result();
-      // auto pickup_wrapped_result = pickup_future_result.get();
-
-      // if (!pickup_wrapped_result->success) {
-      //   RCLCPP_INFO(this->get_logger(), "MoveIt Failed to Move");
-      //     result->success = false;
-      //   goal_handle->succeed(result);
-      //   return;
-      // }
-      // RCLCPP_INFO(this->get_logger(), "MoveIt Moved to Target");
-
-      // // close gripper
-      // hts_robotics::action::GripperClose::Goal close_goal;
-      // rclcpp_action::Client<hts_robotics::action::GripperClose>::SendGoalOptions close_send_options;
-      // rclcpp_action::Client<hts_robotics::action::GripperClose>::SharedPtr close_goal_handle;
-      // close_goal_handle = close_client_->async_send_goal(close_goal, close_send_options);
-      // auto close_future_result = close_goal_handle->async_get_result();
-      // auto close_wrapped_result = close_future_result.get();
-
-      // if (!closed_wrapped_result->success) {
-      //   RCLCPP_INFO(this->get_logger(), "Gripper Failed to Close");
-      //   result->success = false;
-      //   goal_handle->succeed(result);
-      //   return;
-      // }
-      // RCLCPP_INFO(this->get_logger(), "Gripper Closed");
-
-      // // move object
-      // rclcpp_action::Client<hts_robotics::action::MoveTarget>::SendGoalOptions move_send_options;
-      // rclcpp_action::ClientGoalHandle<hts_robotics::action::MoveTarget>::SharedPtr move_goal_handle;
-      // move_goal_handle = move_client_->async_send_goal(move_goal, move_send_options);
-      // auto move_future_result = move_goal_handle->async_get_result();
-      // auto move_wrapped_result = move_future_result.get();
-
-      // if (!move_wrapped_result->success) {
-      //   RCLCPP_INFO(this->get_logger(), "MoveIt Failed to Move");
-      //   result->success = false;
-      //   goal_handle->succeed(result);
-      //   return;
-      // }
-      // RCLCPP_INFO(this->get_logger(), "MoveIt Moved to Target");
-
-      // hts_robotics::action::GripperOpen::Goal open_goal;
-      // rclcpp_action::Client<hts_robotics::action::GripperOpen>::SendGoalOptions open_send_options;
-      // rclcpp_action::Client<hts_robotics::action::GripperOpen>::SharedPtr open_goal_handle;
-      // open_goal_handle = open_client_->async_send_goal(open_goal, open_send_options);
-      // auto open_future_result = open_goal_handle->async_get_result();
-      // auto open_wrapped_result = open_future_result.get();
-
-      // if (!open_wrapped_result->success) {
-      //   result->success = false;
-      //   goal_handle->succeed(result);
-      //   return;
-      // }
-      // RCLCPP_INFO(this->get_logger(), "Gripper Opened");
-
-      // RCLCPP_INFO(this->get_logger(), "Successfully Executed!");
-      
-      // result->success = true;
-      // goal_handle->succeed(result);
-
     }).detach();
   }
 
@@ -783,64 +668,6 @@ private:
     }).detach();
   }
 
-  // Server Callbacks for Move To Point Action
-  rclcpp_action::GoalResponse handle_goal_point_(
-    const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionPoint::Goal> goal
-  ) {
-    RCLCPP_INFO(this->get_logger(), "Received point request (%.2f %.2f %.2f)", goal->x, goal->y, goal->z);
-    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-  }
-
-  rclcpp_action::CancelResponse handle_cancel_point_(
-    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPoint>> goal_handle
-  ) {
-    RCLCPP_INFO(this->get_logger(), "Received request to cancel point");
-    return rclcpp_action::CancelResponse::REJECT;
-  }
-
-  void handle_accepted_point_(
-    const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPoint>> goal_handle
-  ) {
-    std::thread([this, goal_handle]() {
-      auto goal = goal_handle->get_goal();
-
-      geometry_msgs::msg::Pose target;
-      target.position.x = goal->x;
-      target.position.y = goal->y;
-      target.position.z = goal->z;
-
-      move_group_interface_->setPoseTarget(target);
-      bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
-
-      auto result = std::make_shared<CustomActionPoint::Result>();
-      result->success = success;
-      RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-      goal_handle->succeed(result);
-    }).detach();
-  }
-
-  void clicked_point_subscriber_callback_(StampedPoint::UniquePtr msg) {
-    RCLCPP_INFO(this->get_logger(), "Received Clicked Point: (%f, %f, %f)", msg->point.x, msg->point.y, msg->point.z);
-
-    // create a goal message
-    auto goal_msg = CustomActionPoint::Goal();
-    goal_msg.x = 0.5; goal_msg.y = 0.0; goal_msg.z = 0.3;
-
-    // sets callbacks for action
-    auto send_goal_options = rclcpp_action::Client<CustomActionPoint>::SendGoalOptions();
-    send_goal_options.result_callback =
-      [this](const rclcpp_action::ClientGoalHandle<CustomActionPoint>::WrappedResult & result) {
-        if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
-          RCLCPP_INFO(this->get_logger(), "Goal succeeded!");
-        } else {
-          RCLCPP_ERROR(this->get_logger(), "Goal failed with code: %d", (int)result.code);
-        }
-      };
-
-    // sends action
-    moveit_client_->async_send_goal(goal_msg, send_goal_options);
-  }
-
   void joint_states_subscriber_callback_(JointState::UniquePtr msg) {
     std::ostringstream oss;
     oss << "JointState: \n";
@@ -916,36 +743,6 @@ private:
         return;
       }
     }
-
-  void goal_pose_subscriber_callback_(StampedPose::UniquePtr msg) {
-    RCLCPP_DEBUG(this->get_logger(), 
-      "Goal Pose: (%f, %f, %f | %f, %f, %f, %f)", 
-      msg->pose.position.x, msg->pose.position.y, msg->pose.position.z,
-      msg->pose.orientation.x, msg->pose.orientation.y, msg->pose.orientation.z, msg->pose.orientation.w  
-    );
-  }
-
-  void goal_pose_publisher_callback_() {
-    auto message = StampedPose{};
-      
-    // Fill header
-    message.header.stamp = rclcpp::Clock().now();
-    message.header.frame_id = "base_link";
-
-    // Fill pose
-    message.pose.position.x = 1.0;
-    message.pose.position.y = 2.0;
-    message.pose.position.z = 3.0;
-
-    // Orientation as a quaternion (no rotation)
-    message.pose.orientation.x = 0.0;
-    message.pose.orientation.y = 0.0;
-    message.pose.orientation.z = 0.0;
-    message.pose.orientation.w = 1.0;
-
-    RCLCPP_DEBUG(this->get_logger(), "Publishing a stamped pose");
-    this->goal_pose_pub_->publish(message);
-  }
 
 };
 

@@ -18,7 +18,6 @@ find_package(hts_msgs REQUIRED)
 
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/MoveToPoint.action"
   "action/MoveTarget.action"
   "action/PickUpTarget.action"
   "action/GripperClose.action"
