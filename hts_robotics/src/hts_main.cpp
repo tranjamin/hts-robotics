@@ -63,6 +63,8 @@ public:
   hts_node():Node("hts_node") {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
 
+    // this->allow_undeclared_parameters(true);
+
     // create a subscriber to take in a clicked point and move the robot
     RCLCPP_INFO(this->get_logger(), "Creating clicked point subscriber...");
     clicked_point_sub_ = this->create_subscription<StampedPoint>(
@@ -208,66 +210,110 @@ public:
     planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    // Register the target as a collision object
-    moveit_msgs::msg::CollisionObject co_target;
-    shape_msgs::msg::SolidPrimitive primitive_target;
-    geometry_msgs::msg::Pose pose_target;
-    
-    primitive_target.type = primitive_target.BOX;
-    primitive_target.dimensions = {0.05, 0.05, 0.05};
-    
-    pose_target.orientation.w = 1.0;
-    pose_target.position.x = 0.2;
-    pose_target.position.y = 0.2;
-    pose_target.position.z = 0.025;
-    
-    co_target.id = "target";
-    co_target.header.frame_id = move_group_interface_->getPlanningFrame();
-    co_target.primitives.push_back(primitive_target);
-    co_target.primitive_poses.push_back(pose_target);
-    co_target.operation = co_target.ADD;
-    planning_scene_interface_->applyCollisionObject(co_target);
+    // Register the target objects as collision objects
+    this->declare_parameter("objects", std::vector<std::string>{});
+    std::vector<std::string> objects = this->get_parameter("objects").as_string_array();
+
+    target_object_ids_ = std::vector<std::string>(objects.size(), "");
+    int i = 0;
+
+    RCLCPP_INFO(get_logger(), "Looking for objects: %ld", objects.size());
+    for (auto &obj_name : objects) {
+      RCLCPP_INFO(get_logger(), "Found object");
+      moveit_msgs::msg::CollisionObject co_target;
+      shape_msgs::msg::SolidPrimitive primitive_target;
+      geometry_msgs::msg::Pose pose_target;
+
+      this->declare_parameter(obj_name + ".object_id", 0);
+      this->declare_parameter(obj_name + ".primitive_type", "");
+
+      int obj_id = this->get_parameter(obj_name + ".object_id").as_int();
+      RCLCPP_INFO(get_logger(), "Found an Object with ID %d", obj_id);
+
+      std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
+      if (obj_type == "BOX") {
+        this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
+        this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
+        this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
+
+        primitive_target.type = primitive_target.BOX;
+        primitive_target.dimensions = {
+          this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
+          this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
+          this->get_parameter(obj_name + ".primitive_dims.z").as_double()
+        };
+      } else if (obj_type == "SPHERE") {
+        this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+        primitive_target.type = primitive_target.SPHERE;
+        primitive_target.dimensions = {
+          this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+        };
+
+      } else if (obj_type == "CONE") {        
+        this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+        this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+        primitive_target.type = primitive_target.CONE;
+        primitive_target.dimensions = {
+          this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
+          this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+        };
+
+      } else if (obj_type == "CYLINDER") {
+        this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+        this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+        primitive_target.type = primitive_target.CYLINDER;
+        primitive_target.dimensions = {
+          this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
+          this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+        };
+      } else {
+        RCLCPP_INFO(get_logger(), "Invalid Object");
+      }
+
+      this->declare_parameter(obj_name + ".x", 0.0);
+      this->declare_parameter(obj_name + ".y", 0.0);
+      this->declare_parameter(obj_name + ".z", 0.0);
+
+      this->declare_parameter(obj_name + ".R", 0.0);
+      this->declare_parameter(obj_name + ".P", 0.0);
+      this->declare_parameter(obj_name + ".Y", 0.0);
+
+      pose_target.position.x = this->get_parameter(obj_name + ".x").as_double();
+      pose_target.position.y = this->get_parameter(obj_name + ".y").as_double();
+      pose_target.position.z = this->get_parameter(obj_name + ".z").as_double();
+
+      double roll = this->get_parameter(obj_name + ".R").as_double();
+      double pitch = this->get_parameter(obj_name + ".P").as_double();
+      double yaw = this->get_parameter(obj_name + ".Y").as_double();
+
+      tf2::Quaternion q;
+      q.setRPY(roll, pitch, yaw);
+
+      pose_target.orientation.x = q.x();
+      pose_target.orientation.y = q.y();
+      pose_target.orientation.z = q.z();
+      pose_target.orientation.w = q.w();
+      
+      co_target.id = "target_" + std::to_string(obj_id);
+      co_target.header.frame_id = move_group_interface_->getPlanningFrame();
+      co_target.primitives.push_back(primitive_target);
+      co_target.primitive_poses.push_back(pose_target);
+      co_target.operation = co_target.ADD;
+      planning_scene_interface_->applyCollisionObject(co_target);
+
+      target_object_ids_[i] = co_target.id;
+    }
+
     planning_scene_monitor_->requestPlanningSceneState();
-
-    // Apply orientation constraints
-    moveit_msgs::msg::OrientationConstraint orientation_constraint;
-    moveit_msgs::msg::Constraints all_constraints;
-    geometry_msgs::msg::PoseStamped current_pose = move_group_interface_->getCurrentPose();
-
-    orientation_constraint.header.frame_id = "world"; // or base
-    orientation_constraint.link_name = "fr3_hand"; // or fr3_link8
-    orientation_constraint.orientation = current_pose.pose.orientation;
-    orientation_constraint.absolute_x_axis_tolerance = 0.02;
-    orientation_constraint.absolute_y_axis_tolerance = 0.02;
-    orientation_constraint.absolute_z_axis_tolerance = 0.02;
-    orientation_constraint.weight = 1.0;
-    all_constraints.orientation_constraints.emplace_back(orientation_constraint);
-    move_group_interface_->setPathConstraints(all_constraints);
-
-    RCLCPP_INFO(get_logger(), "EEF link: %s", move_group_interface_->getEndEffectorLink().c_str()); // should be world or base
-    RCLCPP_INFO(get_logger(), "REF frame: %s", move_group_interface_->getPoseReferenceFrame().c_str()); // should be fr3_hand or fr3_link8
-    RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
-
-                // Get all known objects in the world
-                std::vector<std::string> known_objects = planning_scene_interface_->getKnownObjectNames();
-
-                bool target_exists = (std::find(known_objects.begin(),
-                                                known_objects.end(),
-                                                "target") != known_objects.end());
-
-                if (target_exists)
-                {
-                    RCLCPP_INFO(this->get_logger(), "'target' exists in the planning scene");
-                }
-                else
-                {
-                    RCLCPP_WARN(this->get_logger(), "'target' does NOT exist yet");
-                }
   }
 
 private:
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Time last_update_;
+  std::vector<std::string> target_object_ids_;
 
   // move groups and planning scenes
   std::shared_ptr<MoveGroupInterface> move_group_interface_;
@@ -290,6 +336,11 @@ private:
   rclcpp_action::Server<CustomActionMove>::SharedPtr move_server_;
   rclcpp_action::Server<CustomActionOpen>::SharedPtr gripper_open_server_;
   rclcpp_action::Server<CustomActionClose>::SharedPtr gripper_close_server_;
+
+  // // Server Callbacks
+  // void handle_accepted_grasp_object_(
+  //   const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>>
+  // )
 
   // Server Callbacks for Gripper Close Action
   rclcpp_action::GoalResponse handle_goal_close_(
@@ -617,19 +668,16 @@ private:
     last_update_ = now;
 
     for (const auto &obj : msg->transforms) {
-
-      if (obj.child_frame_id == "target_block") {
-
         // get current pose
-        auto map = planning_scene_interface_->getObjectPoses({"target"});
+        auto map = planning_scene_interface_->getObjectPoses({obj.child_frame_id});
         if (map.empty()) {
-          // RCLCPP_INFO(this->get_logger(), "Scene Not Ready");
+          RCLCPP_INFO(this->get_logger(), "Not a valid transform: %s", obj.child_frame_id.c_str());
           return;
         }
-        geometry_msgs::msg::Pose target_moveit = map.at("target");
+        geometry_msgs::msg::Pose target_moveit = map.at(obj.child_frame_id);
 
         moveit_msgs::msg::CollisionObject target_gazebo;
-        target_gazebo.id = "target";
+        target_gazebo.id = obj.child_frame_id;
         target_gazebo.header.frame_id = "world";
 
         geometry_msgs::msg::Pose gazebo_pose;
@@ -655,7 +703,7 @@ private:
 
         // move target object
         moveit_msgs::msg::CollisionObject co_target;
-        co_target.id = "target";
+        co_target.id = obj.child_frame_id;
         co_target.header.frame_id = move_group_interface_->getPlanningFrame();
 
         geometry_msgs::msg::Pose pose_target;
@@ -674,7 +722,6 @@ private:
         return;
       }
     }
-  }
 
   void goal_pose_subscriber_callback_(StampedPose::UniquePtr msg) {
     RCLCPP_DEBUG(this->get_logger(), 

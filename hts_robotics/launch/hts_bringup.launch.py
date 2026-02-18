@@ -120,6 +120,7 @@ def create_hts_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
     namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
+    objects_yaml = load_yaml("hts_robotics", "config/target_objects.yaml")
 
     hts_node = Node(
         package='hts_robotics',
@@ -128,6 +129,7 @@ def create_hts_node(context: LaunchContext, launch_configurations):
         output='screen',
         namespace=namespace_str,
         parameters=[
+            objects_yaml,
             {"use_sim_time": USE_SIM_TIME},
             robot_description,
             robot_description_semantic,
@@ -312,19 +314,30 @@ def generate_launch_description():
         arguments=['-topic', '/robot_description'],
         output='screen',
     )
-    spawn_target = Node(
-        package='ros_gz_sim',
-        executable='create',
-        arguments=[
-            '-file', os.path.join(get_package_share_directory("hts_robotics"), "objects", "box.sdf"),
-            '-name', 'target_block',
-            '-x', '0.2',
-            '-y', '0.2',
-            '-z', '0.2', 
-            '-ros'
-        ],
-        output="screen"
-        )
+
+    object_spawns = []
+    targets_config_file = load_yaml("hts_robotics", "config/target_objects.yaml")
+    if targets_config_file is not None:
+        for obj in targets_config_file['objects']:
+            obj_params = targets_config_file[obj]
+            object_spawns.append(
+                Node(
+                    package='ros_gz_sim',
+                    executable='create',
+                    arguments=[
+                        '-file', os.path.join(get_package_share_directory("hts_robotics"), "objects", obj_params['geometry_file']),
+                        '-name', 'target_' + str(obj_params['object_id']),
+                        '-x', str(float(obj_params.get('x', 0))),
+                        '-y', str(float(obj_params.get('y', 0))),
+                        '-z', str(float(obj_params.get('z', 0))),
+                        '-P', str(float(obj_params.get('pitch', 0))),
+                        '-R', str(float(obj_params.get('roll', 0))),
+                        '-Y', str(float(obj_params.get('yaw', 0))),
+                        '-ros'
+                    ],
+                    output='screen'
+                )
+            )
 
     joint_broadcaster = Node(
         package='controller_manager',
@@ -436,10 +449,8 @@ def generate_launch_description():
             executable="static_transform_publisher",
             name="sim_camera_static_tf",
             arguments=[
-            "0", "0", "0",
-            "0", "0", "0",
-            "camera_depth_frame",
-            "fr3/fr3_link7/custom_camera_rgbd"
+            "--frame-id", "camera_depth_frame",
+            "--child-frame-id", "fr3/fr3_link7/custom_camera_rgbd"
             ],
             output="screen"
         ),
@@ -451,12 +462,12 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 'frame_id': 'world',             # global frame
-                'sensor_model/max_range': 2.0,   # max sensor range
-                'sensor_model/min_range': 0.1,
+                'sensor_model/max_range': 0.5,   # max sensor range
+                'sensor_model/min_range': 0.01,
                 'sensor_model/inf_is_valid': True,
                 'sensor_model/z_hit': 0.7,
                 'sensor_model/z_rand': 0.1,
-                'resolution': 0.05,              # voxel size in meters
+                'resolution': 0.1,              # voxel size in meters
                 'use_sim_time': True,
             }],
             remappings=[
@@ -476,7 +487,7 @@ def generate_launch_description():
 
         TimerAction(
             period=15.0,
-            actions=[spawn, spawn_target]
+            actions=[spawn] + object_spawns
         ),
 
         TimerAction(
