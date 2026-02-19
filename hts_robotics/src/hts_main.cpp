@@ -338,7 +338,20 @@ private:
 
       // get the grasp for the target object
       auto grasp_request = std::make_shared<hts_msgs::srv::RequestGrasp::Request>();
-      grasp_request->id = goal_handle->get_goal()->object_id;
+      auto object_id = goal_handle->get_goal()->object_id;
+      auto object_name = "target_" + std::to_string(object_id);
+
+      auto map = planning_scene_interface_->getObjectPoses(object_name);
+      if (map.empty()) {
+        return;
+      }
+      geometry_msgs::msg::Pose target_moveit = map.at(object_name);
+
+      grasp_request->object_id = object_id;
+      grasp_request->x = target_moveit.position.x;
+      grasp_request->y = target_moveit.position.y;
+      grasp_request->z = target_moveit.position.z;
+
       auto grasp_future = grasp_request_client_->async_send_request(grasp_request);
       auto grasp_response = grasp_future.get();
 

@@ -462,13 +462,17 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 'frame_id': 'world',             # global frame
-                'sensor_model/max_range': 2.0,   # max sensor range
+                'sensor_model/max_range': 0.5,   # max sensor range
                 'sensor_model/min_range': 0.05,
                 'sensor_model/inf_is_valid': True,
                 'sensor_model/z_hit': 0.9,
-                'sensor_model/z_rand': 0.05,
-                'resolution': 0.005,              # voxel size in meters
+                'sensor_model/z_rand': 0.01,
+                'resolution': 0.001,              # voxel size in meters
                 'use_sim_time': True,
+                'filter_ground': True,
+                'ground_filter/distance': 0.002,
+                'pointcloud_max_z': 0.5,
+                'pointcloud_min_z': 0.002,
             }],
             remappings=[
                 ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
