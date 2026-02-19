@@ -15,9 +15,5 @@ hts_anygrasp/hts_anygrasp/*.so
 hts_anygrasp/hts_anygrasp/license/
 hts_anygrasp/hts_anygrasp/log/
 
-*.png
-*.npz
-*.pcd
-
 realsense-ros/
 librealsense/
