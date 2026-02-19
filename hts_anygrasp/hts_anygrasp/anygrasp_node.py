@@ -122,12 +122,14 @@ class AnyGraspNode(Node):
 
         return points.astype(np.float32), colors.astype(np.float32)
 
-    def generate_pose_(self):
+    def generate_pose_(self, x, y, z, xrange, yrange, zrange):
         points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
 
         # filter according to z
         z_coords = points[:, 2]
-        mask = (z_coords > 0.03) & (z_coords < 0.2)
+        y_coords = points[:, 1]
+        x_coords = points[:, 0]
+        mask = (z_coords > 0.03) & (z_coords < 0.2) & (x_coords > x - xrange) & (x_coords < x + xrange) & (y_coords > y - yrange) & (y_coords < y + yrange)
         points = points[mask].astype(np.float32)
         colors = colors[mask].astype(np.float32)
 
@@ -183,7 +185,7 @@ class AnyGraspNode(Node):
 
         self.get_logger().info("Requested pose for object %d" % (request.id,))
 
-        grasp = self.generate_pose_()
+        grasp = self.generate_pose_(request.x, request.y, request.z, 0.3, 0.3, 0.3)
         self.get_logger().info(str(grasp))
 
         if grasp is None:
