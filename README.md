@@ -38,6 +38,10 @@ cp anygrasp_sdk/license_registration/lib_cxx_versions/lib_cxx.cpython-310-x86_64
 
 cd anygrasp_sdk && touch COLCON_IGNORE
 cd dependencies && git clone https://github.com/graspnet/graspnetAPI.git
+
+git clone https://github.com/realsenseai/librealsense.git
+git clone https://github.com/realsenseai/realsense-ros.git
+cd realsense-ros/realsense2_description && touch COLCON_IGNORE
 ```
 
 This repository contains a `.repos` file that helps you clone the required dependencies for Franka ROS 2.
