@@ -1,33 +1,53 @@
+import os
+import time
+import argparse
+import numpy as np
+import open3d as o3d
+
+from cv_bridge import CvBridge
+from ament_index_python.packages import get_package_prefix
+from scipy.spatial.transform import Rotation
+
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.node import Node
 from hts_msgs.srv import RequestGrasp, DisplayCloud
 from sensor_msgs.msg import PointCloud2, Image
-import sensor_msgs_py.point_cloud2 as pc2
 from geometry_msgs.msg import Pose
-import os
-import time
-
-import argparse
-import numpy as np
-import open3d as o3d
-import cv2
-from cv_bridge import CvBridge
-from ament_index_python.packages import get_package_prefix
-from graspnetAPI import GraspGroup
-from scipy.spatial.transform import Rotation
 
 pkg_prefix = get_package_prefix("hts_anygrasp")
 lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
 os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
 checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
 
+from graspnetAPI import GraspGroup
+from gsnet import AnyGrasp
+
 qos = QoSProfile(depth=10)
 qos.reliability = ReliabilityPolicy.BEST_EFFORT
 
-from gsnet import AnyGrasp
-
 class AnyGraspNode(Node):
+    Z_COORDS_MIN = 0.001
+    Z_COORDS_MAX = 0.5
+    X_GRASP_MIN = -1.0
+    X_GRASP_MAX = 1.0
+    Y_GRASP_MIN = -1.0
+    Y_GRASP_MAX = 1.0
+    Z_GRASP_MIN = 0.03
+    Z_GRASP_MAX = 0.5
+
+    APPLY_OBJECT_MASK = True
+    APPLY_COLLISIONS = True
+    DENSE_GRASP = True
+
+    MIN_GRASP_WIDTH = 0.01
+    MAX_GRASP_PITCH_ROLL_DEG = 5
+
+    NMS_TRANSLATION_THRESH = 0.005
+    NMS_ANGLE_THRESH_DEG = 5
+
+    MASK_RADIUS = 0.05
+
     def __init__(self, args):
         super().__init__('hts_anygrasp')
         self.depth_pointcloud_: PointCloud2 = None
@@ -153,7 +173,7 @@ class AnyGraspNode(Node):
         z_coords = points[:, 2]
         y_coords = points[:, 1]
         x_coords = points[:, 0]
-        mask = (z_coords > 0.001) & (z_coords < 0.3) & ((x - x_coords)**2 + (y - y_coords)**2 < radius**2)
+        mask = (z_coords > AnyGraspNode.Z_COORDS_MIN) & (z_coords < AnyGraspNode.Z_COORDS_MAX) & ((x - x_coords)**2 + (y - y_coords)**2 < radius**2)
         
         cropped_points = points[mask].astype(np.float32)
         cropped_colors = colors[mask].astype(np.float32)
@@ -169,17 +189,17 @@ class AnyGraspNode(Node):
         AnyGraspNode.display_pointcloud(uncropped_points, uncropped_colors)
 
         # set workspace to filter output grasps
-        xmin, xmax = -1, 1
-        ymin, ymax = -1, 1
-        zmin, zmax = 0.03, 0.5
+        xmin, xmax = AnyGraspNode.X_GRASP_MIN, AnyGraspNode.X_GRASP_MAX
+        ymin, ymax = AnyGraspNode.Y_GRASP_MIN, AnyGraspNode.Y_GRASP_MAX
+        zmin, zmax = AnyGraspNode.Z_GRASP_MIN, AnyGraspNode.Z_GRASP_MAX
         lims = [xmin, xmax, ymin, ymax, zmin, zmax]
 
         gg, cloud = self.anygrasp.get_grasp(
             cropped_points, cropped_colors, 
             lims=lims, 
-            apply_object_mask=True, 
-            dense_grasp=True, 
-            collision_detection=True
+            apply_object_mask=AnyGraspNode.APPLY_OBJECT_MASK, 
+            dense_grasp=AnyGraspNode.DENSE_GRASP, 
+            collision_detection=AnyGraspNode.APPLY_COLLISIONS
             )
 
         if gg is None or len(gg) == 0:
@@ -189,18 +209,21 @@ class AnyGraspNode(Node):
         exclude_grasps = []
         for ind, grasp in enumerate(gg):
             # exclude grasps by width
-            if grasp.width < 0.01:
+            if grasp.width < AnyGraspNode.MIN_GRASP_WIDTH:
                 exclude_grasps.append(ind)
                 continue
 
             # exclude grasps by orientation
             roll, pitch, yaw = Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)
-            if abs(pitch) > 5 and abs(pitch - 180) > 5:
+            if abs(pitch) > AnyGraspNode.MAX_GRASP_PITCH_ROLL_DEG and abs(pitch - 180) > AnyGraspNode.MAX_GRASP_PITCH_ROLL_DEG:
                 exclude_grasps.append(ind)
                 continue
-            if abs(roll) > 5 and abs(roll - 180) > 5:
+            if abs(roll) > AnyGraspNode.MAX_GRASP_PITCH_ROLL_DEG and abs(roll - 180) > AnyGraspNode.MAX_GRASP_PITCH_ROLL_DEG:
                 exclude_grasps.append(ind)
                 continue
+
+            if abs(yaw) > 90:
+                exclude_grasps.append(ind)
 
         gg.remove(exclude_grasps)
 
@@ -210,8 +233,8 @@ class AnyGraspNode(Node):
 
         # perform non-maximum suppression
         gg = gg.nms(
-            translation_thresh = 0.005,
-            rotation_thresh = 5 / 180 * np.pi
+            translation_thresh = AnyGraspNode.NMS_TRANSLATION_THRESH,
+            rotation_thresh = AnyGraspNode.NMS_ANGLE_THRESH_DEG / 180 * np.pi
         ).sort_by_score()
 
         # visualization
@@ -232,7 +255,7 @@ class AnyGraspNode(Node):
         self.get_logger().info("Requested pose for object %d" % (request.id,))
         self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
 
-        grasp = self.generate_pose_(request.x, request.y, request.z, 0.05)
+        grasp = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
         self.get_logger().info(str(grasp))
 
         if grasp is None:
@@ -243,16 +266,25 @@ class AnyGraspNode(Node):
         self.get_logger().info("Identified grasp is " + str(grasp))
         self.get_logger().info("Pose orientation is " + str(Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)))
 
-        quaternion = Rotation.from_matrix(grasp.rotation_matrix).as_quat()
+        grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
+        offset_rotation = Rotation.from_euler('y', 90, degrees=True)
+        final_rotation = grasp_rotation * offset_rotation
+        final_quaternion = final_rotation.as_quat()
+        print(final_quaternion)
+
+        offset_translation = np.array([0, 0, -0.12])
+        grasp.translation[2] += 0.1
+        final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
+        print(final_translation)
 
         pose = Pose()
-        pose.position.x = grasp.translation[0]
-        pose.position.y = grasp.translation[1]
-        pose.position.z = grasp.translation[2]
-        pose.orientation.x = quaternion[0]
-        pose.orientation.y = quaternion[1]
-        pose.orientation.z = quaternion[2]
-        pose.orientation.w = quaternion[3]
+        pose.position.x = final_translation[0]
+        pose.position.y = final_translation[1]
+        pose.position.z = final_translation[2]
+        pose.orientation.x = final_quaternion[0]
+        pose.orientation.y = final_quaternion[1]
+        pose.orientation.z = final_quaternion[2]
+        pose.orientation.w = final_quaternion[3]
 
         response.grasp_pose = pose
         response.success = True
@@ -278,17 +310,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-def filter_by_orientation(gg):
-    exclude_grasps = []
-    for ind, grasp in enumerate(gg):
-        # exclude grasps by width
-        if grasp.width < 0.01:
-            exclude_grasps.append(ind)
-            continue
-        # exclude grasps by orientation
-        roll, pitch, yaw = Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)
-        if (abs(pitch) > 20 and abs(pitch - 180) > 20) or (abs(roll) > 20 and abs(roll - 180) > 20):
-            exclude_grasps.append(ind)
-            continue
-    gg.remove(exclude_grasps)

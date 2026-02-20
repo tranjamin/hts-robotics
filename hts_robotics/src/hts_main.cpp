@@ -167,7 +167,7 @@ public:
     geometry_msgs::msg::Pose pose_ground;
 
     primitive_ground.type = primitive_ground.BOX;
-    primitive_ground.dimensions = {10, 10, 0.25};
+    primitive_ground.dimensions = {3, 3, 0.5};
 
     pose_ground.orientation.w = 1.0;
     pose_ground.position.x = 0;
@@ -338,7 +338,7 @@ private:
 
       // get the grasp for the target object
       auto grasp_request = std::make_shared<hts_msgs::srv::RequestGrasp::Request>();
-      auto object_id = goal_handle->get_goal()->object_id;
+      int object_id = goal_handle->get_goal()->object_id;
       auto object_name = "target_" + std::to_string(object_id);
 
       auto map = planning_scene_interface_->getObjectPoses({object_name});
@@ -391,6 +391,9 @@ private:
       pickup_goal.oz = grasp_pose.orientation.z;
       pickup_goal.ow = grasp_pose.orientation.w;
 
+      auto first_open_goal = CustomActionOpen::Goal();
+      first_open_goal.target_id = object_id;
+
       auto open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
       open_send_goal_options.result_callback =
         [this, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
@@ -408,7 +411,7 @@ private:
 
       auto move_send_goal_options = rclcpp_action::Client<CustomActionMove>::SendGoalOptions();
       move_send_goal_options.result_callback =
-        [this, open_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &r) {
+        [this, open_send_goal_options, goal_handle, result, progress, object_id](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &r) {
           if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
             RCLCPP_ERROR(this->get_logger(), "MoveIt failed to move with code: %d", (int)r.code);
             result->success = false;
@@ -420,6 +423,7 @@ private:
             goal_handle->publish_feedback(progress);
 
             auto open_goal = CustomActionOpen::Goal();
+            open_goal.target_id = object_id;
             open_client_->async_send_goal(open_goal, open_send_goal_options);
           }
         };
@@ -448,7 +452,7 @@ private:
 
       auto pickup_send_goal_options = rclcpp_action::Client<CustomActionPickup>::SendGoalOptions();
       pickup_send_goal_options.result_callback =
-        [this, close_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &r) {
+        [this, close_send_goal_options, goal_handle, result, progress, object_id](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &r) {
           if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
             RCLCPP_ERROR(this->get_logger(), "Movet failed to move to target with code: %d", (int)r.code);
             result->success = false;
@@ -460,12 +464,30 @@ private:
             goal_handle->publish_feedback(progress);
 
             auto close_goal = CustomActionClose::Goal();
+            close_goal.target_id = object_id;
             close_client_->async_send_goal(close_goal, close_send_goal_options);
           }
         };
 
+      auto first_open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
+      first_open_send_goal_options.result_callback =
+        [this, pickup_send_goal_options, goal_handle, result, progress, pickup_goal](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
+          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+            RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
+            result->success = false;
+            result->message = "Gripper failed to open";
+            goal_handle->abort(result);
+          } else {
+            RCLCPP_INFO(this->get_logger(), "Gripper opened on target");
+            progress->progress = "Gripper opened on target";
+            goal_handle->publish_feedback(progress);
+            pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
+          }
+        };    
+
       // sends action
-      pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
+      open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
+      
     }).detach();
   }
 
@@ -489,13 +511,14 @@ private:
   ) {
     std::thread([this, goal_handle]() {
       gripper_interface_->setNamedTarget("close");
+      auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
 
       // disable collisions
       planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
       auto &acm = scene->getAllowedCollisionMatrixNonConst();
-      acm.setEntry("target", "fr3_hand", true);
-      acm.setEntry("target", "fr3_leftfinger", true);
-      acm.setEntry("target", "fr3_rightfinger", true);
+      acm.setEntry(object_name, "fr3_hand", true);
+      acm.setEntry(object_name, "fr3_leftfinger", true);
+      acm.setEntry(object_name, "fr3_rightfinger", true);
       moveit_msgs::msg::PlanningScene ps_msg;
       ps_msg.is_diff = true;
       scene->getPlanningSceneMsg(ps_msg);
@@ -505,7 +528,7 @@ private:
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       // attach object
-      gripper_interface_->attachObject("target");
+      gripper_interface_->attachObject(object_name);
 
       // log results
       auto result = std::make_shared<CustomActionClose::Result>();
@@ -541,10 +564,12 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
+
       gripper_interface_->setNamedTarget("open");
 
       // detach object
-      gripper_interface_->detachObject("target");
+      gripper_interface_->detachObject(object_name);
 
       // move
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
@@ -552,9 +577,9 @@ private:
       // enable collisions
       planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
       auto &acm = scene->getAllowedCollisionMatrixNonConst();
-      acm.setEntry("target", "fr3_hand", false);
-      acm.setEntry("target", "fr3_leftfinger", false);
-      acm.setEntry("target", "fr3_rightfinger", false);
+      acm.setEntry(object_name, "fr3_hand", false);
+      acm.setEntry(object_name, "fr3_leftfinger", false);
+      acm.setEntry(object_name, "fr3_rightfinger", false);
       moveit_msgs::msg::PlanningScene ps_msg;
       ps_msg.is_diff = true;
       scene->getPlanningSceneMsg(ps_msg);
@@ -594,6 +619,7 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      RCLCPP_INFO(this->get_logger(), "A");
       auto goal = goal_handle->get_goal();
 
       geometry_msgs::msg::Pose target;
@@ -604,10 +630,10 @@ private:
       tf2::Quaternion q;
       q.setRPY(goal->ox, goal->oy, goal->oz);
 
-      target.orientation.x = q.x();
-      target.orientation.y = q.y();
-      target.orientation.z = q.z();
-      target.orientation.w = q.w();
+      target.orientation.x = goal->ox;
+      target.orientation.y = goal->oy;
+      target.orientation.z = goal->oz;
+      target.orientation.w = goal->ow;
 
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
       RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
@@ -771,7 +797,7 @@ private:
           gazebo_pose.orientation.y == target_moveit.orientation.y &&
           gazebo_pose.orientation.z == target_moveit.orientation.z &&
           gazebo_pose.orientation.w == target_moveit.orientation.w
-        ) return;
+        ) continue;
 
 
         // move target object
@@ -791,8 +817,6 @@ private:
         co_target.operation = co_target.MOVE;
         co_target.pose = pose_target;
         planning_scene_interface_->applyCollisionObject(co_target);
-
-        return;
       }
     }
 
