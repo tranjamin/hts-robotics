@@ -17,7 +17,6 @@
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
-#include "hts_robotics/action/move_to_point.hpp"
 #include "hts_robotics/action/move_target.hpp"
 #include "hts_robotics/action/pick_up_target.hpp"
 #include "hts_robotics/action/gripper_open.hpp"
@@ -49,7 +48,6 @@ class hts_node : public rclcpp::Node {
 public:
 
   // type definitions
-  using CustomActionPoint = hts_robotics::action::MoveToPoint;
   using CustomActionPickup = hts_robotics::action::PickUpTarget;
   using CustomActionMove = hts_robotics::action::MoveTarget;
   using StampedPoint = geometry_msgs::msg::PointStamped;
@@ -332,6 +330,8 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
   ) {
     std::thread([this, goal_handle] () {
+      RCLCPP_INFO(this->get_logger(), "TESTING");
+      
       // the result and feedback objects
       auto result = std::make_shared<CustomActionGraspObject::Result>();
       auto progress = std::make_shared<CustomActionGraspObject::Feedback>();
@@ -341,13 +341,14 @@ private:
       auto object_id = goal_handle->get_goal()->object_id;
       auto object_name = "target_" + std::to_string(object_id);
 
-      auto map = planning_scene_interface_->getObjectPoses(object_name);
+      auto map = planning_scene_interface_->getObjectPoses({object_name});
       if (map.empty()) {
+        RCLCPP_ERROR(this->get_logger(), "Could not find object in planning scene");
         return;
       }
       geometry_msgs::msg::Pose target_moveit = map.at(object_name);
 
-      grasp_request->object_id = object_id;
+      grasp_request->id = object_id;
       grasp_request->x = target_moveit.position.x;
       grasp_request->y = target_moveit.position.y;
       grasp_request->z = target_moveit.position.z;
