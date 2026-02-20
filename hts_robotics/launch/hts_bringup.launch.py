@@ -466,13 +466,31 @@ def generate_launch_description():
                 'sensor_model/min_range': 0.05,
                 'sensor_model/inf_is_valid': True,
                 'sensor_model/z_hit': 0.9,
-                'sensor_model/z_rand': 0.01,
-                'resolution': 0.001,              # voxel size in meters
+                'sensor_model/z_rand': 0.03,
+                'resolution': 0.005,              # voxel size in meters
                 'use_sim_time': True,
-                'filter_ground': True,
-                'ground_filter/distance': 0.002,
-                'pointcloud_max_z': 0.5,
-                'pointcloud_min_z': 0.002,
+                # 'filter_ground': True,
+                # 'ground_filter/distance': 0.05,
+                # 'ground_filter/plane_distance': 0.07,
+                # 'pointcloud_max_z': 0.5,
+                # 'pointcloud_min_z': 1.0,
+
+                'base_frame_id': 'world',
+                # 'occupancy_min_z': 0.01,
+                'occupancy_max_z': 0.5,
+                'filter_ground_plane': True,
+                'filter_speckles': True,
+                # 'ground_filter.angle':
+                'ground_filter.distance': 0.01,
+                'ground_filter.plane_distance': 0.01,
+                # 'latch'
+                # 'max_depth'
+                # 'sensor_model.hit': 0.9,
+                # 'sensor_model.miss': 0.03,
+                # 'sensor_model.max': 
+                # 'sensor_model.max_range'
+                # 'sensor_model.min'
+
             }],
             remappings=[
                 ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic

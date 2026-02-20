@@ -6,6 +6,7 @@ from sensor_msgs.msg import PointCloud2, Image
 import sensor_msgs_py.point_cloud2 as pc2
 from geometry_msgs.msg import Pose
 import os
+import time
 
 import argparse
 import numpy as np
@@ -39,14 +40,39 @@ class AnyGraspNode(Node):
         self.cfgs = args
         self.bridge = CvBridge()
 
+        self.NORGB = True
         # self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/camera_sim/points", self.pointcloud_callback_, 1)
         self.pointcloud_listener_ = self.create_subscription(PointCloud2, "/octomap_point_cloud_centers", self.pointcloud_callback_, qos)
-        self.depth_listener_ = self.create_subscription(Image, "/camera/camera/aligned_depth_to_color/image_raw", self.depth_callback_, 1)
-        self.rgb_listener_ = self.create_subscription(Image, "/camera/camera/color/image_raw", self.rgb_callback_, 1)
         self.grasp_service_ = self.create_service(RequestGrasp, 'request_grasp', self.grasp_callback_)
         self.display_service_ = self.create_service(DisplayCloud, 'display_cloud', self.display_callback_)
 
         self.get_logger().info("Started AnyGrasp Node")
+
+    def display_grasps(gg, cloud, only_first=False, origin_position=[0,0,0]):
+        trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+        cloud.transform(trans_mat)
+        grippers = gg.to_open3d_geometry_list()
+        for gripper in grippers:
+            gripper.transform(trans_mat)
+        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+            size=0.1,      # length of the axes
+            origin=origin_position
+        )
+        if not only_first:
+            o3d.visualization.draw_geometries([*grippers, cloud, origin_frame])
+        else:
+            o3d.visualization.draw_geometries([grippers[0], cloud, origin_frame])
+
+    def display_pointcloud(points, colors, save=False, filename=None, origin_position=[0,0,0]):
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors) 
+        if save:
+            now = int(time.time())
+            o3d.io.write_point_cloud(f"/ros2_ws/src/{filename}_{now}.pcd", pcd, write_ascii=True)
+            np.savez(f"/ros2_ws/src/{filename}_{now}.npz", points=points, colors=colors)
+        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=origin_position)
+        o3d.visualization.draw_geometries([pcd, origin_frame])
 
     def pointcloud_callback_(self, msg):
         self.depth_pointcloud_ = msg
@@ -57,26 +83,19 @@ class AnyGraspNode(Node):
         if self.depth_pointcloud_ is None:
             self.get_logger().info("Found no points")
 
-        points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+        if self.NORGB:
+            points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+        else:
+            points, colors = self.fast_pc2_to_numpy(self.depth_pointcloud_)
 
         if points.shape[0] == 0:
             self.get_logger().info("No points found")
             return response
 
         # Open3D visualization
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        o3d.visualization.draw_geometries([pcd])
-
-        self.get_logger().info("done")
+        AnyGraspNode.display_pointcloud(points, colors)
 
         return response
-
-    def depth_callback_(self, msg):
-        self.depth_image_ = msg
-
-    def rgb_callback_(self, msg):
-        self.rgb_image_ = msg
 
     def fast_norgb_pc2_to_numpy(self, msg):
         # structured dtype matching your fields
@@ -122,60 +141,87 @@ class AnyGraspNode(Node):
 
         return points.astype(np.float32), colors.astype(np.float32)
 
-    def generate_pose_(self, x, y, z, xrange, yrange, zrange):
-        points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+    def generate_pose_(self, x, y, z, radius):
+        if self.NORGB:
+            points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+        else:
+            points, colors = self.fast_pc2_to_numpy(self.depth_pointcloud_)
+
+        AnyGraspNode.display_pointcloud(points, colors, save=True, filename="full_cloud")
 
         # filter according to z
         z_coords = points[:, 2]
         y_coords = points[:, 1]
         x_coords = points[:, 0]
-        mask = (z_coords > 0.03) & (z_coords < 0.2) & (x_coords > x - xrange) & (x_coords < x + xrange) & (y_coords > y - yrange) & (y_coords < y + yrange)
-        points = points[mask].astype(np.float32)
-        colors = colors[mask].astype(np.float32)
+        mask = (z_coords > 0.001) & (z_coords < 0.3) & ((x - x_coords)**2 + (y - y_coords)**2 < radius**2)
+        
+        cropped_points = points[mask].astype(np.float32)
+        cropped_colors = colors[mask].astype(np.float32)
+        uncropped_points = points[~mask].astype(np.float32)
+        uncropped_colors = colors[~mask].astype(np.float32)
 
-        self.get_logger().info("Finished converting pointcloud")
+        if not cropped_points.shape[0]:
+            self.get_logger().info("Cropped pointcloud contains no points")
+            return None
 
-        np.savez("/ros2_ws/src/cloud.npz", points=points, colors=colors)
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(colors) 
-        o3d.io.write_point_cloud("/ros2_ws/src/cloud.pcd", pcd, write_ascii=True)
-
-        # depth_img = self.bridge.imgmsg_to_cv2(self.depth_image_, desired_encoding='32FC1')
-        # rgb_img = self.bridge.imgmsg_to_cv2(self.rgb_image_, desired_encoding='bgr8')
-
-        # if self.cfgs.debug:
-        #     cv2.imwrite("/ros2_ws/src/Depth Image.png", depth_img / depth_img.max() * 255)
-        #     cv2.imwrite("/ros2_ws/src/RGB Image.png", rgb_img)
+        # show cropped and uncropped pointclouds
+        AnyGraspNode.display_pointcloud(cropped_points, cropped_colors)
+        AnyGraspNode.display_pointcloud(uncropped_points, uncropped_colors)
 
         # set workspace to filter output grasps
-        xmin, xmax = -2, 2
-        ymin, ymax = -2, 2
-        zmin, zmax = 0.03, 0.2
+        xmin, xmax = -1, 1
+        ymin, ymax = -1, 1
+        zmin, zmax = 0.03, 0.5
         lims = [xmin, xmax, ymin, ymax, zmin, zmax]
 
-        gg, cloud = self.anygrasp.get_grasp(points, colors, lims=lims, apply_object_mask=True, dense_grasp=False, collision_detection=True)
+        gg, cloud = self.anygrasp.get_grasp(
+            cropped_points, cropped_colors, 
+            lims=lims, 
+            apply_object_mask=True, 
+            dense_grasp=True, 
+            collision_detection=True
+            )
 
         if gg is None or len(gg) == 0:
             self.get_logger().info('No Grasp detected after collision detection!')
             return None
+        
+        exclude_grasps = []
+        for ind, grasp in enumerate(gg):
+            # exclude grasps by width
+            if grasp.width < 0.01:
+                exclude_grasps.append(ind)
+                continue
 
-        gg = gg.nms().sort_by_score()
-        gg_pick = gg[0:20]
-        self.get_logger().info(str(gg_pick.scores))
-        self.get_logger().info('grasp score:' + str(gg_pick[0].score))
+            # exclude grasps by orientation
+            roll, pitch, yaw = Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)
+            if abs(pitch) > 5 and abs(pitch - 180) > 5:
+                exclude_grasps.append(ind)
+                continue
+            if abs(roll) > 5 and abs(roll - 180) > 5:
+                exclude_grasps.append(ind)
+                continue
+
+        gg.remove(exclude_grasps)
+
+        if len(gg) == 0:
+            self.get_logger().info('No Grasps obtained after orientation filtering performed')
+            return
+
+        # perform non-maximum suppression
+        gg = gg.nms(
+            translation_thresh = 0.005,
+            rotation_thresh = 5 / 180 * np.pi
+        ).sort_by_score()
 
         # visualization
         if self.cfgs.debug:
-            trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,-1,0],[0,0,0,1]])
-            cloud.transform(trans_mat)
-            grippers = gg.to_open3d_geometry_list()
-            for gripper in grippers:
-                gripper.transform(trans_mat)
-            o3d.visualization.draw_geometries([*grippers, cloud])
-            o3d.visualization.draw_geometries([grippers[0], cloud])
+            AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z])
+            AnyGraspNode.display_grasps(gg, cloud, only_first=True, origin_position=[x,y,z])
 
-        return gg_pick[0]
+        self.get_logger().info(str(gg.scores))
+        self.get_logger().info('grasp score:' + str(gg[0].score))            
+        return gg[0]
 
     def grasp_callback_(self, request, response):
         if self.depth_pointcloud_ is None:
@@ -184,14 +230,18 @@ class AnyGraspNode(Node):
             return response
 
         self.get_logger().info("Requested pose for object %d" % (request.id,))
+        self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
 
-        grasp = self.generate_pose_(request.x, request.y, request.z, 0.3, 0.3, 0.3)
+        grasp = self.generate_pose_(request.x, request.y, request.z, 0.05)
         self.get_logger().info(str(grasp))
 
         if grasp is None:
             self.get_logger().info("Grasp Failed")
             response.success = False
             return response
+
+        self.get_logger().info("Identified grasp is " + str(grasp))
+        self.get_logger().info("Pose orientation is " + str(Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)))
 
         quaternion = Rotation.from_matrix(grasp.rotation_matrix).as_quat()
 
@@ -228,3 +278,17 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+def filter_by_orientation(gg):
+    exclude_grasps = []
+    for ind, grasp in enumerate(gg):
+        # exclude grasps by width
+        if grasp.width < 0.01:
+            exclude_grasps.append(ind)
+            continue
+        # exclude grasps by orientation
+        roll, pitch, yaw = Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)
+        if (abs(pitch) > 20 and abs(pitch - 180) > 20) or (abs(roll) > 20 and abs(roll - 180) > 20):
+            exclude_grasps.append(ind)
+            continue
+    gg.remove(exclude_grasps)
