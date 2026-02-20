@@ -1,1 +1,1 @@
-ros2 action send_goal /gripper_close hts_robotics/action/GripperClose "{}"
+ros2 action send_goal /gripper_close hts_robotics/action/GripperClose "{target_id: $1}"
