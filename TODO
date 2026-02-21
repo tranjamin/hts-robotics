@@ -15,3 +15,4 @@
 - re-enable orientation constraints and figure out how to make them robust
 - investigate inefficiencies in pathing
 - filter out robot geometry in pointcloud
+- increase speed of gazebo arm
