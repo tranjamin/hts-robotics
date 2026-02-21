@@ -28,5 +28,5 @@ object_1:
   Y: 0.0
   primitive_type: CYLINDER # or SPHERE, CYLINDER, CONE
   primitive_dims:
-    radius: 0.035
+    radius: 0.03
     height: 0.1

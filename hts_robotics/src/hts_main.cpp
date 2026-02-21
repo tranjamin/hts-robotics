@@ -406,6 +406,9 @@ private:
             RCLCPP_INFO(this->get_logger(), "Gripper opened on target");
             progress->progress = "Gripper opened on target";
             goal_handle->publish_feedback(progress);
+            result->success = true;
+            result->message = "Finished execution";
+            goal_handle->succeed(result);
           }
         };    
 
@@ -495,7 +498,7 @@ private:
   rclcpp_action::GoalResponse handle_goal_close_(
     const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionClose::Goal> goal
   ) {
-    RCLCPP_INFO(this->get_logger(), "Received Gripper Close Request");
+    RCLCPP_INFO(this->get_logger(), "Received Gripper Close Request on Object %d", (int)goal->target_id);
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
   }
 
@@ -524,6 +527,11 @@ private:
       scene->getPlanningSceneMsg(ps_msg);
       planning_scene_interface_->applyPlanningScene(ps_msg);
 
+      // planning_scene_monitor_->triggerSceneUpdateEvent(
+      //   planning_scene_monitor::PlanningSceneMonitor::UPDATE_SCENE
+      // );
+      // rclcpp::sleep_for(std::chrono::milliseconds(100));
+
       // move
       bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
@@ -549,7 +557,7 @@ private:
   rclcpp_action::GoalResponse handle_goal_open_(
     const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionOpen::Goal> goal
   ) {
-    RCLCPP_INFO(this->get_logger(), "Received Gripper Open Request");
+    RCLCPP_INFO(this->get_logger(), "Received Gripper Open Request on Object %d", (int) goal->target_id);
     return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
   }
 
@@ -582,8 +590,10 @@ private:
       acm.setEntry(object_name, "fr3_rightfinger", false);
       moveit_msgs::msg::PlanningScene ps_msg;
       ps_msg.is_diff = true;
-      scene->getPlanningSceneMsg(ps_msg);
-      planning_scene_interface_->applyPlanningScene(ps_msg);
+
+      // scene->getPlanningSceneMsg(ps_msg);
+
+      // planning_scene_interface_->applyPlanningScene(ps_msg);
 
       // log results
       auto result = std::make_shared<CustomActionOpen::Result>();
@@ -711,7 +721,7 @@ private:
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
 
-      move_group_interface_->setPathConstraints(all_constraints);
+      // move_group_interface_->setPathConstraints(all_constraints);
       RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
 
       target.orientation.x = current_pose.pose.orientation.x;

@@ -26,6 +26,9 @@ from gsnet import AnyGrasp
 qos = QoSProfile(depth=10)
 qos.reliability = ReliabilityPolicy.BEST_EFFORT
 
+from_file = np.load("/ros2_ws/src/full_cloud_1771641840.npz")
+from_file_points = from_file['points']
+
 class AnyGraspNode(Node):
     Z_COORDS_MIN = 0.001
     Z_COORDS_MAX = 0.5
@@ -83,10 +86,11 @@ class AnyGraspNode(Node):
         else:
             o3d.visualization.draw_geometries([grippers[0], cloud, origin_frame])
 
-    def display_pointcloud(points, colors, save=False, filename=None, origin_position=[0,0,0]):
+    def display_pointcloud(points, colors=None, save=False, filename=None, origin_position=[0,0,0]):
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
-        pcd.colors = o3d.utility.Vector3dVector(colors) 
+        if colors is not None:
+            pcd.colors = o3d.utility.Vector3dVector(colors) 
         if save:
             now = int(time.time())
             o3d.io.write_point_cloud(f"/ros2_ws/src/{filename}_{now}.pcd", pcd, write_ascii=True)
@@ -164,10 +168,13 @@ class AnyGraspNode(Node):
     def generate_pose_(self, x, y, z, radius):
         if self.NORGB:
             points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+            AnyGraspNode.display_pointcloud(points, save=True, filename="full_cloud")
+            points = from_file_points
+            colors = np.zeros_like(points, dtype=np.float32)
         else:
             points, colors = self.fast_pc2_to_numpy(self.depth_pointcloud_)
+            AnyGraspNode.display_pointcloud(points, colors, save=True, filename="full_cloud")
 
-        AnyGraspNode.display_pointcloud(points, colors, save=True, filename="full_cloud")
 
         # filter according to z
         z_coords = points[:, 2]
@@ -185,8 +192,12 @@ class AnyGraspNode(Node):
             return None
 
         # show cropped and uncropped pointclouds
-        AnyGraspNode.display_pointcloud(cropped_points, cropped_colors)
-        AnyGraspNode.display_pointcloud(uncropped_points, uncropped_colors)
+        if self.NORGB:
+            AnyGraspNode.display_pointcloud(cropped_points)
+            AnyGraspNode.display_pointcloud(uncropped_points)
+        else:
+            AnyGraspNode.display_pointcloud(cropped_points, cropped_colors)
+            AnyGraspNode.display_pointcloud(uncropped_points, uncropped_colors)
 
         # set workspace to filter output grasps
         xmin, xmax = AnyGraspNode.X_GRASP_MIN, AnyGraspNode.X_GRASP_MAX
@@ -272,8 +283,13 @@ class AnyGraspNode(Node):
         final_quaternion = final_rotation.as_quat()
         print(final_quaternion)
 
-        offset_translation = np.array([0, 0, -0.12])
-        grasp.translation[2] += 0.1
+        # local axes:
+            # z points in the direction of grasp attack
+            # y is perpendicular to z in the horizontal plane
+            # x points vertical
+
+        offset_translation = np.array([0, 0, -0.14])
+        grasp.translation[2] += 0.02
         final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
         print(final_translation)
 
