@@ -45,6 +45,21 @@ RUN apt-get update && \
         libopenblas-dev \
         gcc-11 \
         g++-11 \
+        libusb-1.0-0-dev \
+        libudev-dev \
+        pkg-config \
+        libglfw3-dev \
+        libgl1-mesa-dev \
+        cmake \
+        freeglut3-dev \
+        libx11-dev \
+        libxrandr-dev \
+        libxinerama-dev \
+        libxcursor-dev \
+        libxi-dev \
+        libgl1-mesa-dev \
+        mesa-common-dev \
+        libgl1-mesa-dev mesa-common-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -84,8 +99,7 @@ RUN apt-get update \
         ros-humble-turtlesim \
         ros-humble-rqt \
         ros-humble-rqt-graph \
-        ros-humble-realsense2-camera \
-        ros-humble-realsense2-description \
+        ros-humble-octomap-server \
         python3-rosdep \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -172,11 +186,6 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rosdep install --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
-
-RUN sudo apt-get update && sudo apt-get install -y \
-    libusb-1.0-0-dev libudev-dev pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev cmake \
-    freeglut3-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev mesa-common-dev \
-    libgl1-mesa-dev mesa-common-dev
 
 RUN rm -rf /home/$USERNAME/.ros \
     && rm -rf src \

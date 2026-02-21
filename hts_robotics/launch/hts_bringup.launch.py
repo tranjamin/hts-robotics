@@ -402,10 +402,6 @@ def generate_launch_description():
         package="ros_gz_bridge",
         executable="parameter_bridge",
         arguments=[
-            # "/camera/color@sensor_msgs/msg/Image@gz.msgs.Image",
-            # "/camera/camera/depth/color/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloud2",
-            # "/camera/color/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
-
             "/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock",
             "/ros_gz/model/pose@ros_gz_interfaces/msg/Entity@gz.msgs.Entity",
             "/world/empty/pose/info@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
@@ -433,7 +429,9 @@ def generate_launch_description():
         package='hts_anygrasp',
         executable='anygrasp_node',
         output='screen',
-        parameters=[{'param1': 'value1'}]
+        parameters=[
+            load_yaml('hts_robotics', 'config/anygrasp_params.yaml')
+        ]
     )
     
     all_launch_arguments = [x.get('launch_argument') for (_, x) in launch_params.items()]
