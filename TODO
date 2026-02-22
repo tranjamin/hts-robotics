@@ -1,18 +1,12 @@
-- encapsulate all options for anygasp node into config file
-    - anygrasp network options
-    - additional offset and rotation options
-    - filtering options
-    - load from file option
-    - debug options to show pointclouds
-- make grasping more robust
-    - option for doing a 180 rotation around local z to allow the gripper to reach further down
-    - move initially to an offset pose, either above object or retracted from object
-    - filtering method to select more efficient poses - possibly measure constrainness of the arm
-- hts_main.cpp
-    - figure out why applyPlanningScene() works on gripper close but not gripper open
-    - move all messages into hts_msgs
-- add colour to pointcloud
-- re-enable orientation constraints and figure out how to make them robust
-- investigate inefficiencies in pathing
-- filter out robot geometry in pointcloud
-- increase speed of gazebo arm
+[-] make grasping more robust
+    [-] option for doing a 180 rotation around local z to allow the gripper to reach further down
+    [-] move initially to an offset pose, either above object or retracted from object
+    [-] filtering method to select more efficient poses - possibly measure constrainness of the arm
+[-] hts_main.cpp
+    [-] figure out why applyPlanningScene() works on gripper close but not gripper open
+    [-] move all messages into hts_msgs
+[-] add colour to pointcloud
+[-] re-enable orientation constraints and figure out how to make them robust
+[-] investigate inefficiencies in pathing
+[-] filter out robot geometry in pointcloud
+[-] increase speed of gazebo arm

@@ -12,18 +12,16 @@
       </inertial>
       <collision name="collision">
         <geometry>
-            <cylinder>
+            <sphere>
                 <radius>0.03</radius>
-                <length>0.1</length>
-            </cylinder>
+            </sphere>
         </geometry>
       </collision>
       <visual name="visual">
         <geometry>
-            <cylinder>
+            <sphere>
                 <radius>0.03</radius>
-                <length>0.1</length>
-            </cylinder>
+            </sphere>
         </geometry>
       </visual>
     </link>

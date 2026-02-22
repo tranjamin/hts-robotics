@@ -1,6 +1,7 @@
 objects:
   - object_0
   - object_1
+  - object_2
 
 object_0:
   object_id: 0
@@ -30,3 +31,13 @@ object_1:
   primitive_dims:
     radius: 0.03
     height: 0.1
+
+object_2:
+  object_id: 2
+  geometry_file: "sphere.sdf"
+  x: 0.4
+  y: 0.2
+  z: 0.02
+  primitive_type: SPHERE
+  primitive_dims:
+    radius: 0.03

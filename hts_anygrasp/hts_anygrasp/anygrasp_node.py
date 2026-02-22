@@ -46,7 +46,7 @@ class AnyGraspNode(Node):
         self.declare_parameter('pointcloud_file', '')
         self.declare_parameter('mask_radius', 0.05)
         self.declare_parameter('no_rgb', True)
-        self.declare_parameter('pointcloud_topic', '/octomap_point_cloud_centres')
+        self.declare_parameter('pointcloud_topic', '/octomap_point_cloud_centers')
         self.declare_parameter('visualise', True)
         self.declare_parameter('max_gripper_width', 0.1)
         self.declare_parameter('gripper_height', 0.03)
@@ -108,6 +108,8 @@ class AnyGraspNode(Node):
         self.display_service_ = self.create_service(DisplayCloud, 'display_cloud', self.display_callback_)
 
         self.get_logger().info("Started AnyGrasp Node")
+        self.get_logger().info(str(self.POINTCLOUD_TOPIC))
+        self.get_logger().info(str(self.POINTCLOUD_FROM_FILE))
 
     def display_grasps(gg, cloud, only_first=False, origin_position=[0,0,0]):
         trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
