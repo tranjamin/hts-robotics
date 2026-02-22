@@ -412,6 +412,9 @@ def generate_launch_description():
             "/camera_sim/image@sensor_msgs/msg/Image@gz.msgs.Image",
             "/camera_sim/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",
         ],
+        parameters = [
+            {'use_sim_time': USE_SIM_TIME}
+        ],
         output="screen",
     )
 
@@ -450,7 +453,10 @@ def generate_launch_description():
             "--frame-id", "camera_depth_frame",
             "--child-frame-id", "fr3/fr3_link7/custom_camera_rgbd"
             ],
-            output="screen"
+            parameters=[
+                { 'use_sim_time': True}
+            ],
+            # output="screen"
         ),
 
         Node(
@@ -459,41 +465,30 @@ def generate_launch_description():
             name="octomap_sim",
             output="screen",
             parameters=[{
-                'frame_id': 'world',             # global frame
-                'sensor_model/max_range': 0.5,   # max sensor range
-                'sensor_model/min_range': 0.05,
-                'sensor_model/inf_is_valid': True,
-                'sensor_model/z_hit': 0.9,
-                'sensor_model/z_rand': 0.03,
-                'resolution': 0.005,              # voxel size in meters
-                'use_sim_time': True,
-                # 'filter_ground': True,
-                # 'ground_filter/distance': 0.05,
-                # 'ground_filter/plane_distance': 0.07,
-                # 'pointcloud_max_z': 0.5,
-                # 'pointcloud_min_z': 1.0,
-
+                'frame_id': 'world',
                 'base_frame_id': 'world',
+
+                'resolution': 0.005,
+                'use_sim_time': True,
+
                 # 'occupancy_min_z': 0.01,
                 'occupancy_max_z': 0.5,
+
                 'filter_ground_plane': True,
                 'filter_speckles': True,
                 # 'ground_filter.angle':
                 'ground_filter.distance': 0.01,
                 'ground_filter.plane_distance': 0.01,
-                # 'latch'
-                # 'max_depth'
-                # 'sensor_model.hit': 0.9,
-                # 'sensor_model.miss': 0.03,
-                # 'sensor_model.max': 
-                # 'sensor_model.max_range'
-                # 'sensor_model.min'
 
+                'sensor_model.hit': 0.9,
+                'sensor_model.miss': 0.03,
+                'sensor_model.max_range': 1.0,
             }],
             remappings=[
                 ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
             ]
         ),
+
 
         TimerAction(
             period=5.0,
