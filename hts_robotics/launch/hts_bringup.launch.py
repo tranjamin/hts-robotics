@@ -116,6 +116,45 @@ def get_ompl_config():
     ompl_planning_pipeline_config['move_group'].update(ompl_planning_yaml)
     return ompl_planning_pipeline_config
 
+def get_chomp_config():
+    chomp_planning_pipeline_config = {
+        'move_group': {
+            'planning_plugin': 'chomp_interface/CHOMPPlanner',
+            'request_adapters': 'default_planner_request_adapters/AddTimeOptimalParameterization '
+                                'default_planner_request_adapters/ResolveConstraintFrames '
+                                'default_planner_request_adapters/FixWorkspaceBounds '
+                                'default_planner_request_adapters/FixStartStateBounds '
+                                'default_planner_request_adapters/FixStartStateCollision '
+                                'default_planner_request_adapters/FixStartStatePathConstraints',
+            'start_state_max_bounds_error': 0.1,
+        }
+    }
+    chomp_planning_yaml = load_yaml(
+    'hts_robotics', 'config/chomp_planning.yaml'
+    )
+    chomp_planning_pipeline_config['move_group'].update(chomp_planning_yaml)
+    return chomp_planning_pipeline_config
+
+def get_stomp_config():
+    stomp_planning_pipeline_config = {
+        'move_group': {
+            'planning_plugin': 'stomp_interface/STOMPPlanner',
+            'request_adapters': 'default_planner_request_adapters/AddTimeOptimalParameterization '
+                                'default_planner_request_adapters/ResolveConstraintFrames '
+                                'default_planner_request_adapters/FixWorkspaceBounds '
+                                'default_planner_request_adapters/FixStartStateBounds '
+                                'default_planner_request_adapters/FixStartStateCollision '
+                                'default_planner_request_adapters/FixStartStatePathConstraints',
+            'start_state_max_bounds_error': 0.1,
+        }
+    }
+    stomp_planning_yaml = load_yaml(
+    'hts_robotics', 'config/stomp_planning.yaml'
+    )
+    stomp_planning_pipeline_config['move_group'].update(stomp_planning_yaml)
+    return stomp_planning_pipeline_config
+
+
 def create_hts_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
@@ -153,6 +192,10 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
     ompl_planning_pipeline_config = get_ompl_config()
     trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
 
+    chomp_planning_pipeline_config = get_chomp_config()
+    stomp_planning_pipeline_config = get_stomp_config()
+    pipelines_config = load_yaml("hts_robotics", "config/pipelines.yaml")
+
     moveit_controllers = {
         'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
         'moveit_controller_manager': 'moveit_simple_controller_manager'
@@ -176,15 +219,22 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             robot_description,
             robot_description_semantic,
             robot_kinematics_yaml,
-            ompl_planning_pipeline_config,
+            # chomp_planning_pipeline_config,
+            pipelines_config,
             trajectory_config,
             moveit_controllers,
             planning_scene_monitor_parameters,
             trajectory_config,
+            load_yaml("franka_description", "robots/fr3/joint_limits.yaml"),
             {"use_sim_time": USE_SIM_TIME},
+            {
+                'trajectory_execution.allowed_execution_duration_scaling': 1.2,
+                'trajectory_execution.allowed_goal_duration_margin': 0.1,
+                'trajectory_execution.time_parameterization': 'iterative'
+            }
         ],
         arguments=[
-            '--ros-args', '--log-level', 'error'
+            '--ros-args', '--log-level', 'debug'
         ]
     )
 
@@ -199,6 +249,9 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
     ompl_planning_pipeline_config = get_ompl_config()
     rviz_full_config = get_rviz_config()
 
+    chomp_planning_pipeline_config = get_chomp_config()
+    stomp_planning_pipeline_config = get_stomp_config()
+
     rviz_node = Node(
         package='rviz2',
         executable='rviz2',
@@ -212,7 +265,7 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
         parameters=[
             robot_description,
             robot_description_semantic,
-            ompl_planning_pipeline_config,
+            chomp_planning_pipeline_config,
             robot_kinematics_yaml,
             {"use_sim_time": USE_SIM_TIME}
         ],
@@ -302,7 +355,7 @@ def generate_launch_description():
         launch_arguments={
             'gz_args': 'empty.sdf -r', 
             'ros_clock_publisher': 'false',
-            'ros_args': '--log-level warn',
+            'ros_args': '--log-level error',
             }.items(),
     )
 
@@ -312,7 +365,7 @@ def generate_launch_description():
         executable='create',
         namespace='',
         arguments=['-topic', '/robot_description'],
-        output='screen',
+        output='log',
     )
 
     object_spawns = []
@@ -335,7 +388,7 @@ def generate_launch_description():
                         '-Y', str(float(obj_params.get('yaw', 0))),
                         '-ros'
                     ],
-                    output='screen'
+                    output='log'
                 )
             )
 
@@ -344,21 +397,21 @@ def generate_launch_description():
         executable='spawner',
         namespace='',
         arguments=['joint_state_broadcaster'],
-        output='screen',
+        output='log',
     )
     arm_controller = Node(
         package='controller_manager',
         executable='spawner',
         namespace='',
         arguments=['fr3_arm_controller'],
-        output='screen',
+        output='log',
     )
     gripper_controller = Node(
         package='controller_manager',
         executable='spawner',
         namespace='',
         arguments=['gripper_position_controller'],
-        output='screen',
+        output='log',
     )
 
     # Get robot description
@@ -415,7 +468,7 @@ def generate_launch_description():
         parameters = [
             {'use_sim_time': USE_SIM_TIME}
         ],
-        output="screen",
+        output='log',
     )
 
     realsense_node = IncludeLaunchDescription(
@@ -456,14 +509,14 @@ def generate_launch_description():
             parameters=[
                 { 'use_sim_time': True}
             ],
-            # output="screen"
+            output="log"
         ),
 
         Node(
             package='octomap_server',
             executable='octomap_server_node',
             name="octomap_sim",
-            output="screen",
+            # output="screen",
             parameters=[{
                 'frame_id': 'world',
                 'base_frame_id': 'world',
