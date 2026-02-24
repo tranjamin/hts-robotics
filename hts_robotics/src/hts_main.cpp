@@ -22,6 +22,8 @@
 #include "hts_robotics/action/gripper_open.hpp"
 #include "hts_robotics/action/gripper_close.hpp"
 #include "hts_robotics/action/grasp_object.hpp"
+#include "hts_robotics/srv/disable_orientation_constraints.hpp"
+#include "hts_robotics/srv/enable_orientation_constraints.hpp"
 #include "hts_msgs/srv/request_grasp.hpp"
 
 // for using macros like s, ms, us
@@ -132,6 +134,17 @@ public:
     open_client_ = rclcpp_action::create_client<CustomActionOpen>(this, "gripper_open");
     close_client_ = rclcpp_action::create_client<CustomActionClose>(this, "gripper_close");
 
+    // constraints_service_ = rclcpp::create_service<hts_robotics::srv::EnableOrientationConstraints> (
+    //   "enable_constraints",
+    //   std::bind(&hts_node::handle_service, this, std::placeholders::_1, std::placeholders::_2)
+    // );
+
+    constraints_service_ = this->create_service<hts_robotics::srv::EnableOrientationConstraints>(
+      "enable_constraints",
+      std::bind(&hts_node::handle_service, this,
+            std::placeholders::_1, std::placeholders::_2)
+);
+
     RCLCPP_INFO(this->get_logger(), "Created Grasper Clients and Servers.");
 
     RCLCPP_INFO(this->get_logger(), "Finished constructing HTS Node.");
@@ -179,7 +192,7 @@ public:
     co_ground.primitives.push_back(primitive_ground);
     co_ground.primitive_poses.push_back(pose_ground);
     co_ground.operation = co_ground.ADD;
-    // planning_scene_interface_->applyCollisionObject(co_ground);
+    planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
     // Register the target objects as collision objects
@@ -311,6 +324,49 @@ private:
   rclcpp_action::Client<CustomActionMove>::SharedPtr move_client_;
   rclcpp_action::Client<CustomActionOpen>::SharedPtr open_client_;
   rclcpp_action::Client<CustomActionClose>::SharedPtr close_client_;
+
+  rclcpp::Service<hts_robotics::srv::EnableOrientationConstraints>::SharedPtr constraints_service_;
+
+  void handle_service(
+    const std::shared_ptr<hts_robotics::srv::EnableOrientationConstraints::Request> request,
+    std::shared_ptr<hts_robotics::srv::EnableOrientationConstraints::Response> response
+  ) {
+    RCLCPP_INFO(this->get_logger(), "BLAH");
+
+    // Apply orientation constraints
+      moveit_msgs::msg::OrientationConstraint orientation_constraint;
+      orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+      orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+
+      // auto current_pose = move_group_interface_->getCurrentPose();
+      // orientation_constraint.orientation = current_pose.pose.orientation;
+      // RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
+      //   current_pose.pose.orientation.x, current_pose.pose.orientation.y,
+      //   current_pose.pose.orientation.z, current_pose.pose.orientation.w
+      // );
+
+      geometry_msgs::msg::Quaternion desired_pose;
+      desired_pose.x = 0.0;
+      desired_pose.y = 0.0;
+      desired_pose.z = 0.0;
+      desired_pose.w = 1.0;
+      orientation_constraint.orientation = desired_pose;
+
+      orientation_constraint.absolute_x_axis_tolerance = 0.3;
+      orientation_constraint.absolute_y_axis_tolerance = 0.3;
+      orientation_constraint.absolute_z_axis_tolerance = 3.142;
+      orientation_constraint.weight = 1.0;
+      orientation_constraint.parameterization = moveit_msgs::msg::OrientationConstraint::ROTATION_VECTOR;
+
+      moveit_msgs::msg::Constraints all_constraints;
+      all_constraints.orientation_constraints.push_back(orientation_constraint);
+
+      move_group_interface_->clearPathConstraints();
+      move_group_interface_->setPathConstraints(all_constraints);
+      // move_group_interface_->setGoalOrientationTolerance(10);
+      RCLCPP_INFO(this->get_logger(), "Applied orientation constraints to planning scene.");
+      RCLCPP_INFO(this->get_logger(), "Orientation constraints: %zu", move_group_interface_->getPathConstraints().orientation_constraints.size());
+  }
 
   // // Server Callbacks
   rclcpp_action::GoalResponse handle_goal_grasp_object_(

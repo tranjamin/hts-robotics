@@ -1,7 +1,7 @@
 planning_pipelines:
   pipeline_names: ["chomp", "stomp", "ompl"]
 
-  default_planning_pipeline: ompl
+  default_planning_pipeline: chomp
 
   ompl:
     planning_plugin: ompl_interface/OMPLPlanner

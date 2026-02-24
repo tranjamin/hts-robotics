@@ -219,8 +219,9 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             robot_description,
             robot_description_semantic,
             robot_kinematics_yaml,
-            # chomp_planning_pipeline_config,
+            chomp_planning_pipeline_config,
             pipelines_config,
+            # ompl_planning_pipeline_config,
             trajectory_config,
             moveit_controllers,
             planning_scene_monitor_parameters,
@@ -235,6 +236,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
         ],
         arguments=[
             '--ros-args', '--log-level', 'debug'
+            # '--ros-args', '--log-level', 'moveit_ros_planning:=debug', 'moveit.ompl_planning:=debug'
         ]
     )
 
@@ -266,6 +268,7 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
             robot_description,
             robot_description_semantic,
             chomp_planning_pipeline_config,
+            # ompl_planning_pipeline_config,
             robot_kinematics_yaml,
             {"use_sim_time": USE_SIM_TIME}
         ],
@@ -366,6 +369,9 @@ def generate_launch_description():
         namespace='',
         arguments=['-topic', '/robot_description'],
         output='log',
+        parameters=[{
+            "use_sim_time": USE_SIM_TIME
+        }]
     )
 
     object_spawns = []
@@ -388,7 +394,10 @@ def generate_launch_description():
                         '-Y', str(float(obj_params.get('yaw', 0))),
                         '-ros'
                     ],
-                    output='log'
+                    output='log',
+                    parameters=[{
+                        "use_sim_time": USE_SIM_TIME
+                    }]
                 )
             )
 
@@ -398,6 +407,9 @@ def generate_launch_description():
         namespace='',
         arguments=['joint_state_broadcaster'],
         output='log',
+        parameters=[{
+            "use_sim_time": USE_SIM_TIME
+        }]
     )
     arm_controller = Node(
         package='controller_manager',
@@ -405,6 +417,9 @@ def generate_launch_description():
         namespace='',
         arguments=['fr3_arm_controller'],
         output='log',
+        parameters=[{
+            "use_sim_time": USE_SIM_TIME
+        }]
     )
     gripper_controller = Node(
         package='controller_manager',
@@ -412,6 +427,9 @@ def generate_launch_description():
         namespace='',
         arguments=['gripper_position_controller'],
         output='log',
+        parameters=[{
+            "use_sim_time": USE_SIM_TIME
+        }]
     )
 
     # Get robot description
@@ -487,7 +505,7 @@ def generate_launch_description():
         output='screen',
         parameters=[
             load_yaml('hts_robotics', 'config/anygrasp_params.yaml')
-        ]
+        ],
     )
     
     all_launch_arguments = [x.get('launch_argument') for (_, x) in launch_params.items()]
@@ -507,7 +525,7 @@ def generate_launch_description():
             "--child-frame-id", "fr3/fr3_link7/custom_camera_rgbd"
             ],
             parameters=[
-                { 'use_sim_time': True}
+                { 'use_sim_time': USE_SIM_TIME}
             ],
             output="log"
         ),
@@ -516,13 +534,13 @@ def generate_launch_description():
             package='octomap_server',
             executable='octomap_server_node',
             name="octomap_sim",
-            # output="screen",
+            output="log",
             parameters=[{
                 'frame_id': 'world',
                 'base_frame_id': 'world',
 
                 'resolution': 0.005,
-                'use_sim_time': True,
+                'use_sim_time': USE_SIM_TIME,
 
                 # 'occupancy_min_z': 0.01,
                 'occupancy_max_z': 0.5,
@@ -539,6 +557,9 @@ def generate_launch_description():
             }],
             remappings=[
                 ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
+            ],
+            arguments=[
+                '--ros-args', '--log-level', 'error'
             ]
         ),
 
