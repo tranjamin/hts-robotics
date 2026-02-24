@@ -179,7 +179,7 @@ public:
     co_ground.primitives.push_back(primitive_ground);
     co_ground.primitive_poses.push_back(pose_ground);
     co_ground.operation = co_ground.ADD;
-    planning_scene_interface_->applyCollisionObject(co_ground);
+    // planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
     // Register the target objects as collision objects
@@ -697,10 +697,10 @@ private:
     std::thread([this, goal_handle]() {
       auto goal = goal_handle->get_goal();
 
-      geometry_msgs::msg::Pose target;
-      target.position.x = goal->x;
-      target.position.y = goal->y;
-      target.position.z = goal->z;
+      // geometry_msgs::msg::Pose target;
+      // target.position.x = goal->x;
+      // target.position.y = goal->y;
+      // target.position.z = goal->z;
 
       // Apply orientation constraints
       moveit_msgs::msg::OrientationConstraint orientation_constraint;
@@ -715,24 +715,20 @@ private:
       );
       orientation_constraint.absolute_x_axis_tolerance = 0.3;
       orientation_constraint.absolute_y_axis_tolerance = 0.3;
-      orientation_constraint.absolute_z_axis_tolerance = 1000;
+      orientation_constraint.absolute_z_axis_tolerance = 3.142;
       orientation_constraint.weight = 1.0;
 
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
 
-      // move_group_interface_->setPathConstraints(all_constraints);
+      move_group_interface_->setPathConstraints(all_constraints);
       RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
 
-      target.orientation.x = current_pose.pose.orientation.x;
-      target.orientation.y = current_pose.pose.orientation.y;
-      target.orientation.z = current_pose.pose.orientation.z;
-      target.orientation.w = current_pose.pose.orientation.w;
-
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
-      RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", target.orientation.x, target.orientation.y, target.orientation.z, target.orientation.w);
+      // RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", target.orientation.x, target.orientation.y, target.orientation.z, target.orientation.w);
 
-      move_group_interface_->setPoseTarget(target);
+      move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
+      move_group_interface_->setGoalOrientationTolerance(10);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto current_position = move_group_interface_->getCurrentPose().pose;
