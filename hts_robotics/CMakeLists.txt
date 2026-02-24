@@ -23,6 +23,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/GripperClose.action"
   "action/GripperOpen.action"
   "action/GraspObject.action"
+  "srv/DisableOrientationConstraints.srv"
+  "srv/EnableOrientationConstraints.srv"
   DEPENDENCIES geometry_msgs
 )
 
