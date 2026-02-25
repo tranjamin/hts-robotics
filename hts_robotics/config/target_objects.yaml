@@ -1,0 +1,43 @@
+objects:
+  - object_0
+  - object_1
+  - object_2
+
+object_0:
+  object_id: 0
+  geometry_file: "box.sdf"
+  x: 0.4
+  y: -0.2
+  z: 0.025
+  R: 0.0
+  P: 0.0
+  Y: 0.0
+  primitive_type: BOX # or SPHERE, CYLINDER, CONE
+  primitive_dims:
+    x: 0.05
+    y: 0.05
+    z: 0.05
+
+object_1:
+  object_id: 1
+  geometry_file: "cylinder.sdf"
+  x: 0.6
+  y: 0.0
+  z: 0.05
+  R: 0.0
+  P: 0.0
+  Y: 0.0
+  primitive_type: CYLINDER # or SPHERE, CYLINDER, CONE
+  primitive_dims:
+    radius: 0.03
+    height: 0.1
+
+object_2:
+  object_id: 2
+  geometry_file: "sphere.sdf"
+  x: 0.4
+  y: 0.2
+  z: 0.02
+  primitive_type: SPHERE
+  primitive_dims:
+    radius: 0.03

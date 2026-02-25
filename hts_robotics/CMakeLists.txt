@@ -9,13 +9,20 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
+find_package(hts_msgs REQUIRED)
+
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/MoveToPoint.action"
+  "action/MoveTarget.action"
+  "action/PickUpTarget.action"
+  "action/GripperClose.action"
+  "action/GripperOpen.action"
+  "action/GraspObject.action"
   DEPENDENCIES geometry_msgs
 )
 
@@ -26,11 +33,17 @@ ament_target_dependencies(hts_node
   std_msgs
   geometry_msgs
   sensor_msgs
+  moveit_ros_planning
   moveit_ros_planning_interface
+  hts_msgs
 )
 
-rosidl_target_interfaces(hts_node
+rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
+
+target_link_libraries(hts_node
+  ${cpp_typesupport_target}
 )
 
 install(TARGETS 
@@ -41,10 +54,9 @@ install(TARGETS
 # Install project launch files
 install(
   DIRECTORY
-    launch config
+    launch config objects
   DESTINATION share/${PROJECT_NAME}
 )
-
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

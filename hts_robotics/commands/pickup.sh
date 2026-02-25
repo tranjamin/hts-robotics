@@ -1,0 +1,1 @@
+ros2 action send_goal /hts_pickup_action hts_robotics/action/PickUpTarget "{x: $1, y: $2, z: $3, ox: $4, oy: $5, oz: $6, ow: $7}"

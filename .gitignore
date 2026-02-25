@@ -1,6 +1,8 @@
 .env
 .idea
 .vscode
+.secrets
+.venv
 *.pyc
 COLCON_IGNORE
 AMENT_IGNORE
@@ -8,5 +10,10 @@ cmake-build-*/
 build/
 install/
 log/
-libfranka
-franka_description
+
+hts_anygrasp/hts_anygrasp/*.so
+hts_anygrasp/hts_anygrasp/license/
+hts_anygrasp/hts_anygrasp/log/
+
+realsense-ros/
+librealsense/

@@ -1,0 +1,6 @@
+int64 target_id
+---
+bool success
+string message
+---
+float32 progress

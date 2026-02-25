@@ -1,0 +1,32 @@
+z_coords_min: 0.001
+z_coords_max: 0.5
+x_grasp_min: -1.0
+x_grasp_max: 1.0
+y_grasp_min: -1.0
+y_grasp_max: 1.0
+z_grasp_min: 0.03
+z_grasp_max: 0.5
+
+apply_mask_object: True
+apply_collisions: True
+dense_grasp: True
+top_down_grasp: False
+
+min_grasp_width: 0.01
+max_grasp_pitch_roll_deg: 5.0
+
+nms_translation_thresh: 0.005
+nms_angle_thresh_deg: 5.0
+
+grasp_z_offset: 0.02
+grasp_axis_offset: 0.14
+
+max_gripper_width: 0.1
+gripper_height: 0.03
+
+no_rgb: True
+pointcloud_topic: "/octomap_point_cloud_centers"
+visualise: True
+
+pointcloud_from_file: False
+pointcloud_file: "/ros2_ws/src/full_cloud_1771641840.npz"
