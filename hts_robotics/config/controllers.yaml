@@ -11,6 +11,8 @@ controller_manager:
     franka_robot_state_broadcaster:
       type: franka_robot_state_broadcaster/FrankaRobotStateBroadcaster
 
+    gripper_position_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
 
 franka_robot_state_broadcaster:
   ros__parameters:
@@ -19,13 +21,33 @@ franka_robot_state_broadcaster:
     lock_log_error: false #  Log error if lock acquisition fails - false == do not log  
     lock_update_success: true # return update OK, although lock fails (no update occurs)
       
+gripper_position_controller:
+  ros__parameters:
+    type: joint_trajectory_controller/JointTrajectoryController
+    gazebo: true
+    default: true
+    allow_nonzero_velocity_at_trajectory_end: false
+    command_interfaces:
+      - effort
+      # - position
+    state_interfaces:
+      - position
+      - velocity
+    joints:
+      - fr3_finger_joint1
+      # - fr3_finger_joint2
+    gains:
+      fr3_finger_joint1: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
+
+
 fr3_arm_controller:
   ros__parameters:
     type: joint_trajectory_controller/JointTrajectoryController
     gazebo: true
+    allow_nonzero_velocity_at_trajectory_end: false
     command_interfaces:
       - effort
-      - position
+      # - position
     state_interfaces:
       - position
       - velocity
@@ -38,11 +60,10 @@ fr3_arm_controller:
       - fr3_joint6
       - fr3_joint7
     gains:
-      fr3_joint1: { p: 600., d: 30., i: 0., i_clamp: 1. }
-      fr3_joint2: { p: 600., d: 30., i: 0., i_clamp: 1. }
-      fr3_joint3: { p: 600., d: 30., i: 0., i_clamp: 1. }
-      fr3_joint4: { p: 600., d: 30., i: 0., i_clamp: 1. }
-      fr3_joint5: { p: 250., d: 10., i: 0., i_clamp: 1. }
-      fr3_joint6: { p: 150., d: 10., i: 0., i_clamp: 1. }
-      fr3_joint7: { p: 50., d: 5., i: 0., i_clamp: 1. }
-
+      fr3_joint1: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint2: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint3: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint4: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint5: { ff_velocity_scale: 1., p: 250., d: 10., i: 0., i_clamp: 1. }
+      fr3_joint6: { ff_velocity_scale: 1., p: 150., d: 10., i: 0., i_clamp: 1. }
+      fr3_joint7: { ff_velocity_scale: 1., p: 50., d: 5., i: 0., i_clamp: 1. }

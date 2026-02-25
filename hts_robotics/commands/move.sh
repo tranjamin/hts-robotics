@@ -1,0 +1,1 @@
+ros2 action send_goal /hts_move_action hts_robotics/action/MoveTarget "{x: $1, y: $2, z: $3}"

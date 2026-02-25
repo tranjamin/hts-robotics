@@ -1,0 +1,25 @@
+<sdf version="1.6">
+  <model name="block">
+    <static>false</static> <!-- allows physics -->
+    <link name="link">
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.001</ixx>
+          <iyy>0.001</iyy>
+          <izz>0.001</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <box><size>0.05 0.05 0.05</size></box>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <box><size>0.05 0.05 0.05</size></box>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>

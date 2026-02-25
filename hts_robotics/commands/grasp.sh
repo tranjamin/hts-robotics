@@ -1,0 +1,1 @@
+ros2 action send_goal grasp_object hts_robotics/action/GraspObject "{object_id: 1, x: 0.4, y: 0.0, z: 0.8}"

@@ -1,11 +1,20 @@
-# Start with an official ROS 2 base image for the desired distribution
 FROM ros:humble-ros-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    ROS_DISTRO=humble
+    ROS_DISTRO=humble \
+    CUDA_HOME=/usr/local/cuda-11.8 \
+    PATH=/usr/local/cuda-11.8/bin:$PATH \
+    LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH \
+    SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True \
+    CC=gcc-11 \
+    CXX=g++-11 \
+    TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0" \
+    FORCE_CUDA=1 \
+    ME_CUDA=1 \
+    OMP_NUM_THREADS=16
 
 ARG FRANKA_PATH=franka_ros2
 
@@ -15,14 +24,14 @@ ARG USERNAME=user
 
 # Install essential packages and ROS development tools
 RUN apt-get update && \
-        # python3-pip \
-    # && python3 -m pip install pybullet \
     apt-get install -y --no-install-recommends \
+        apt-utils \
         bash-completion \
         curl \
         gdb \
         git \
         nano \
+        wget \
         openssh-client \
         python3-colcon-argcomplete \
         python3-colcon-common-extensions \
@@ -30,22 +39,33 @@ RUN apt-get update && \
         vim \
         apt-utils \
         python3-pip \
-    && python3 -m pip install pybullet \
+        dialog \
+        net-tools \
+        build-essential \
+        libopenblas-dev \
+        gcc-11 \
+        g++-11 \
+        libusb-1.0-0-dev \
+        libudev-dev \
+        pkg-config \
+        libglfw3-dev \
+        libgl1-mesa-dev \
+        cmake \
+        freeglut3-dev \
+        libx11-dev \
+        libxrandr-dev \
+        libxinerama-dev \
+        libxcursor-dev \
+        libxi-dev \
+        libgl1-mesa-dev \
+        mesa-common-dev \
+        libgl1-mesa-dev mesa-common-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Setup user configuration
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
-    && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
-    && echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /home/$USERNAME/.bashrc \
-    && echo "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash" >> /home/$USERNAME/.bashrc
-    
-USER $USERNAME
-
 # Install some ROS 2 dependencies to create a cache layer
-RUN sudo apt-get update \
-    && sudo apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
         ros-humble-ros-gz \
         ros-humble-sdformat-urdf \
         ros-humble-joint-state-publisher-gui \
@@ -73,30 +93,105 @@ RUN sudo apt-get update \
         ros-humble-moveit-ros-visualization \
         ros-humble-joint-trajectory-controller \
         ros-humble-moveit-simple-controller-manager \
+        ros-humble-moveit-ros-perception \
         ros-humble-rviz2 \
         ros-humble-xacro \
         ros-humble-turtlesim \
         ros-humble-rqt \
         ros-humble-rqt-graph \
-    && sudo apt-get clean \
-    && sudo rm -rf /var/lib/apt/lists/*
+        ros-humble-octomap-server \
+        python3-rosdep \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install CUDA toolkit 11.8
+RUN wget -O /tmp/cuda-ubuntu2204.pin https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin \
+    && mv /tmp/cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600 \
+    && wget -O /tmp/cuda-repo.deb https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb \
+    && dpkg -i /tmp/cuda-repo.deb \
+    && cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/ \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends cuda-toolkit-11-8 \
+    && rm -f /tmp/cuda-repo.deb \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && nvcc --version
+
+# Install old libssl for license checking
+RUN wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+    && dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb \
+    && rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+# Setup user configuration
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers \
+    && echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> /home/$USERNAME/.bashrc \
+    && echo "source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash" >> /home/$USERNAME/.bashrc
+    
+USER $USERNAME
+
+# Install PyTorch with CUDA 11.8 both locally and in root
+RUN sudo python3 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+RUN python3 -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+ENV PATH=/home/$USERNAME/.local/bin:$PATH
+ENV PYTHONPATH=/home/$USERNAME/.local/lib/python3.10/site-packages:$PYTHONPATH
+
+# Copy MinkowskiEngine source
+RUN pip install ninja && \
+    pip install -U git+https://github.com/NVIDIA/MinkowskiEngine -v --no-deps --install-option="--force_cuda"
+
+# Build GraspNetAPI
+WORKDIR /build/GraspnetAPI
+COPY anygrasp_sdk/dependencies/graspnetAPI .
+RUN python3 -m pip install \
+    numpy==1.23.4 \
+    opencv-python \
+    scikit-image \
+    scipy \
+    open3d \
+    tqdm \
+    Pillow \
+    autolab_core \
+    autolab-perception \
+    cvxopt \
+    dill \
+    grasp_nms \
+    h5py \
+    pywavefront \
+    sklearn \
+    transforms3d==0.3.1 \
+    trimesh
+RUN sudo -E python3 setup.py install --user
+
+# Build PointNet2
+WORKDIR /build/pointnet2
+COPY anygrasp_sdk/pointnet2 .
+RUN sudo python3 setup.py install
+
+WORKDIR /
+RUN sudo rm -rf /build
 
 WORKDIR /ros2_ws
 
 # Install the missing ROS 2 dependencies
 COPY . /ros2_ws/src
+
+# Install ROS dependencies via rosdep
 RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
-    && vcs import src < src/${FRANKA_PATH}/franka.repos --recursive --skip-existing \
+    && vcs import src/franka_ros2 < src/dependencies.repos --recursive --skip-existing \
     && sudo apt-get update \
     && rosdep update \
     && rosdep install --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y \
     && sudo apt-get clean \
-    && sudo rm -rf /var/lib/apt/lists/* \
-    && rm -rf /home/$USERNAME/.ros \
+    && sudo rm -rf /var/lib/apt/lists/*
+
+RUN rm -rf /home/$USERNAME/.ros \
     && rm -rf src \
     && mkdir -p src
 
-COPY ./${FRANKA_PATH}/franka_entrypoint.sh /franka_entrypoint.sh
+COPY franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
 
 # Set the default shell to bash and the workdir to the source directory

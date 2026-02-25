@@ -1,12 +1,9 @@
-<h1 style="font-size: 3em;">ROS 2 Integration for Franka Robotics Research Robots</h1>
+<h1 style="font-size: 3em;">HTS Robotics</h1>
 
-[![CI](https://github.com/frankarobotics/franka_ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/frankarobotics/franka_ros2/actions/workflows/ci.yml)
-
-> **Note:** _franka_ros2_ is not officially supported on Windows.
+> **Note:** hts-robotics is not officially supported on Windows.
 
 #### Table of Contents
 - [About](#about)
-- [Caution](#caution)
 - [Setup](#setup)
   - [Local Machine Installation](#local-machine-installation)
   - [Docker Container Installation](#docker-container-installation)
@@ -18,206 +15,243 @@
 - [Contact](#contact)
 
 # About
-The **franka_ros2** repository provides a **ROS 2** integration of **libfranka**, allowing efficient control of the Franka Robotics arm within the ROS 2 framework. This project is designed to facilitate robotic research and development by providing a robust interface for controlling the research versions of Franka Robotics robots.
 
-For convenience, we provide Dockerfile and docker-compose.yml files. While it is possible to build **franka_ros2** directly on your local machine, this approach requires manual installation of certain dependencies, while many others will be automatically installed by the **ROS 2** build system (e.g., via **rosdep**). This can result in a large number of libraries being installed on your system, potentially causing conflicts. Using Docker encapsulates these dependencies within the container, minimizing such risks. Docker also ensures a consistent and reproducible build environment across systems. For these reasons, we recommend using Docker.
+The **hts-robotics** repository develops a system for the Franka Research 3 robot targeted towards enabling high throughput synthesis for chemical laboratories.
 
-# Caution
-This package is in rapid development. Users should expect breaking changes and are encouraged to report any bugs via [GitHub Issues page](https://github.com/frankarobotics/franka_ros2/issues).
+# Setup
 
-# Franka ROS 2 Dependencies Setup
+This repository is designed to be run within a Docker container.
+
+1. **Initialise any submodules**
+
+```bash
+git clone git@github.com:tranjamin/hts-robotics.git
+cd hts-robotics
+git submodule init && git submodule update --remote
+
+# copy anygrasp .so files (change depending on python version)
+cp anygrasp_sdk/grasp_detection/gsnet_versions/gsnet.cpython-310-x86_64-linux-gnu.so hts_anygrasp/hts_anygrasp/gsnet.so
+cp anygrasp_sdk/license_registration/lib_cxx_versions/lib_cxx.cpython-310-x86_64-linux-gnu.so hts_anygrasp/hts_anygrasp/lib_cxx.so
+
+# --- copy model weights to hts_anygrasp/hts_anygrasp/log
+# --- copy license to hts_anygrasp/hts_anygrasp/license
+
+cd anygrasp_sdk && touch COLCON_IGNORE
+cd dependencies && git clone https://github.com/graspnet/graspnetAPI.git
+
+git clone https://github.com/realsenseai/librealsense.git
+git clone https://github.com/realsenseai/realsense-ros.git
+cd realsense-ros/realsense2_description && touch COLCON_IGNORE
+```
 
 This repository contains a `.repos` file that helps you clone the required dependencies for Franka ROS 2.
 
-## Prerequisites
-
-## Local Machine Installation
-1. **Install ROS 2 Development environment**
-
-    _**franka_ros2**_ is built upon _**ROS 2 Humble**_.
-
-    To set up your ROS 2 environment, follow the official _**humble**_ installation instructions provided [**here**](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html).
-    The guide discusses two main installation options: **Desktop** and **Bare Bones**.
-
-    #### Choose **one** of the following:
-    - **ROS 2 "Desktop Install"** (`ros-humble-desktop`)
-      Includes a full ROS 2 installation with GUI tools and visualization packages (e.g., Rviz and Gazebo).
-      **Recommended** for users who need simulation or visualization capabilities.
-
-    - **"ROS-Base Install (Bare Bones)"** (`ros-humble-ros-base`)
-      A minimal installation that includes only the core ROS 2 libraries.
-      Suitable for resource-constrained environments or headless systems.
-
-    ```bash
-    # replace <YOUR CHOICE> with either ros-humble-desktop or ros-humble-ros-base
-    sudo apt install <YOUR CHOICE>
-    ```
-    ---
-    Also install the **Development Tools** package:
-    ```bash
-    sudo apt install ros-dev-tools
-    ```
-    Installing the **Desktop** or **Bare Bones** should automatically source the **ROS 2** environment but, under some circumstances you may need to do this again:
-    ```bash
-    source /opt/ros/humble/setup.sh
-    ```
-
-2. **Create a ROS 2 Workspace:**
-   ```bash
-   mkdir -p ~/franka_ros2_ws/src
-   cd ~/franka_ros2_ws  # not into src
-   ```
-3. **Clone the Repositories:**
-   ```bash
-    git clone https://github.com/frankarobotics/franka_ros2.git src
-    ```
-4. **Install the dependencies**
-    ```bash
-    vcs import src < src/franka.repos --recursive --skip-existing
-    ```
-5. **Detect and install project dependencies**
-   ```bash
-   rosdep install --from-paths src --ignore-src --rosdistro humble -y
-   ```
-6. **Build**
-   ```bash
-   # use the --symlinks option to reduce disk usage, and facilitate development.
-   colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-   ```
-7. **Adjust Enviroment**
-   ```bash
-   # Adjust environment to recognize packages and dependencies in your newly built ROS 2 workspace.
-   source install/setup.sh
-   ```
-
-## Docker Container Installation
-The **franka_ros2** package includes a `Dockerfile` and a `docker-compose.yml`, which allows you to use `franka_ros2` packages without manually installing **ROS 2**. Also, the support for Dev Containers in Visual Studio Code is provided.
-
-For detailed instructions, on preparing VSCode to use the `.devcontainer` follow the setup guide from [VSCode devcontainer_setup](https://code.visualstudio.com/docs/devcontainers/tutorial).
-
-1. **Clone the Repositories:**
-    ```bash
-    git clone https://github.com/frankarobotics/franka_ros2.git
-    cd franka_ros2
-    ```
-    We provide separate instructions for using Docker with Visual Studio Code or the command line. Choose one of the following options:
-
-    Option A: Set up and use Docker from the command line (without Visual Studio Code).
-
-    Option B: Set up and use Docker with Visual Studio Code's Docker support.
-
-#### Option A: using Docker Compose
-
-  2. **Save the current user id into a file:**
-      ```bash
-      echo -e "USER_UID=$(id -u $USER)\nUSER_GID=$(id -g $USER)" > .env
-      ```
-      It is needed to mount the folder from inside the Docker container.
-
-  3. **Build the container:**
-      ```bash
-      docker compose build
-      ```
-  4. **Run the container:**
-      ```bash
-      docker compose up -d
-      ```
-  5. **Open a shell inside the container:**
-      ```bash
-      docker exec -it franka_ros2 /bin/bash
-      ```
-  6. **Clone the latests dependencies:**
-      ```bash
-      vcs import src < src/franka.repos --recursive --skip-existing
-      ```
-  7. **Build the workspace:**
-      ```bash
-      colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-      ```
-  7. **Source the built workspace:**
-      ```bash
-      source install/setup.bash
-      ```
-  8. **When you are done, you can exit the shell and delete the container**:
-      ```bash
-      docker compose down -t 0
-      ```
-
-#### Option B: using Dev Containers in Visual Studio Code
-
-  2. **Open Visual Studio Code ...**
-
-        Then, open folder  `franka_ros2`
-
-  3. **Choose `Reopen in container` when prompted.**
-
-      The container will be built automatically, as required.
-
-  4. **Clone the latests dependencies:**
-      ```bash
-      vcs import src < src/franka.repos --recursive --skip-existing
-      ```
-
-  5. **Open a terminal and build the workspace:**
-      ```bash
-      colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-      ```
-  6. **Source the built workspace environment:**
-      ```bash
-      source install/setup.bash
-      ```
-
-
-# Test the build
-   ```bash
-   colcon test
-   ```
-> Remember, franka_ros2 is under development.
-> Warnings can be expected.
-
-# Run a sample ROS 2 application
-
-To verify that your setup works correctly without a robot, you can run the following command to use dummy hardware:
+2. **Prepare to use a docker container**
 
 ```bash
-ros2 launch franka_fr3_moveit_config moveit.launch.py robot_ip:=dont-care use_fake_hardware:=true
+xhost +local:root
+echo -e "USER_UID=$(id -u $USER)\nUSER_GID=$(id -g $USER)" > .env
 ```
 
-If you want to run this example with namespaces, you would need to use the argument `namespace` and manually write your namespace in `moveit.rviz` under `Move Group Namespace`.
-
-# Run a ROS 2 example controller
-
-To run any example controller, make sure to add your desired configuration in `franka.config.yaml` and run:
+2. **Install CUDA Container Toolkit**
 
 ```bash
-ros2 launch franka_bringup example.launch.py controller_name:=your_desired_controller
+sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg2
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+    && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.18.2-1
+sudo apt-get install -y \
+    nvidia-container-toolkit=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+    nvidia-container-toolkit-base=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+    libnvidia-container-tools=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+    libnvidia-container1=${NVIDIA_CONTAINER_TOOLKIT_VERSION}
 ```
-You can select one of the controllers from `controllers.yaml`.
 
-# Run Gazebo examples with ROS 2
+3. **Build the container**
 
-If you want to use Gazebo to run your code, you can find some examples here: [franka_gazebo](./franka_gazebo/README.md)
+```bash
+sudo docker-compose build
+```
 
+4. **Run the container**
 
-# Troubleshooting
-#### `libfranka: UDP receive: Timeout error`
+```bash
+sudo docker-compose up -d
+```
 
-If you encounter a UDP receive timeout error while communicating with the robot, avoid using Docker Desktop. It may not provide the necessary real-time capabilities required for reliable communication with the robot. Instead, using Docker Engine is sufficient for this purpose.
+5. **Open the shell inside the container**
 
-A real-time kernel is essential to ensure proper communication and to prevent timeout issues. For guidance on setting up a real-time kernel, please refer to the [Franka installation documentation](https://frankarobotics.github.io/docs/installation_linux.html#setting-up-the-real-time-kernel).
+```bash
+sudo docker-compose exec hts_robotics bash
+```
 
-# Contributing
+6. **Clone any dependencies**
 
-Contributions are welcome! Please see [CONTRIBUTING.md](https://github.com/frankarobotics/franka_ros2/blob/humble/CONTRIBUTING.md) for more details on how to contribute to this project.
+```bash
+vcs import src < src/franka_ros2/franka.repos --recursive --skip-existing
+```
 
-## License
+7. **Build the workspace**
 
-All packages of franka_ros2 are licensed under the Apache 2.0 license.
+```bash
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+```
 
-## Contact
+8. **Launch the program**
 
-For questions or support, please open an issue on the [GitHub Issues](https://github.com/frankarobotics/franka_ros2/issues) page.
+```bash
+ros2 launch hts_robotics hts_bringup.launch.py
+```
 
-See the [Franka Control Interface (FCI) documentation](https://frankarobotics.github.io/docs) for more information.
+**To record any video:**
 
-[def]: #docker-container-installation
+```bash
+ffmpeg -f x11grab -video_size <3840x2160> -framerate 30 -i <:0.0+2880,0> -pix_fmt yuv420p <video.mp4>
+```
+
+# Set up a Conda Environment for Anygrasp
+
+1. Install Miniconda:
+
+```bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+rm Miniconda3-latest-Linux-x86_64.sh
+```
+
+2. Install GCC-11:
+
+```bash
+sudo apt install gcc-11 g++-11
+export CC=gcc-11 && CXX=g++-11 # either set this in the ~/.bashrc file or manually export it every time
+```
+
+3. Install NVIDIA Drivers:
+
+```bash
+# first, clean the workspace from any CUDA artifacts
+sudo apt install nvidia-driver-590 # you can browse other driver options with ubuntu-drivers devices
+sudo reboot
+nvidia-smi # verify that the drivers are installed
+```
+
+4. Install NVIDIA Toolkit (11.8):
+
+For instructions on how to install other toolkit versions, see https://developer.nvidia.com/cuda-toolkit-archive
+
+```bash
+# install prerequisites
+vim /etc/apt/sources.list.d/ubuntu.sources
+```
+Append to the bottom:
+```
+Types: deb
+URIs: http://old-releases.ubuntu.com/ubuntu/
+Suites: lunar
+Components: universe
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+```
+Then,
+
+```bash
+# install toolkit
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
+sudo mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
+wget https://developer.download.nvidia.com/compute/cuda/11.8.0/local_installers/cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+sudo dpkg -i cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+sudo cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
+sudo apt update
+sudo apt install cuda-toolkit-11-8 # DO NOT `sudo apt install cuda` if you do not wish to change your drivers
+```
+
+```bash
+vim ~/.bashrc
+```
+Append to the bottom:
+```bash
+export CUDA_HOME=/usr/local/cuda-11.8
+export PATH=/usr/local/cuda-11.8/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+```
+
+Then,
+```bash
+source ~/.bashrc # to reload
+nvcc --version # verify toolkit install
+```
+
+2. Create Conda Environment
+
+Using the `environment.yaml` file:
+
+```bash
+conda env create -n anygrasp -f anygrasp_env.yaml
+conda activate anygrasp
+```
+
+Without the  `environment.yaml` file:
+```bash
+conda create -n py3.8 python=3.8
+conda activate py3.8
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118 # replace cu118 with whichever version of CUDA you have, look at the pytorch website for more details
+conda install openblas-devel -c anaconda
+```
+
+3. Register the license
+
+```bash
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+sudo dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+rm libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+./license_checker -f ## use this ID to request a license from AnyGrasp
+```
+
+4. Download AnyGrasp Dependencies
+
+```bash
+cd anygrasp_sdk
+mkdir dependencies && cd dependencies
+git clone git@github.com:chenxi-wang/MinkowskiEngine.git
+conda install openblas-devel -c anaconda
+export CUDA_HOME=/usr/bin
+python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas_library_dirs=${CONDA_PREFIX}/lib --blas=openblas
+pip install graspnetapi==1.2.11
+pip install numpy==1.23.5
+cd ../../pointnet2
+python setup.py install
+```
+
+New rules for downloading AnyGrasp:
+```bash
+# add local to PYTHONPATH
+pip install -U git+https://github.com/NVIDIA/MinkowskiEngine --no-deps
+
+cd graspnetAPI/
+pip install numpy==1.23.4 opencv-python scikit-image scipy open3d tqdm Pillow
+python3 setup.py install --user
+
+cd pointnet2/
+sudo python3 -m pip install torch torchvision --indux-url https://download.pytorch.org/whl/cu118
+sudo pip install .
+```
+
+Additional Installs:
+```bash
+sudo apt install libusb-1.0-0-dev libudev-dev pkg-config libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev cmake
+sudo apt install freeglut3-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev mesa-common-dev
+sudo apt install libgl1-mesa-dev mesa-common-dev
+
+cd src/librealsense
+rm -rf build && mkdir build && cd build
+cmake ..
+cmake --build .
+
+sudo apt install ros-humble-octomap-server
+```
