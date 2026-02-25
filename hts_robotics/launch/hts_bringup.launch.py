@@ -443,7 +443,7 @@ def generate_launch_description():
         gazebo_empty_world,
         # gripper_launch,
         # realsense_node,
-        anygrasp_node,
+        # anygrasp_node,
 
         Node(
             package="tf2_ros",
@@ -459,35 +459,35 @@ def generate_launch_description():
             # output="screen"
         ),
 
-        Node(
-            package='octomap_server',
-            executable='octomap_server_node',
-            name="octomap_sim",
-            output="screen",
-            parameters=[{
-                'frame_id': 'world',
-                'base_frame_id': 'world',
+        # Node(
+        #     package='octomap_server',
+        #     executable='octomap_server_node',
+        #     name="octomap_sim",
+        #     output="screen",
+        #     parameters=[{
+        #         'frame_id': 'world',
+        #         'base_frame_id': 'world',
 
-                'resolution': 0.005,
-                'use_sim_time': True,
+        #         'resolution': 0.005,
+        #         'use_sim_time': True,
 
-                # 'occupancy_min_z': 0.01,
-                'occupancy_max_z': 0.5,
+        #         # 'occupancy_min_z': 0.01,
+        #         'occupancy_max_z': 0.5,
 
-                'filter_ground_plane': True,
-                'filter_speckles': True,
-                # 'ground_filter.angle':
-                'ground_filter.distance': 0.01,
-                'ground_filter.plane_distance': 0.01,
+        #         'filter_ground_plane': True,
+        #         'filter_speckles': True,
+        #         # 'ground_filter.angle':
+        #         'ground_filter.distance': 0.01,
+        #         'ground_filter.plane_distance': 0.01,
 
-                'sensor_model.hit': 0.9,
-                'sensor_model.miss': 0.03,
-                'sensor_model.max_range': 1.0,
-            }],
-            remappings=[
-                ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
-            ]
-        ),
+        #         'sensor_model.hit': 0.9,
+        #         'sensor_model.miss': 0.03,
+        #         'sensor_model.max_range': 1.0,
+        #     }],
+        #     remappings=[
+        #         ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
+        #     ]
+        # ),
 
 
         TimerAction(
