@@ -747,7 +747,7 @@ private:
       move_group_interface_->setGoalPositionTolerance(0.01);
       move_group_interface_->setGoalOrientationTolerance(0.1);
       move_group_interface_->setStartStateToCurrentState();
-      // move_group_interface_->setPlanningPipelineId("ompl");
+      move_group_interface_->setPlanningPipelineId("ompl");
       // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
       // move_group_interface_->setPlanningTime(10.0)
       move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);

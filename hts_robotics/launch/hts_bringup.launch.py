@@ -177,6 +177,8 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             robot_description_semantic,
             robot_kinematics_yaml,
             ompl_planning_pipeline_config,
+            # load_yaml("hts_robotics", "config/planning_pipelines.yaml"),
+            # load_yaml("hts_robotics", "config/chomp_planning.yaml"),
             trajectory_config,
             moveit_controllers,
             planning_scene_monitor_parameters,
@@ -214,6 +216,8 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
             robot_description_semantic,
             ompl_planning_pipeline_config,
             robot_kinematics_yaml,
+            # load_yaml("hts_robotics", "config/planning_pipelines.yaml"),
+            # load_yaml("hts_robotics", "config/chomp_planning.yaml"),
             {"use_sim_time": USE_SIM_TIME}
         ],
     )
