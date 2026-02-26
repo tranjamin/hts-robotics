@@ -126,8 +126,8 @@ public:
       std::bind(&hts_node::handle_cancel_grasp_object_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_grasp_object_, this, std::placeholders::_1)
     );
-    grasp_request_client_ = this->create_client<hts_msgs::srv::RequestGrasp>("/request_grasp");
-    grasp_request_client_->wait_for_service();
+    // grasp_request_client_ = this->create_client<hts_msgs::srv::RequestGrasp>("/request_grasp");
+    // grasp_request_client_->wait_for_service();
     
     pickup_client_ = rclcpp_action::create_client<CustomActionPickup>(this, "hts_pickup_action");
     move_client_ = rclcpp_action::create_client<CustomActionMove>(this, "hts_move_action");
@@ -771,14 +771,20 @@ private:
       );
       orientation_constraint.absolute_x_axis_tolerance = 0.3;
       orientation_constraint.absolute_y_axis_tolerance = 0.3;
-      orientation_constraint.absolute_z_axis_tolerance = 3.142;
+      orientation_constraint.absolute_z_axis_tolerance = 10;
       orientation_constraint.weight = 1.0;
+      orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
 
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
 
+      move_group_interface_->clearPathConstraints();
       move_group_interface_->setPathConstraints(all_constraints);
-      RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
+
+      target.orientation.x = current_pose.pose.orientation.x;
+      target.orientation.y = current_pose.pose.orientation.y;
+      target.orientation.z = current_pose.pose.orientation.z;
+      target.orientation.w = current_pose.pose.orientation.w;
 
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
       // RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", target.orientation.x, target.orientation.y, target.orientation.z, target.orientation.w);
@@ -795,6 +801,14 @@ private:
       RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
         current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
       
+      move_group_interface_->setGoalPositionTolerance(0.01);
+      move_group_interface_->setGoalOrientationTolerance(0.1);
+      move_group_interface_->setStartStateToCurrentState();
+      move_group_interface_->setPlanningPipelineId("ompl");
+      // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
+      // move_group_interface_->setPlanningTime(10.0)
+      move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
+
       auto result = std::make_shared<CustomActionMove::Result>();
       result->success = success;
       if (success) {
@@ -823,7 +837,10 @@ private:
   }
 
   void gazebo_scene_subscriber_callback_(tf2_msgs::msg::TFMessage::UniquePtr msg) {
-    rclcpp::Time now = this->now();
+    rclcpp::Time now = this->now();     move_group_interface_->setGoalPositionTolerance(0.01);
+      move_group_interface_->setGoalOrientationTolerance(0.1);
+      move_group_interface_->setStartStateToCurrentState();
+      
     if ((now - last_update_).seconds() < 1) {
       return;
     }
