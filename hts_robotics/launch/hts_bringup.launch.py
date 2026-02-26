@@ -8,7 +8,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess, RegisterEventHandler
 from launch.event_handlers import OnProcessExit, OnProcessStart
 
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch import LaunchContext, LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction, LogInfo
@@ -294,7 +294,14 @@ def generate_launch_description():
 
    # Gazebo Sim
     print("Defining Gazebo...")
-    os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
+    # os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
+    os.environ['GZ_SIM_RESOURCE_PATH'] = os.pathsep.join([
+            os.environ.get('GZ_SIM_RESOURCE_PATH', ''),
+            os.path.dirname(get_package_share_directory('franka_description')),
+            os.path.dirname(get_package_share_directory('hts_robotics')),
+        ])
+    print(os.environ.get('GZ_SIM_RESOURCE_PATH'))
+
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     gazebo_empty_world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(

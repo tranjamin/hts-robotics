@@ -1,0 +1,39 @@
+<sdf version="1.6">
+  <model name="block">
+    <static>false</static>
+    <link name="link">
+      <inertial>
+        <mass>0.2</mass>
+        <inertia>
+          <ixx>0.001</ixx>
+          <iyy>0.001</iyy>
+          <izz>0.001</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose>
+        <geometry>
+          <mesh>
+            <uri>package://hts_robotics/objects/meshes/volumetric_flask_collision.stl</uri>
+            <scale>0.001 0.001 0.001</scale>
+          </mesh>
+        </geometry>
+        <!-- <geometry>
+            <cylinder>
+                <radius>0.03</radius>
+                <length>0.3</length>
+            </cylinder>
+        </geometry> -->
+      </collision>
+      <visual name="visual">
+        <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose>
+        <geometry>
+          <mesh>
+            <uri>package://hts_robotics/objects/meshes/volumetric_flask.stl</uri>
+            <scale>0.001 0.001 0.001</scale>
+          </mesh>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>
