@@ -1,13 +1,16 @@
 objects:
-  - object_0
-  - object_1
-  - object_2
+  - box
+  - cylinder
+  - sphere
+  - conic_flask
+  - round_bottomed_flask
+  - volumetric_flask
 
-object_0:
+box:
   object_id: 0
   geometry_file: "box.sdf"
   x: 0.4
-  y: -0.2
+  y: -0.4
   z: 0.025
   R: 0.0
   P: 0.0
@@ -18,10 +21,10 @@ object_0:
     y: 0.05
     z: 0.05
 
-object_1:
+cylinder:
   object_id: 1
   geometry_file: "cylinder.sdf"
-  x: 0.6
+  x: 0.4
   y: 0.0
   z: 0.05
   R: 0.0
@@ -32,12 +35,45 @@ object_1:
     radius: 0.03
     height: 0.1
 
-object_2:
+sphere:
   object_id: 2
   geometry_file: "sphere.sdf"
   x: 0.4
-  y: 0.2
+  y: 0.4
   z: 0.02
   primitive_type: SPHERE
   primitive_dims:
     radius: 0.03
+
+conic_flask:
+  object_id: 3
+  geometry_file: "conic_flask.sdf"
+  x: -0.4
+  y: -0.4
+  z: 0.5
+  primitive_type: CONE
+  primitive_dims:
+    radius: 0.035
+    height: 0.11
+
+volumetric_flask:
+  object_id: 4
+  geometry_file: "volumetric_flask.sdf"
+  x: -0.4
+  y: 0.0
+  z: 0.5
+  primitive_type: CONE
+  primitive_dims:
+    radius: 0.055
+    height: 0.24
+
+round_bottomed_flask:
+  object_id: 5
+  geometry_file: "round_bottomed_flask.sdf"
+  x: -0.4
+  y: 0.4
+  z: 0.5
+  primitive_type: CONE
+  primitive_dims:
+    radius: 0.035
+    height: 0.085

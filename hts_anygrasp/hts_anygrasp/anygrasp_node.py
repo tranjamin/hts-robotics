@@ -280,8 +280,8 @@ class AnyGraspNode(Node):
                 exclude_grasps.append(ind)
                 continue
 
-            if abs(yaw) > 90:
-                exclude_grasps.append(ind)
+            # if abs(yaw) > 90:
+            #     exclude_grasps.append(ind)
 
         gg.remove(exclude_grasps)
 
