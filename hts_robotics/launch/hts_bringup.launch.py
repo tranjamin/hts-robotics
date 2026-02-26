@@ -219,9 +219,9 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             robot_description,
             robot_description_semantic,
             robot_kinematics_yaml,
-            chomp_planning_pipeline_config,
-            pipelines_config,
-            # ompl_planning_pipeline_config,
+            ompl_planning_pipeline_config,
+            # load_yaml("hts_robotics", "config/planning_pipelines.yaml"),
+            # load_yaml("hts_robotics", "config/chomp_planning.yaml"),
             trajectory_config,
             moveit_controllers,
             planning_scene_monitor_parameters,
@@ -270,6 +270,8 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
             chomp_planning_pipeline_config,
             # ompl_planning_pipeline_config,
             robot_kinematics_yaml,
+            # load_yaml("hts_robotics", "config/planning_pipelines.yaml"),
+            # load_yaml("hts_robotics", "config/chomp_planning.yaml"),
             {"use_sim_time": USE_SIM_TIME}
         ],
     )
@@ -514,7 +516,7 @@ def generate_launch_description():
         gazebo_empty_world,
         # gripper_launch,
         # realsense_node,
-        anygrasp_node,
+        # anygrasp_node,
 
         Node(
             package="tf2_ros",
@@ -542,14 +544,14 @@ def generate_launch_description():
                 'resolution': 0.005,
                 'use_sim_time': USE_SIM_TIME,
 
-                # 'occupancy_min_z': 0.01,
-                'occupancy_max_z': 0.5,
+        #         # 'occupancy_min_z': 0.01,
+        #         'occupancy_max_z': 0.5,
 
-                'filter_ground_plane': True,
-                'filter_speckles': True,
-                # 'ground_filter.angle':
-                'ground_filter.distance': 0.01,
-                'ground_filter.plane_distance': 0.01,
+        #         'filter_ground_plane': True,
+        #         'filter_speckles': True,
+        #         # 'ground_filter.angle':
+        #         'ground_filter.distance': 0.01,
+        #         'ground_filter.plane_distance': 0.01,
 
                 'sensor_model.hit': 0.9,
                 'sensor_model.miss': 0.03,
