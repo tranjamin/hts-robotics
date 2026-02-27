@@ -227,16 +227,6 @@ Visualization Manager:
         Show Robot Collision: false
         Show Robot Visual: true
       Value: true
-    - Class: rviz_default_plugins/Camera
-      Name: RGB Camera
-      Enabled: true
-      Topic:
-        Value: /camera_sim/depth_image
-    - Class: rviz_default_plugins/Camera
-      Name: Depth Camera
-      Enabled: true
-      Topic:
-        Value: /camera_sim/depth_image
     - Class: rviz_default_plugins/PointCloud2
       Name: Realsense PointCloud
       Enabled: true
@@ -244,7 +234,17 @@ Visualization Manager:
         Value: /camera_sim/points
       Size (m): 0.01
       Style: Points
-    
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Octomap
+      Namespaces:
+        {}
+      Topic:
+        Depth: 100
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /occupied_cells_vis_array
     - Acceleration_Scaling_Factor: 0.1
       Class: moveit_rviz_plugin/MotionPlanning
       Enabled: false
