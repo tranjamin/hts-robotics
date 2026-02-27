@@ -17,3 +17,8 @@ hts_anygrasp/hts_anygrasp/log/
 
 realsense-ros/
 librealsense/
+moveit_resources/
+msa_moveit_config/
+moveit2/
+moveit_msgs/
+moveit_resources/
