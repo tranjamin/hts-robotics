@@ -11,6 +11,12 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RequestGrasp.srv"
   "srv/DisplayCloud.srv"
+  "srv/EnableOrientationConstraints.srv"
+  "action/MoveTarget.action"
+  "action/PickUpTarget.action"
+  "action/GripperClose.action"
+  "action/GripperOpen.action"
+  "action/GraspObject.action"
   DEPENDENCIES geometry_msgs
 )
 

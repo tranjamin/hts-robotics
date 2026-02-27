@@ -1,0 +1,129 @@
+planning_pipelines: [ompl, stomp, chomp, pilz_industrial_motion_planner]
+
+# move_group:
+
+stomp:
+  planning_plugin: stomp_moveit/StompPlanner
+  request_adapters: "default_planner_request_adapters/ResolveConstraintFrames default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision"
+  response_adapters: "default_planner_response_adapters/AddTimeOptimalParameterization default_planner_response_adapters/ValidateSolution default_planner_response_adapters/DisplayMotionPath"
+  
+  default_workspace_bounds: 2.0
+  start_state_max_bounds_error: 0.01
+  start_state_max_dt: 0.1
+  jiggle_fraction: 0.01
+  max_sampling_attempts: 500
+  
+  stomp_moveit:
+    num_timesteps: 60
+    num_iterations: 40
+    num_iterations_after_valid: 0
+    num_rollouts: 30
+    max_rollouts: 30
+    exponentiated_cost_sensitivity: 0.5
+    control_cost_weight: 0.1
+    delta_t: 0.1
+    
+ompl:
+  planning_plugin: ompl_interface/OMPLPlanner
+  request_adapters: "default_planner_request_adapters/ResolveConstraintFrames default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision"
+  response_adapters: "default_planner_response_adapters/AddTimeOptimalParameterization default_planner_response_adapters/ValidateSolution default_planner_response_adapters/DisplayMotionPath"
+  
+  default_workspace_bounds: 2.0
+  start_state_max_bounds_error: 0.01
+  start_state_max_dt: 0.1
+  jiggle_fraction: 0.01
+  max_sampling_attempts: 500
+  
+  planner_configs:
+    APSConfigDefault: 
+      type: geometric::AnytimePathShortening
+      shortcut: 1
+      hybridize: 1
+      max_hybrid_paths: 36
+      num_planners: 8
+      planners: RRTConnect,RRTConnect,RRTConnect,RRTConnect,RRTConnect,RRTConnect,RRTConnect,RRTConnect
+    SBLkConfigDefault: {type: geometric::SBL, range: 0.0}
+    ESTkConfigDefault: {type: geometric::EST, range: 0.0, goal_bias: 0.05}
+    LBKPIECEkConfigDefault: {type: geometric::LBKPIECE, range: 0.0, border_fraction: 0.9, min_valid_path_fraction: 0.5}
+    BKPIECEkConfigDefault: {type: geometric::BKPIECE, range: 0.0, border_fraction: 0.9, failed_expansion_score_factor: 0.5, min_valid_path_fraction: 0.5}
+    KPIECEkConfigDefault: {type: geometric::KPIECE, range: 0.0, goal_bias: 0.05, border_fraction: 0.9, failed_expansion_score_factor: 0.5, min_valid_path_fraction: 0.5}
+    RRTkConfigDefault: {type: geometric::RRT, range: 0.0, goal_bias: 0.05}
+    RRTConnectkConfigDefault: {type: geometric::RRTConnect, range: 0.0}
+    RRTstarkConfigDefault: {type: geometric::RRTstar, range: 0.0, goal_bias: 0.05, delay_collision_checking: 1}
+    TRRTkConfigDefault: {type: geometric::TRRT, range: 0.0, goal_bias: 0.05, max_states_failed: 10, temp_change_factor: 2.0, min_temperature: 10e-10, init_temperature: 10e-6, frountier_threshold: 0.0, frountierNodeRatio: 0.1, k_constant: 0.0}
+    PRMkConfigDefault: {type: geometric::PRM, max_nearest_neighbors: 10}
+    PRMstarkConfigDefault: {type: geometric::PRMstar}
+    FMTkConfigDefault: {type: geometric::FMT, num_samples: 1000, radius_multiplier: 1.1, nearest_k: 1, cache_cc: 1, heuristics: 0, extended_fmt: 1}
+    BFMTkConfigDefault: {type: geometric::BFMT, num_samples: 1000, radius_multiplier: 1.0, nearest_k: 1, balanced: 0, optimality: 1, heuristics: 1, cache_cc: 1, extended_fmt: 1}
+    PDSTkConfigDefault: {type: geometric::PDST}
+    STRIDEkConfigDefault: {type: geometric::STRIDE, range: 0.0, goal_bias: 0.05, use_projected_distance: 0, degree: 16, max_degree: 18, min_degree: 12, max_pts_per_leaf: 6, estimated_dimension: 0.0, min_valid_path_fraction: 0.2}
+    BiTRRTkConfigDefault: {type: geometric::BiTRRT, range: 0.0, temp_change_factor: 0.1, init_temperature: 100, frountier_threshold: 0.0, frountier_node_ratio: 0.1, cost_threshold: 1e300}
+    LBTRRTkConfigDefault: {type: geometric::LBTRRT, range: 0.0, goal_bias: 0.05, epsilon: 0.4}
+    BiESTkConfigDefault: {type: geometric::BiEST, range: 0.0}
+    ProjESTkConfigDefault: {type: geometric::ProjEST, range: 0.0, goal_bias: 0.05}
+    LazyPRMkConfigDefault: {type: geometric::LazyPRM, range: 0.0}
+    LazyPRMstarkConfigDefault: {type: geometric::LazyPRMstar}
+    SPARSkConfigDefault: {type: geometric::SPARS, stretch_factor: 3.0, sparse_delta_fraction: 0.25, dense_delta_fraction: 0.001, max_failures: 1000}
+    SPARStwokConfigDefault: {type: geometric::SPARStwo, stretch_factor: 3.0, sparse_delta_fraction: 0.25, dense_delta_fraction: 0.001, max_failures: 5000}
+    TrajOptDefault: {type: geometric::TrajOpt}
+  fr3_arm:
+    planner_configs:
+      - RRTkConfigDefault
+      - RRTConnectkConfigDefault
+      - RRTstarkConfigDefault
+  fr3_hand:
+    planner_configs:
+      - RRTkConfigDefault
+      - RRTConnectkConfigDefault
+      - RRTstarkConfigDefault
+chomp:
+  planning_plugin: chomp_interface/CHOMPPlanner
+  request_adapters: "default_planner_request_adapters/ResolveConstraintFrames default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision"
+  response_adapters: "default_planner_response_adapters/AddTimeOptimalParameterization"
+  
+  default_workspace_bounds: 2.0
+  start_state_max_bounds_error: 0.01
+  start_state_max_dt: 0.1
+  jiggle_fraction: 0.01
+  max_sampling_attempts: 500
+  
+  planning_time_limit: 10.0
+  max_iterations: 200
+  max_iterations_after_collision_free: 5
+  smoothness_cost_weight: 0.1
+  obstacle_cost_weight: 1.0
+  learning_rate: 0.01
+  animate_path: True
+  add_randomness: False
+  smoothness_cost_velocity: 0.0
+  smoothness_cost_acceleration: 1.0
+  smoothness_cost_jerk: 0.0
+  hmc_discretization: 0.01
+  hmc_stochasticity: 0.01
+  hmc_annealing_factor: 0.99
+  use_hamiltonian_monte_carlo: False
+  ridge_factor: 0.0
+  use_pseudo_inverse: False
+  pseudo_inverse_ridge_factor: 0.0001
+  animate_endeffector: False
+  animate_endeffector_segment: panda_rightfinger
+  joint_update_limit: 0.1
+  collision_clearance: 0.2
+  collision_threshold: 0.07
+  random_jump_amount: 1.0
+  use_stochastic_descent: True
+  enable_failure_recovery: False
+  max_recovery_attempts: 5
+  trajectory_initialization_method: quintic-spline
+
+pilz_industrial_motion_planner: 
+  planning_plugin: pilz_industrial_motion_planner/CommandPlanner
+  request_adapters: "default_planner_request_adapters/FixWorkspaceBounds default_planner_request_adapters/FixStartStateBounds default_planner_request_adapters/FixStartStateCollision"
+  default_planner_config: PTP
+  capabilities: pilz_industrial_motion_planner/MoveGroupSequenceAction pilz_industrial_motion_planner/MoveGroupSequenceService
+
+  default_workspace_bounds: 2.0
+  start_state_max_bounds_error: 0.01
+  start_state_max_dt: 0.1
+  jiggle_fraction: 0.01
+  max_sampling_attempts: 500

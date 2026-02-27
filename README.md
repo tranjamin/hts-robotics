@@ -255,3 +255,16 @@ cmake --build .
 
 sudo apt install ros-humble-octomap-server
 ```
+
+Instructions to install stomp:
+```bash
+sudo apt remove ros-humble-moveit*
+git clone https://github.com/moveit/moveit2.git -b main
+for repo in moveit2/moveit2.repos $(f="moveit2/moveit2_$ROS_DISTRO.repos"; test -r $f && echo $f); do vcs import < "$repo"; done
+rosdep install -r --from-paths moveit_msgs moveit_resources moveit2 --ignore-src --rosdistro $ROS_DISTRO -y
+colcon build --symlink-install moveit_msgs
+colcon build --symlink-install moveit_**
+colcon build --symlink-install moveit-common moveit-core
+source install/setup.bash
+colcon build --symlink-install
+```

@@ -17,12 +17,13 @@
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
-#include "hts_robotics/action/move_target.hpp"
-#include "hts_robotics/action/pick_up_target.hpp"
-#include "hts_robotics/action/gripper_open.hpp"
-#include "hts_robotics/action/gripper_close.hpp"
-#include "hts_robotics/action/grasp_object.hpp"
+#include "hts_msgs/action/move_target.hpp"
+#include "hts_msgs/action/pick_up_target.hpp"
+#include "hts_msgs/action/gripper_open.hpp"
+#include "hts_msgs/action/gripper_close.hpp"
+#include "hts_msgs/action/grasp_object.hpp"
 #include "hts_msgs/srv/request_grasp.hpp"
+#include "hts_msgs/srv/enable_orientation_constraints.hpp"
 
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
@@ -48,17 +49,17 @@ class hts_node : public rclcpp::Node {
 public:
 
   // type definitions
-  using CustomActionPickup = hts_robotics::action::PickUpTarget;
-  using CustomActionMove = hts_robotics::action::MoveTarget;
+  using CustomActionPickup = hts_msgs::action::PickUpTarget;
+  using CustomActionMove = hts_msgs::action::MoveTarget;
   using StampedPoint = geometry_msgs::msg::PointStamped;
   using StampedPose = geometry_msgs::msg::PoseStamped;
   using JointState = sensor_msgs::msg::JointState;
   using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
   using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
   using PlanningSceneMonitor = planning_scene_monitor::PlanningSceneMonitor;
-  using CustomActionOpen = hts_robotics::action::GripperOpen;
-  using CustomActionClose = hts_robotics::action::GripperClose;
-  using CustomActionGraspObject = hts_robotics::action::GraspObject;
+  using CustomActionOpen = hts_msgs::action::GripperOpen;
+  using CustomActionClose = hts_msgs::action::GripperClose;
+  using CustomActionGraspObject = hts_msgs::action::GraspObject;
 
   // constructor
   hts_node():Node("hts_node") {
@@ -124,6 +125,7 @@ public:
       std::bind(&hts_node::handle_cancel_grasp_object_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_grasp_object_, this, std::placeholders::_1)
     );
+    
     grasp_request_client_ = this->create_client<hts_msgs::srv::RequestGrasp>("/request_grasp");
     grasp_request_client_->wait_for_service();
     
@@ -133,6 +135,11 @@ public:
     close_client_ = rclcpp_action::create_client<CustomActionClose>(this, "gripper_close");
 
     RCLCPP_INFO(this->get_logger(), "Created Grasper Clients and Servers.");
+
+    constraints_service_ = this->create_service<hts_msgs::srv::EnableOrientationConstraints>(
+        "enable_constraints",
+        std::bind(&hts_node::handle_service, this, std::placeholders::_1, std::placeholders::_2)
+    );
 
     RCLCPP_INFO(this->get_logger(), "Finished constructing HTS Node.");
   }
@@ -191,7 +198,6 @@ public:
 
     RCLCPP_INFO(get_logger(), "Looking for objects: %ld", objects.size());
     for (auto &obj_name : objects) {
-      RCLCPP_INFO(get_logger(), "Found object");
       moveit_msgs::msg::CollisionObject co_target;
       shape_msgs::msg::SolidPrimitive primitive_target;
       geometry_msgs::msg::Pose pose_target;
@@ -280,6 +286,9 @@ public:
     }
 
     planning_scene_monitor_->requestPlanningSceneState();
+
+    move_group_interface_->setPlanningPipelineId("ompl");
+    move_group_interface_->setPlannerId("RRTConnectkConfigDefault");
   }
 
 private:
@@ -311,6 +320,49 @@ private:
   rclcpp_action::Client<CustomActionMove>::SharedPtr move_client_;
   rclcpp_action::Client<CustomActionOpen>::SharedPtr open_client_;
   rclcpp_action::Client<CustomActionClose>::SharedPtr close_client_;
+
+  rclcpp::Service<hts_msgs::srv::EnableOrientationConstraints>::SharedPtr constraints_service_;
+
+void handle_service(
+    const std::shared_ptr<hts_msgs::srv::EnableOrientationConstraints::Request> request,
+    std::shared_ptr<hts_msgs::srv::EnableOrientationConstraints::Response> response
+  ) {
+    RCLCPP_INFO(this->get_logger(), "Applying Constraints");
+
+    // Apply orientation constraints
+      moveit_msgs::msg::OrientationConstraint orientation_constraint;
+      orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+      orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+
+      auto current_pose = move_group_interface_->getCurrentPose();
+      orientation_constraint.orientation = current_pose.pose.orientation;
+      RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
+        current_pose.pose.orientation.x, current_pose.pose.orientation.y,
+        current_pose.pose.orientation.z, current_pose.pose.orientation.w
+      );
+
+      orientation_constraint.absolute_x_axis_tolerance = 0.3;
+      orientation_constraint.absolute_y_axis_tolerance = 0.3;
+      orientation_constraint.absolute_z_axis_tolerance = 3.142;
+      orientation_constraint.weight = 1.0;
+      orientation_constraint.parameterization = moveit_msgs::msg::OrientationConstraint::ROTATION_VECTOR;
+
+      moveit_msgs::msg::Constraints all_constraints;
+      all_constraints.orientation_constraints.push_back(orientation_constraint);
+
+      move_group_interface_->clearPathConstraints();
+
+      if (request->enable) {
+        move_group_interface_->setPathConstraints(all_constraints);
+        // move_group_interface_->setGoalOrientationTolerance(10);
+        RCLCPP_INFO(this->get_logger(), "Applied orientation constraints to planning scene.");
+        RCLCPP_INFO(this->get_logger(), "Orientation constraints: %zu", move_group_interface_->getPathConstraints().orientation_constraints.size());
+      } else {
+        RCLCPP_INFO(this->get_logger(), "Removed orientation constraints from planning scene.");
+        RCLCPP_INFO(this->get_logger(), "Orientation constraints: %zu", move_group_interface_->getPathConstraints().orientation_constraints.size());        
+      }
+
+  }
 
   // // Server Callbacks
   rclcpp_action::GoalResponse handle_goal_grasp_object_(
@@ -629,7 +681,31 @@ private:
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
-      RCLCPP_INFO(this->get_logger(), "A");
+      std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
+      move_group_interface_->getInterfaceDescriptions(desc);
+
+      RCLCPP_INFO(this->get_logger(), "Loaded planning pipelines and planners:");
+      for (const auto &pipeline : desc)
+      {
+          RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", pipeline.name.c_str());
+          for (const auto &planner_id : pipeline.planner_ids)
+          {
+            RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+          }
+      }
+
+      moveit_msgs::msg::PlannerInterfaceDescription default_desc;
+      move_group_interface_->getInterfaceDescription(default_desc);
+      RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", default_desc.name.c_str());
+      for (const auto &planner_id : default_desc.planner_ids)
+        {
+          RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+        }
+
+      RCLCPP_INFO(this->get_logger(), "default planning pipeline id: %s", move_group_interface_->getDefaultPlanningPipelineId().c_str());
+      RCLCPP_INFO(this->get_logger(), "default planner id: %s", move_group_interface_->getDefaultPlannerId().c_str());
+      RCLCPP_INFO(this->get_logger(), "current planner id: %s", move_group_interface_->getPlannerId().c_str());
+
       auto goal = goal_handle->get_goal();
 
       geometry_msgs::msg::Pose target;
@@ -697,10 +773,14 @@ private:
     std::thread([this, goal_handle]() {
       auto goal = goal_handle->get_goal();
 
-      geometry_msgs::msg::Pose target;
-      target.position.x = goal->x;
-      target.position.y = goal->y;
-      target.position.z = goal->z;
+      move_group_interface_->setPlanningPipelineId("ompl");
+      move_group_interface_->setPlannerId("RRTConnectkConfigDefault");
+      move_group_interface_->setGoalPositionTolerance(0.01);
+      move_group_interface_->setGoalOrientationTolerance(0.1);
+      move_group_interface_->setStartStateToCurrentState();
+      // move_group_interface_->setPlanningPipelineId("ompl");
+      // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
+      // move_group_interface_->setPlanningTime(10.0)
 
       // Apply orientation constraints
       moveit_msgs::msg::OrientationConstraint orientation_constraint;
@@ -713,26 +793,23 @@ private:
         current_pose.pose.orientation.x, current_pose.pose.orientation.y,
         current_pose.pose.orientation.z, current_pose.pose.orientation.w
       );
+
       orientation_constraint.absolute_x_axis_tolerance = 0.3;
       orientation_constraint.absolute_y_axis_tolerance = 0.3;
-      orientation_constraint.absolute_z_axis_tolerance = 1000;
+      orientation_constraint.absolute_z_axis_tolerance = 10;
       orientation_constraint.weight = 1.0;
+      orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
 
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
 
-      // move_group_interface_->setPathConstraints(all_constraints);
+      move_group_interface_->clearPathConstraints();
+      move_group_interface_->setPathConstraints(all_constraints);
       RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
 
-      target.orientation.x = current_pose.pose.orientation.x;
-      target.orientation.y = current_pose.pose.orientation.y;
-      target.orientation.z = current_pose.pose.orientation.z;
-      target.orientation.w = current_pose.pose.orientation.w;
-
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
-      RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", target.orientation.x, target.orientation.y, target.orientation.z, target.orientation.w);
 
-      move_group_interface_->setPoseTarget(target);
+      move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto current_position = move_group_interface_->getCurrentPose().pose;
@@ -742,7 +819,9 @@ private:
         current_position.position.x, current_position.position.y, current_position.position.z);
       RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
         current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
-      
+
+      move_group_interface_->clearPathConstraints();
+
       auto result = std::make_shared<CustomActionMove::Result>();
       result->success = success;
       if (success) {

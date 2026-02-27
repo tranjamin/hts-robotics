@@ -2,9 +2,9 @@ objects:
   - box
   - cylinder
   - sphere
-  - conic_flask
-  - round_bottomed_flask
-  - volumetric_flask
+  # - conic_flask
+  # - round_bottomed_flask
+  # - volumetric_flask
 
 box:
   object_id: 0
