@@ -18,10 +18,6 @@ def generate_launch_description():
         description="RViz configuration file",
     )
 
-    db_arg = DeclareLaunchArgument(
-        "db", default_value="False", description="Database flag"
-    )
-
     ros2_control_hardware_type = DeclareLaunchArgument(
         "ros2_control_hardware_type",
         default_value="mock_components",
@@ -134,24 +130,9 @@ def generate_launch_description():
         arguments=["fr3_hand_controller", "-c", "/controller_manager"],
     )
 
-    # Warehouse mongodb server
-    db_config = LaunchConfiguration("db")
-    mongodb_server_node = Node(
-        package="warehouse_ros_mongo",
-        executable="mongo_wrapper_ros.py",
-        parameters=[
-            {"warehouse_port": 33829},
-            {"warehouse_host": "localhost"},
-            {"warehouse_plugin": "warehouse_ros_mongo::MongoDatabaseConnection"},
-        ],
-        output="screen",
-        condition=IfCondition(db_config),
-    )
-
     return LaunchDescription(
         [
             rviz_config_arg,
-            db_arg,
             ros2_control_hardware_type,
             rviz_node,
             static_tf_node,
@@ -161,6 +142,5 @@ def generate_launch_description():
             joint_state_broadcaster_spawner,
             fr3_arm_controller_spawner,
             fr3_hand_controller_spawner,
-            mongodb_server_node,
         ]
     )
