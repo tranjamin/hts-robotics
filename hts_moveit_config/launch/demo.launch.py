@@ -31,14 +31,14 @@ def generate_launch_description():
     moveit_config = (
         MoveItConfigsBuilder("hts")
         .robot_description(
-            file_path="config/panda.urdf.xacro",
+            file_path="config/fr3.urdf.xacro",
             mappings={
                 "ros2_control_hardware_type": LaunchConfiguration(
                     "ros2_control_hardware_type"
                 )
             },
         )
-        .robot_description_semantic(file_path="config/panda.srdf")
+        .robot_description_semantic(file_path="config/fr3.srdf")
         .planning_scene_monitor(
             publish_robot_description=True, publish_robot_description_semantic=True
         )

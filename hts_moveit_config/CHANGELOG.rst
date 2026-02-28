@@ -1,5 +1,5 @@
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-Changelog for package moveit_resources_panda_moveit_config
+Changelog for package hts_moveit_config
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 3.1.1 (2025-06-10)
@@ -26,7 +26,7 @@ Changelog for package moveit_resources_panda_moveit_config
   ---------
 * Update ros2 control usage (`#192 <https://github.com/ros-planning/moveit_resources/issues/192>`_)
   * Update ros2_control usage
-  * Update dual_arm_panda_moveit_config/config/fr3_hand.ros2_control.xacro
+  * Update dual_arm_fr3_moveit_config/config/fr3_hand.ros2_control.xacro
   Co-authored-by: Sebastian Castro <4603398+sea-bass@users.noreply.github.com>
   ---------
   Co-authored-by: Sebastian Castro <4603398+sea-bass@users.noreply.github.com>
@@ -83,7 +83,7 @@ Changelog for package moveit_resources_panda_moveit_config
 * Black Formatting for Launch Files (`#128 <https://github.com/ros-planning/moveit_resources/issues/128>`_)
 * Refactor panda demo.launch to use moveit_configs_utils (`#119 <https://github.com/ros-planning/moveit_resources/issues/119>`_)
 * Remove stomp configuration file (`#126 <https://github.com/ros-planning/moveit_resources/issues/126>`_)
-* Restore panda_gripper_controllers.yaml. Rename panda_moveit_controllers.yaml (`#117 <https://github.com/ros-planning/moveit_resources/issues/117>`_)
+* Restore fr3_gripper_controllers.yaml. Rename fr3_moveit_controllers.yaml (`#117 <https://github.com/ros-planning/moveit_resources/issues/117>`_)
 * Delete deprecated Panda config and launch files (`#98 <https://github.com/ros-planning/moveit_resources/issues/98>`_)
 * No initial velocity conditions (`#111 <https://github.com/ros-planning/moveit_resources/issues/111>`_)
 * ros2_control update: initial_position -> initial_value (`#110 <https://github.com/ros-planning/moveit_resources/issues/110>`_)

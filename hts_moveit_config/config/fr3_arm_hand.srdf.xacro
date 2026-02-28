@@ -4,8 +4,8 @@
     A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
 -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="panda">
-  <xacro:include filename="$(find moveit_resources_panda_moveit_config)/config/fr3_arm.xacro" />
-  <xacro:include filename="$(find moveit_resources_panda_moveit_config)/config/hand.xacro" />
+  <xacro:include filename="$(find hts_moveit_config)/config/fr3_arm.xacro" />
+  <xacro:include filename="$(find hts_moveit_config)/config/hand.xacro" />
   <xacro:fr3_arm />
   <xacro:hand />
   <!--GROUPS: Representation of a set of joints and links. This can be useful for specifying DOF to plan for, defining arms, end effectors, etc-->
@@ -32,12 +32,12 @@
   <disable_collisions link1="fr3_hand" link2="fr3_link4" reason="Never" />
   <disable_collisions link1="fr3_hand" link2="fr3_link6" reason="Never" />
   <disable_collisions link1="fr3_hand" link2="fr3_link7" reason="Adjacent" />
-  <disable_collisions link1="panda_leftfinger" link2="fr3_link3" reason="Never" />
-  <disable_collisions link1="panda_leftfinger" link2="fr3_link4" reason="Never" />
-  <disable_collisions link1="panda_leftfinger" link2="fr3_link6" reason="Never" />
-  <disable_collisions link1="panda_leftfinger" link2="fr3_link7" reason="Never" />
-  <disable_collisions link1="fr3_link3" link2="panda_rightfinger" reason="Never" />
-  <disable_collisions link1="fr3_link4" link2="panda_rightfinger" reason="Never" />
-  <disable_collisions link1="fr3_link6" link2="panda_rightfinger" reason="Never" />
-  <disable_collisions link1="fr3_link7" link2="panda_rightfinger" reason="Never" />
+  <disable_collisions link1="fr3_leftfinger" link2="fr3_link3" reason="Never" />
+  <disable_collisions link1="fr3_leftfinger" link2="fr3_link4" reason="Never" />
+  <disable_collisions link1="fr3_leftfinger" link2="fr3_link6" reason="Never" />
+  <disable_collisions link1="fr3_leftfinger" link2="fr3_link7" reason="Never" />
+  <disable_collisions link1="fr3_link3" link2="fr3_rightfinger" reason="Never" />
+  <disable_collisions link1="fr3_link4" link2="fr3_rightfinger" reason="Never" />
+  <disable_collisions link1="fr3_link6" link2="fr3_rightfinger" reason="Never" />
+  <disable_collisions link1="fr3_link7" link2="fr3_rightfinger" reason="Never" />
 </robot>
