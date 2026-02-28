@@ -74,47 +74,47 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link0:
+        fr3_link0:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link1:
+        fr3_link1:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link2:
+        fr3_link2:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link3:
+        fr3_link3:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link4:
+        fr3_link4:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link5:
+        fr3_link5:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link6:
+        fr3_link6:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link7:
+        fr3_link7:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        panda_link8:
+        fr3_link8:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -167,47 +167,47 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link0:
+          fr3_link0:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link1:
+          fr3_link1:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link2:
+          fr3_link2:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link3:
+          fr3_link3:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link4:
+          fr3_link4:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link5:
+          fr3_link5:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link6:
+          fr3_link6:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link7:
+          fr3_link7:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link8:
+          fr3_link8:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -261,47 +261,47 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link0:
+          fr3_link0:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link1:
+          fr3_link1:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link2:
+          fr3_link2:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link3:
+          fr3_link3:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link4:
+          fr3_link4:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link5:
+          fr3_link5:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link6:
+          fr3_link6:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link7:
+          fr3_link7:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link8:
+          fr3_link8:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -366,47 +366,47 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link0:
+          fr3_link0:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link1:
+          fr3_link1:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link2:
+          fr3_link2:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link3:
+          fr3_link3:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link4:
+          fr3_link4:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link5:
+          fr3_link5:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link6:
+          fr3_link6:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link7:
+          fr3_link7:
             Alpha: 1
             Show Axes: false
             Show Trail: false
             Value: true
-          panda_link8:
+          fr3_link8:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -423,7 +423,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: panda_link0
+    Fixed Frame: fr3_link0
     Frame Rate: 30
   Name: root
   Tools:
