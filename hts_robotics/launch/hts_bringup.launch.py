@@ -119,25 +119,6 @@ def get_rviz_config():
     rviz_full_config = os.path.join(rviz_base, 'moveit.rviz')
     return rviz_full_config
 
-def get_ompl_config():
-    ompl_planning_pipeline_config = {
-        'move_group': {
-            'planning_plugins': ['ompl_interface/OMPLPlanner'],
-            # 'request_adapters': 'default_planner_request_adapters/AddTimeOptimalParameterization '
-            #                     'default_planner_request_adapters/ResolveConstraintFrames '
-            #                     'default_planner_request_adapters/FixWorkspaceBounds '
-            #                     'default_planner_request_adapters/FixStartStateBounds '
-            #                     'default_planner_request_adapters/FixStartStateCollision '
-            #                     'default_planner_request_adapters/FixStartStatePathConstraints',
-            'start_state_max_bounds_error': 0.1,
-        }
-    }
-    ompl_planning_yaml = load_yaml(
-        'hts_robotics', 'config/ompl_planning.yaml'
-    )
-    ompl_planning_pipeline_config['move_group'].update(ompl_planning_yaml)
-    return ompl_planning_pipeline_config
-
 def create_hts_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
@@ -166,14 +147,11 @@ def create_hts_node(context: LaunchContext, launch_configurations):
 def create_moveit_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
-    robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
     namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
     moveit_simple_controllers_yaml = load_yaml('hts_robotics', 'config/simple_controllers.yaml')
-    sensors_yaml = load_yaml("hts_robotics", "config/sensors_kinect_pointcloud.yaml")
+    sensors_yaml = load_yaml("hts_moveit_config", "config/sensors_realsense_pointcloud.yaml")
     general_config = load_yaml("hts_robotics", "config/config.yaml")
-    trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
-    ompl_planning_pipeline_config = get_ompl_config()
 
     moveit_controllers = {
         'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
@@ -217,10 +195,8 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
 def create_rviz_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
-    robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
     namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
-    ompl_planning_pipeline_config = get_ompl_config()
     rviz_full_config = get_rviz_config()
 
     rviz_node = Node(
