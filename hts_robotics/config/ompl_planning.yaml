@@ -11,9 +11,12 @@ fr3_arm:
   default_planning_pipeline: RRTstarkConfigDefault
   planner_configs:
     - RRTstarkConfigDefault
-fr3_arm_hand:
-  planner_configs:
-    - RRTstarkConfigDefault
+
+move_group:
+  fr3_arm:
+    default_planning_pipeline: RRTstarkConfigDefault
+    planner_configs:
+      - RRTstarkConfigDefault
 
 # path_tolerance: 0.005
 # resample_dt: 0.02
