@@ -1,3 +1,17 @@
+path_tolerance: 0.005
+resample_dt: 0.02
+min_angle_change: 0.001
+
+default_workspace_bounds: 2.0
+start_state_max_bounds_error: 0.01
+start_state_max_dt: 0.1
+jiggle_fraction: 0.005
+max_sampling_attempts: 500
+
+goal_orientation_tolerance: 0.1
+goal_position_tolerance: 0.005
+planning_time: 30.0
+
 planning_plugins:
   - ompl_interface/OMPLPlanner
 # To optionally use Ruckig for jerk-limited smoothing, add this line to the request adapters below
@@ -170,34 +184,7 @@ fr3_arm:
     - SPARSkConfigDefault
     - SPARStwokConfigDefault
     - TrajOptDefault
-fr3_arm_hand:
-  planner_configs:
-    - APSConfigDefault
-    - SBLkConfigDefault
-    - ESTkConfigDefault
-    - LBKPIECEkConfigDefault
-    - BKPIECEkConfigDefault
-    - KPIECEkConfigDefault
-    - RRTkConfigDefault
-    - RRTConnectkConfigDefault
-    - RRTstarkConfigDefault
-    - TRRTkConfigDefault
-    - PRMkConfigDefault
-    - PRMstarkConfigDefault
-    - FMTkConfigDefault
-    - BFMTkConfigDefault
-    - PDSTkConfigDefault
-    - STRIDEkConfigDefault
-    - BiTRRTkConfigDefault
-    - LBTRRTkConfigDefault
-    - BiESTkConfigDefault
-    - ProjESTkConfigDefault
-    - LazyPRMkConfigDefault
-    - LazyPRMstarkConfigDefault
-    - SPARSkConfigDefault
-    - SPARStwokConfigDefault
-    - TrajOptDefault
-hand:
+fr3_hand:
   planner_configs:
     - APSConfigDefault
     - SBLkConfigDefault
