@@ -122,16 +122,16 @@ def generate_launch_description():
         ],
     )
 
-    panda_arm_controller_spawner = Node(
+    fr3_arm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["panda_arm_controller", "-c", "/controller_manager"],
+        arguments=["fr3_arm_controller", "-c", "/controller_manager"],
     )
 
-    panda_hand_controller_spawner = Node(
+    fr3_hand_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["panda_hand_controller", "-c", "/controller_manager"],
+        arguments=["fr3_hand_controller", "-c", "/controller_manager"],
     )
 
     # Warehouse mongodb server
@@ -159,8 +159,8 @@ def generate_launch_description():
             move_group_node,
             ros2_control_node,
             joint_state_broadcaster_spawner,
-            panda_arm_controller_spawner,
-            panda_hand_controller_spawner,
+            fr3_arm_controller_spawner,
+            fr3_hand_controller_spawner,
             mongodb_server_node,
         ]
     )

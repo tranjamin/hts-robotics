@@ -26,7 +26,7 @@ Changelog for package moveit_resources_panda_moveit_config
   ---------
 * Update ros2 control usage (`#192 <https://github.com/ros-planning/moveit_resources/issues/192>`_)
   * Update ros2_control usage
-  * Update dual_arm_panda_moveit_config/config/panda_hand.ros2_control.xacro
+  * Update dual_arm_panda_moveit_config/config/fr3_hand.ros2_control.xacro
   Co-authored-by: Sebastian Castro <4603398+sea-bass@users.noreply.github.com>
   ---------
   Co-authored-by: Sebastian Castro <4603398+sea-bass@users.noreply.github.com>
@@ -96,8 +96,8 @@ Changelog for package moveit_resources_panda_moveit_config
 2.0.3 (2021-09-16)
 ------------------
 * Migrate to joint state broadcaster
-* Add panda_hand_controller to demo.launch.py (`#87 <https://github.com/ros-planning/moveit_resources/issues/87>`_)
-* Add fake controller for panda_hand (`#73 <https://github.com/ros-planning/moveit_resources/issues/73>`_)
+* Add fr3_hand_controller to demo.launch.py (`#87 <https://github.com/ros-planning/moveit_resources/issues/87>`_)
+* Add fake controller for fr3_hand (`#73 <https://github.com/ros-planning/moveit_resources/issues/73>`_)
 * Contributors: Jafar Abdi, Marq Rasmussen, Vatan Aksoy Tezer
 
 2.0.2 (2021-05-24)
