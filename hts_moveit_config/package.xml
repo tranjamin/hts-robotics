@@ -21,7 +21,6 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <exec_depend>hts_description</exec_depend>
   <!-- disabled to remove circular dependencies
   <exec_depend>moveit_ros_move_group</exec_depend>
   <exec_depend>moveit_fake_controller_manager</exec_depend>
