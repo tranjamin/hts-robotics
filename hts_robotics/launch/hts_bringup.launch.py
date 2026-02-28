@@ -182,6 +182,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             moveit_config.trajectory_execution,
             moveit_config.robot_description_kinematics,
             moveit_controllers,
+            load_yaml("hts_moveit_config", "config/planning_parameters.yaml"),
             planning_scene_monitor_parameters,
             {"use_sim_time": USE_SIM_TIME},
         ],

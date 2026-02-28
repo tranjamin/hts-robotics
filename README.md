@@ -261,12 +261,11 @@ Instructions to install stomp:
 sudo apt remove ros-humble-moveit*
 git clone https://github.com/moveit/moveit2.git -b main
 for repo in moveit2/moveit2.repos $(f="moveit2/moveit2_$ROS_DISTRO.repos"; test -r $f && echo $f); do vcs import < "$repo"; done
-sudo apt update
-rosdep install -r --from-paths moveit_msgs moveit_resources moveit2 --ignore-src --rosdistro $ROS_DISTRO -y
+sudo apt update && rosdep update
+rosdep install -r --from-paths src/moveit_msgs src/moveit_resources src/moveit2 --ignore-src --rosdistro $ROS_DISTRO -y
 colcon build --symlink-install --packages-select moveit_msgs
-colcon build --symlink-install --packages-select moveit_resources moveit_resources_fanuc_description moveit_resources_panda_description
-colcon build --symlink-install --packages-select moveit_resources_pr2_description moveit_resources_fanuc_moveit_config moveit_resources_panda_moveit_config
-colcon build --symlink-install --packages-select moveit_common moveit_core
+colcon build --symlink-install --packages-select moveit_resources moveit_resources_fanuc_description moveit_resources_panda_description moveit_resources_pr2_description moveit_resources_fanuc_moveit_config moveit_resources_panda_moveit_config
+colcon build --symlink-install --packages-select moveit_common moveit_core  --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
-colcon build --symlink-install
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```

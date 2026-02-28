@@ -99,8 +99,8 @@
     <joint name="fr3_finger_joint2" value="0.035"/>
   </group_state>
   <group_state group="hand" name="close">
-    <joint name="fr3_finger_joint1" value="0"/>
-    <joint name="fr3_finger_joint2" value="0"/>
+    <joint name="fr3_finger_joint1" value="0.001"/>
+    <joint name="fr3_finger_joint2" value="0.001"/>
   </group_state>
   <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
   <end_effector group="hand" name="hand" parent_group="fr3_arm" parent_link="fr3_link8"/>

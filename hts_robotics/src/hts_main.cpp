@@ -286,6 +286,43 @@ public:
     }
 
     planning_scene_monitor_->requestPlanningSceneState();
+
+    move_group_interface_->setPlanningPipelineId("stomp");
+    move_group_interface_->setPlannerId("stomp");
+
+    std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
+    move_group_interface_->getInterfaceDescriptions(desc);
+
+    RCLCPP_INFO(this->get_logger(), "Loaded planning pipelines and planners:");
+    for (const auto &pipeline : desc)
+    {
+        RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", pipeline.name.c_str());
+        for (const auto &planner_id : pipeline.planner_ids)
+        {
+          RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+          std::map<std::string, std::string> params = move_group_interface_->getPlannerParams(planner_id.c_str(), "move_group");
+          for (const auto& [key, value] : params) {
+            RCLCPP_INFO(this->get_logger(), "    Move Group Param: %s = %s", key.c_str(), value.c_str());
+          }
+          std::map<std::string, std::string> params2 = move_group_interface_->getPlannerParams(planner_id.c_str(), "fr3_arm");
+          for (const auto& [key, value] : params2) {
+            RCLCPP_INFO(this->get_logger(), "    Fr3 Arm Param: %s = %s", key.c_str(), value.c_str());
+          }
+        }
+    }
+
+    moveit_msgs::msg::PlannerInterfaceDescription default_desc;
+    move_group_interface_->getInterfaceDescription(default_desc);
+    RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", default_desc.name.c_str());
+    for (const auto &planner_id : default_desc.planner_ids)
+      {
+        RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+      }
+
+    RCLCPP_INFO(this->get_logger(), "default planning pipeline id: %s", move_group_interface_->getDefaultPlanningPipelineId().c_str());
+    RCLCPP_INFO(this->get_logger(), "default planner id: %s", move_group_interface_->getDefaultPlannerId().c_str());
+    RCLCPP_INFO(this->get_logger(), "current planner id: %s", move_group_interface_->getPlannerId().c_str());
+
   }
 
 private:
@@ -679,43 +716,9 @@ void handle_service(
   ) {
     std::thread([this, goal_handle]() {
 
-      // move_group_interface_->setPlanningPipelineId("ompl");
-      // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
-
-      std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
-      move_group_interface_->getInterfaceDescriptions(desc);
-
-      RCLCPP_INFO(this->get_logger(), "Loaded planning pipelines and planners:");
-      for (const auto &pipeline : desc)
-      {
-          RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", pipeline.name.c_str());
-          for (const auto &planner_id : pipeline.planner_ids)
-          {
-            RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
-            std::map<std::string, std::string> params = move_group_interface_->getPlannerParams(planner_id.c_str(), "move_group");
-            for (const auto& [key, value] : params) {
-              RCLCPP_INFO(this->get_logger(), "    Move Group Param: %s = %s", key.c_str(), value.c_str());
-            }
-            std::map<std::string, std::string> params2 = move_group_interface_->getPlannerParams(planner_id.c_str(), "fr3_arm");
-            for (const auto& [key, value] : params2) {
-              RCLCPP_INFO(this->get_logger(), "    Fr3 Arm Param: %s = %s", key.c_str(), value.c_str());
-            }
-          }
-      }
-
-      moveit_msgs::msg::PlannerInterfaceDescription default_desc;
-      move_group_interface_->getInterfaceDescription(default_desc);
-      RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", default_desc.name.c_str());
-      for (const auto &planner_id : default_desc.planner_ids)
-        {
-          RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
-        }
-
-      RCLCPP_INFO(this->get_logger(), "default planning pipeline id: %s", move_group_interface_->getDefaultPlanningPipelineId().c_str());
-      RCLCPP_INFO(this->get_logger(), "default planner id: %s", move_group_interface_->getDefaultPlannerId().c_str());
-      RCLCPP_INFO(this->get_logger(), "current planner id: %s", move_group_interface_->getPlannerId().c_str());
-
       auto goal = goal_handle->get_goal();
+
+      move_group_interface_->setStartStateToCurrentState();
 
       geometry_msgs::msg::Pose target;
       target.position.x = goal->x;
@@ -782,14 +785,12 @@ void handle_service(
     std::thread([this, goal_handle]() {
       auto goal = goal_handle->get_goal();
 
-      move_group_interface_->setPlanningPipelineId("ompl");
-      move_group_interface_->setPlannerId("RRTConnectkConfigDefault");
-      move_group_interface_->setGoalPositionTolerance(0.01);
-      move_group_interface_->setGoalOrientationTolerance(0.1);
+      // move_group_interface_->setGoalPositionTolerance(0.01);
+      // move_group_interface_->setGoalOrientationTolerance(0.1);
       move_group_interface_->setStartStateToCurrentState();
       // move_group_interface_->setPlanningPipelineId("ompl");
       // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
-      // move_group_interface_->setPlanningTime(10.0)
+      move_group_interface_->setPlanningTime(30.0);
 
       // Apply orientation constraints
       moveit_msgs::msg::OrientationConstraint orientation_constraint;
