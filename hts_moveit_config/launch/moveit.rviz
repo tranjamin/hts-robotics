@@ -64,7 +64,7 @@ Visualization Manager:
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        panda_hand:
+        fr3_hand:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -157,7 +157,7 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          panda_hand:
+          fr3_hand:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -251,7 +251,7 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          panda_hand:
+          fr3_hand:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -333,7 +333,7 @@ Visualization Manager:
         Goal State Color: 250; 128; 0
         Interactive Marker Size: 0.25
         Joint Violation Color: 255; 0; 255
-        Planning Group: panda_arm
+        Planning Group: fr3_arm
         Query Goal State: true
         Query Start State: false
         Show Workspace: false
@@ -356,7 +356,7 @@ Visualization Manager:
           Expand Link Details: false
           Expand Tree: false
           Link Tree Style: Links in Alphabetic Order
-          panda_hand:
+          fr3_hand:
             Alpha: 1
             Show Axes: false
             Show Trail: false
