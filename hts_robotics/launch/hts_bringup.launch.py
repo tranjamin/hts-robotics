@@ -22,6 +22,27 @@ from moveit_configs_utils import MoveItConfigsBuilder
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
 
+moveit_config = (
+    MoveItConfigsBuilder("hts")
+    .robot_description(
+        file_path="config/fr3.urdf.xacro",
+        mappings={
+            "ros2_control_hardware_type": LaunchConfiguration(
+                "ros2_control_hardware_type"
+            )
+        },
+    )
+    .robot_description_semantic(file_path="config/fr3.srdf")
+    .planning_scene_monitor(
+        publish_robot_description=True, publish_robot_description_semantic=True
+    )
+    .trajectory_execution(file_path="config/gripper_moveit_controllers.yaml")
+    .planning_pipelines(
+        pipelines=["stomp", "ompl", "chomp", "pilz_industrial_motion_planner"]
+    )
+    .to_moveit_configs()
+)
+
 def get_robot_description(context: LaunchContext, launch_configurations):
     subs = lambda x : context.perform_substitution(launch_configurations[x].get('launch_config'))
     arm_id_str = subs('arm_id')
@@ -176,14 +197,12 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             # sensors_yaml,
             robot_description,
             robot_description_semantic,
-            robot_kinematics_yaml,
-            # ompl_planning_pipeline_config,
-            load_yaml("hts_robotics", "config/all_planners_nightly.yaml"),
-            load_yaml("hts_robotics", "config/joint_limits.yaml"),
-            # load_yaml("hts_robotics", "config/ompl_planning.yaml"),
-            # load_yaml("hts_robotics", "config/kinematics.yaml"),
-            # ompl_planning_pipeline_config,
-            trajectory_config,
+
+            moveit_config.joint_limits,
+            moveit_config.planning_pipelines,
+            moveit_config.pilz_cartesian_limits,
+            moveit_config.trajectory_execution,
+            moveit_config.robot_description_kinematics,
             moveit_controllers,
             planning_scene_monitor_parameters,
             {"use_sim_time": USE_SIM_TIME},
@@ -217,12 +236,12 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
         parameters=[
             robot_description,
             robot_description_semantic,
-            load_yaml("hts_robotics", "config/all_planners_nightly.yaml"),
-            load_yaml("hts_robotics", "config/joint_limits.yaml"),
-            # load_yaml("hts_robotics", "config/ompl_planning.yaml"),
-            # load_yaml("hts_robotics", "config/kinematics.yaml"),
-            # ompl_planning_pipeline_config,
-            robot_kinematics_yaml,
+
+            moveit_config.joint_limits,
+            moveit_config.planning_pipelines,
+            moveit_config.pilz_cartesian_limits,
+            moveit_config.trajectory_execution,
+            moveit_config.robot_description_kinematics,
             {"use_sim_time": USE_SIM_TIME}
         ],
     )
