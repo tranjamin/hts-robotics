@@ -1,6 +1,6 @@
-# panda_description
+# fr3_description
 
-> Note: This package contains a panda.urdf and a newer panda.urdf.xacro.
+> Note: This package contains a fr3.urdf and a newer fr3.urdf.xacro.
 > The XACRO has been created to support finding package resource files dynamically which is needed for Gazebo.
 > The URDF is still needed by [RobotModelTestUtils](https://github.com/ros-planning/moveit2/blob/main/moveit_core/utils/src/robot_model_test_utils.cpp#L75) which doesn't support xacro yet.
 

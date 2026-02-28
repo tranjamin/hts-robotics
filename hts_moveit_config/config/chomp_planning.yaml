@@ -27,7 +27,7 @@ ridge_factor: 0.0
 use_pseudo_inverse: false
 pseudo_inverse_ridge_factor: 0.0001
 animate_endeffector: false
-animate_endeffector_segment: "panda_rightfinger"
+animate_endeffector_segment: "fr3_rightfinger"
 joint_update_limit: 0.1
 collision_clearance: 0.2
 collision_threshold: 0.07
