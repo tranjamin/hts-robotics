@@ -286,9 +286,6 @@ public:
     }
 
     planning_scene_monitor_->requestPlanningSceneState();
-
-    move_group_interface_->setPlanningPipelineId("ompl");
-    move_group_interface_->setPlannerId("RRTConnectkConfigDefault");
   }
 
 private:
@@ -681,6 +678,10 @@ void handle_service(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+
+      // move_group_interface_->setPlanningPipelineId("ompl");
+      // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
+
       std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
       move_group_interface_->getInterfaceDescriptions(desc);
 
@@ -691,6 +692,14 @@ void handle_service(
           for (const auto &planner_id : pipeline.planner_ids)
           {
             RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+            std::map<std::string, std::string> params = move_group_interface_->getPlannerParams(planner_id.c_str(), "move_group");
+            for (const auto& [key, value] : params) {
+              RCLCPP_INFO(this->get_logger(), "    Move Group Param: %s = %s", key.c_str(), value.c_str());
+            }
+            std::map<std::string, std::string> params2 = move_group_interface_->getPlannerParams(planner_id.c_str(), "fr3_arm");
+            for (const auto& [key, value] : params2) {
+              RCLCPP_INFO(this->get_logger(), "    Fr3 Arm Param: %s = %s", key.c_str(), value.c_str());
+            }
           }
       }
 
