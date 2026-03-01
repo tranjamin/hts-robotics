@@ -161,9 +161,17 @@ public:
     planning_scene_monitor_->startWorldGeometryMonitor();
     planning_scene_monitor_->startStateMonitor();
 
-    // set tolerances
+    // set tolerances for gripper
     gripper_interface_->setGoalPositionTolerance(0.001);
     gripper_interface_->setGoalJointTolerance(0.001);
+    gripper_interface_->setGoalOrientationTolerance(0.1);
+
+    // set tolerances for arm
+    move_group_interface_->setGoalPositionTolerance(0.001);
+    move_group_interface_->setGoalOrientationTolerance(0.001);
+    move_group_interface_->setGoalJointTolerance(0.01);
+    move_group_interface_->setPlanningTime(30.0);
+
 
     // for dynamically updating the planning scene (enabling and disabling collisions)
     planning_scene_diff_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>("/planning_scene", 10);
@@ -179,7 +187,7 @@ public:
     pose_ground.orientation.w = 1.0;
     pose_ground.position.x = 0;
     pose_ground.position.y = 0;
-    pose_ground.position.z = -0.25;
+    pose_ground.position.z = -0.251;
 
     co_ground.id = "ground";
     co_ground.header.frame_id = move_group_interface_->getPlanningFrame();
@@ -388,7 +396,6 @@ void handle_service(
 
       if (request->enable) {
         move_group_interface_->setPathConstraints(all_constraints);
-        // move_group_interface_->setGoalOrientationTolerance(10);
         RCLCPP_INFO(this->get_logger(), "Applied orientation constraints to planning scene.");
         RCLCPP_INFO(this->get_logger(), "Orientation constraints: %zu", move_group_interface_->getPathConstraints().orientation_constraints.size());
       } else {
@@ -718,8 +725,6 @@ void handle_service(
 
       auto goal = goal_handle->get_goal();
 
-      move_group_interface_->setStartStateToCurrentState();
-
       geometry_msgs::msg::Pose target;
       target.position.x = goal->x;
       target.position.y = goal->y;
@@ -736,6 +741,10 @@ void handle_service(
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
       RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
       RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", q.x(), q.y(), q.z(), q.w());
+
+      move_group_interface_->getCurrentState();
+      move_group_interface_->setStartStateToCurrentState();
+      move_group_interface_->setPlanningPipelineId("stomp");
 
       move_group_interface_->clearPathConstraints();
       RCLCPP_INFO(this->get_logger(), "Cleared Path Constraints");
@@ -785,13 +794,6 @@ void handle_service(
     std::thread([this, goal_handle]() {
       auto goal = goal_handle->get_goal();
 
-      // move_group_interface_->setGoalPositionTolerance(0.01);
-      // move_group_interface_->setGoalOrientationTolerance(0.1);
-      move_group_interface_->setStartStateToCurrentState();
-      // move_group_interface_->setPlanningPipelineId("ompl");
-      // move_group_interface_->setPlannerId("RRTstarkConfigDefault");
-      move_group_interface_->setPlanningTime(30.0);
-
       // Apply orientation constraints
       moveit_msgs::msg::OrientationConstraint orientation_constraint;
       orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
@@ -804,8 +806,22 @@ void handle_service(
         current_pose.pose.orientation.z, current_pose.pose.orientation.w
       );
 
-      orientation_constraint.absolute_x_axis_tolerance = 0.3;
-      orientation_constraint.absolute_y_axis_tolerance = 0.3;
+      geometry_msgs::msg::Pose target_pose;
+      target_pose.orientation.x = current_pose.pose.orientation.x;
+      target_pose.orientation.y = current_pose.pose.orientation.y;
+      target_pose.orientation.z = current_pose.pose.orientation.z;
+      target_pose.orientation.w = current_pose.pose.orientation.w;
+      target_pose.position.x = goal->x;
+      target_pose.position.y = goal->y;
+      target_pose.position.z = goal->z;
+
+      orientation_constraint.orientation.x = 0.0;
+      orientation_constraint.orientation.y = 0.0;
+      orientation_constraint.orientation.z = 0.0;
+      orientation_constraint.orientation.w = 1.0;
+
+      orientation_constraint.absolute_x_axis_tolerance = 0.2;
+      orientation_constraint.absolute_y_axis_tolerance = 0.2;
       orientation_constraint.absolute_z_axis_tolerance = 10;
       orientation_constraint.weight = 1.0;
       orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
@@ -819,7 +835,12 @@ void handle_service(
 
       RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
 
-      move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
+      move_group_interface_->getCurrentState();
+      move_group_interface_->setStartStateToCurrentState();
+      move_group_interface_->setPlanningPipelineId("ompl");
+      
+      // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
+      move_group_interface_->setPoseTarget(target_pose);
       bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
       auto current_position = move_group_interface_->getCurrentPose().pose;

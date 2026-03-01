@@ -12,11 +12,11 @@ response_adapters:
   - default_planning_response_adapters/DisplayMotionPath
 
 stomp_moveit:
-  num_timesteps: 600
-  num_iterations: 400
-  num_iterations_after_valid: 0
-  num_rollouts: 300
-  max_rollouts: 300
+  num_timesteps: 80
+  num_iterations: 100
+  num_iterations_after_valid: 10
+  num_rollouts: 50
+  max_rollouts: 50
   exponentiated_cost_sensitivity: 0.5
   control_cost_weight: 0.1
-  delta_t: 0.1
+  delta_t: 0.05
