@@ -267,5 +267,5 @@ colcon build --symlink-install --packages-select moveit_msgs
 colcon build --symlink-install --packages-select moveit_resources moveit_resources_fanuc_description moveit_resources_panda_description moveit_resources_pr2_description moveit_resources_fanuc_moveit_config moveit_resources_panda_moveit_config
 colcon build --symlink-install --packages-select moveit_common moveit_core  --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --executor sequential
 ```

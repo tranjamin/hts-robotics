@@ -18,7 +18,7 @@ max_grasp_pitch_roll_deg: 5.0
 nms_translation_thresh: 0.005
 nms_angle_thresh_deg: 5.0
 
-grasp_z_offset: 0.02
+grasp_z_offset: 0.1
 grasp_axis_offset: 0.14
 
 max_gripper_width: 0.1
@@ -27,7 +27,7 @@ mask_radius: 0.08
 
 no_rgb: True
 pointcloud_topic: "/octomap_point_cloud_centers"
-visualise: True
+visualise: False
 
-pointcloud_from_file: False
-pointcloud_file: "/ros2_ws/src/full_cloud_flasks.npz"
+pointcloud_from_file: True
+pointcloud_file: "/ros2_ws/src/full_cloud_test.npz"

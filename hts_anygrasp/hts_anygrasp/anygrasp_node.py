@@ -48,10 +48,10 @@ class AnyGraspNode(Node):
         self.declare_parameter('no_rgb', True)
         self.declare_parameter('pointcloud_topic', '/octomap_point_cloud_centers')
         self.declare_parameter('visualise', True)
-        self.declare_parameter('max_gripper_width', 0.1)
+        self.declare_parameter('max_gripper_width', 0.0)
         self.declare_parameter('gripper_height', 0.03)
         self.declare_parameter('top_down_grasp', False)
-        self.declare_parameter('grasp_z_offset', 0.02)
+        self.declare_parameter('grasp_z_offset', 0.00)
         self.declare_parameter('grasp_axis_offset', 0.14)
 
         self.Z_COORDS_MIN = self.get_parameter('z_coords_min').value
@@ -264,6 +264,9 @@ class AnyGraspNode(Node):
             self.get_logger().info('No Grasp detected after collision detection!')
             return None
         
+        if self.VISUALISE:
+            AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z])
+
         exclude_grasps = []
         for ind, grasp in enumerate(gg):
             # exclude grasps by width
@@ -280,8 +283,8 @@ class AnyGraspNode(Node):
                 exclude_grasps.append(ind)
                 continue
 
-            # if abs(yaw) > 90:
-            #     exclude_grasps.append(ind)
+            if abs(yaw) > 90:
+                exclude_grasps.append(ind)
 
         gg.remove(exclude_grasps)
 
@@ -296,9 +299,9 @@ class AnyGraspNode(Node):
         ).sort_by_score()
 
         # visualization
-        if self.VISUALISE:
-            AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z])
-            AnyGraspNode.display_grasps(gg, cloud, only_first=True, origin_position=[x,y,z])
+        # if self.VISUALISE:
+        AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z])
+        AnyGraspNode.display_grasps(gg, cloud, only_first=True, origin_position=[x,y,z])
 
         self.get_logger().info(str(gg.scores))
         self.get_logger().info('grasp score:' + str(gg[0].score))            
