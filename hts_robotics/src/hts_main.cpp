@@ -606,6 +606,7 @@ void handle_service(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK ---------------\n\n\n\n");
       gripper_interface_->setNamedTarget("close");
       auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
 
@@ -643,6 +644,8 @@ void handle_service(
         result->message = "Goal failed";
         goal_handle->abort(result);
       }
+
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK END ---------------\n\n\n\n");
     }).detach();
   }
 
@@ -665,6 +668,8 @@ void handle_service(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK ---------------\n\n\n\n");
+      
       auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
 
       gripper_interface_->setNamedTarget("open");
@@ -700,6 +705,7 @@ void handle_service(
         result->message = "Goal failed";
         goal_handle->abort(result);
       }
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK END ---------------\n\n\n\n");
     }).detach();
   }
 
@@ -722,9 +728,10 @@ void handle_service(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- PICKUP CALLBACK ---------------\n\n\n\n");
 
+      // set the goal
       auto goal = goal_handle->get_goal();
-
       geometry_msgs::msg::Pose target;
       target.position.x = goal->x;
       target.position.y = goal->y;
@@ -742,7 +749,10 @@ void handle_service(
       RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
       RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", q.x(), q.y(), q.z(), q.w());
 
-      move_group_interface_->getCurrentState();
+      
+      auto current_state = move_group_interface_->getCurrentState();
+
+
       move_group_interface_->setStartStateToCurrentState();
       move_group_interface_->setPlanningPipelineId("stomp");
 
@@ -769,6 +779,7 @@ void handle_service(
         goal_handle->abort(result);
       }
 
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- PICKUP CALLBACK END ---------------\n\n\n\n");
     }).detach();
   
   }
@@ -792,6 +803,8 @@ void handle_service(
     const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionMove>> goal_handle
   ) {
     std::thread([this, goal_handle]() {
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- MOVE CALLBACK ---------------\n\n\n\n");
+
       auto goal = goal_handle->get_goal();
 
       // Apply orientation constraints
@@ -815,10 +828,10 @@ void handle_service(
       target_pose.position.y = goal->y;
       target_pose.position.z = goal->z;
 
-      orientation_constraint.orientation.x = 0.0;
-      orientation_constraint.orientation.y = 0.0;
-      orientation_constraint.orientation.z = 0.0;
-      orientation_constraint.orientation.w = 1.0;
+      // orientation_constraint.orientation.x = 0.0;
+      // orientation_constraint.orientation.y = 0.0;
+      // orientation_constraint.orientation.z = 0.0;
+      // orientation_constraint.orientation.w = 1.0;
 
       orientation_constraint.absolute_x_axis_tolerance = 0.2;
       orientation_constraint.absolute_y_axis_tolerance = 0.2;
@@ -864,6 +877,8 @@ void handle_service(
         result->message = "Goal failed";
         goal_handle->abort(result);
       }
+
+      RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- MOVE CALLBACK END ---------------\n\n\n\n");
     }).detach();
   }
 
