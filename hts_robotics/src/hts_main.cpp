@@ -28,23 +28,6 @@
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
 
-
-/**
- * a class for high-level control for high throughput synthesis robotics
- * 
- * Node:
- *  - hts_node
- * Subscribes to:
- *  - /clicked_point: moves the robot to predefined point
- *  - /goal_pose: logs the goal pose
- *  - /joint_states: logs the joint states (debug)
- * Publishes:
- *  - /goal_pose: publishes a fixed goal pose
- * Action Servers:
- *  - /hts_moveit_action: publishes hts commands to pass to moveit
- * Action Clients:
- *  - /hts_moveit_action: reads in hts commands and forwards it to moveit
- */
 class hts_node : public rclcpp::Node {
 public:
 
@@ -827,12 +810,7 @@ void handle_service(
       target_pose.position.x = goal->x;
       target_pose.position.y = goal->y;
       target_pose.position.z = goal->z;
-
-      // orientation_constraint.orientation.x = 0.0;
-      // orientation_constraint.orientation.y = 0.0;
-      // orientation_constraint.orientation.z = 0.0;
-      // orientation_constraint.orientation.w = 1.0;
-
+      
       orientation_constraint.absolute_x_axis_tolerance = 0.2;
       orientation_constraint.absolute_y_axis_tolerance = 0.2;
       orientation_constraint.absolute_z_axis_tolerance = 10;
