@@ -27,8 +27,24 @@ ament_target_dependencies(hts_node
   hts_msgs
 )
 
+add_executable(hts_missions src/hts_missions.cpp)
+ament_target_dependencies(hts_missions
+  rclcpp
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+  moveit_ros_planning
+  moveit_ros_planning_interface
+  hts_msgs
+)
+
 install(TARGETS 
   hts_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(TARGETS 
+  hts_missions
   DESTINATION lib/${PROJECT_NAME}
 )
 

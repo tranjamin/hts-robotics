@@ -8,9 +8,12 @@ from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
 
 import rclpy
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from rclpy.node import Node
 from hts_msgs.srv import RequestGrasp, DisplayCloud
+from hts_msgs.action import ComputeGraspValidity
 from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Pose
 
@@ -107,9 +110,9 @@ class AnyGraspNode(Node):
         self.grasp_service_ = self.create_service(RequestGrasp, 'request_grasp', self.grasp_callback_)
         self.display_service_ = self.create_service(DisplayCloud, 'display_cloud', self.display_callback_)
 
+        self.grasp_validity_client_ = ActionClient(self, ComputeGraspValidity, "compute_grasp_validity")
+
         self.get_logger().info("Started AnyGrasp Node")
-        self.get_logger().info(str(self.POINTCLOUD_TOPIC))
-        self.get_logger().info(str(self.POINTCLOUD_FROM_FILE))
 
     def display_grasps(gg, cloud, only_first=False, origin_position=[0,0,0]):
         trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
@@ -303,9 +306,7 @@ class AnyGraspNode(Node):
         AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z])
         AnyGraspNode.display_grasps(gg, cloud, only_first=True, origin_position=[x,y,z])
 
-        self.get_logger().info(str(gg.scores))
-        self.get_logger().info('grasp score:' + str(gg[0].score))            
-        return gg[0]
+        return gg
 
     def grasp_callback_(self, request, response):
         if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
@@ -316,17 +317,47 @@ class AnyGraspNode(Node):
         self.get_logger().info("Requested pose for object %d" % (request.id,))
         self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
 
-        grasp = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
-        self.get_logger().info(str(grasp))
-
-        if grasp is None:
+        gg = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
+        if gg is None or len(gg) == 0:
             self.get_logger().info("Grasp Failed")
             response.success = False
             return response
+        
+        scored_grasps = []
+        
+        for grasp in gg:
+            self.get_logger().info("Candidate Grasp: " + str(grasp))
+            goal = ComputeGraspValidity.Goal()
+            goal.grasp_pose = self.map_grasp(grasp)
 
-        self.get_logger().info("Identified grasp is " + str(grasp))
-        self.get_logger().info("Pose orientation is " + str(Rotation.from_matrix(grasp.rotation_matrix).as_euler('xyz', degrees=True)))
+            self.grasp_validity_client_.wait_for_server()
+            send_goal_future = self.grasp_validity_client_.send_goal_async(goal)
+            self.get_logger().info("Sent goal")
+            rclpy.spin_until_future_complete(self, send_goal_future)
+            self.get_logger().info("Future Compelte")
+            goal_handle = send_goal_future.result()
+            if not goal_handle.accepted:
+                self.get_logger().warn("Goal Rejected")
+                continue
 
+            self.get_logger().info('Goal accepted, waiting for result...')
+            result_future = goal_handle.get_result_async()
+            rclpy.spin_until_future_complete(self, result_future)
+            result = result_future.result()
+
+            if not result.is_valid:
+                self.get_logger().info("Not a valid pose")
+            else:
+                self.get_logger().info("Valid pose with score " + str(result.score))
+                scored_grasps.append((result.score, goal.grasp_pose))
+
+        scored_grasps.sort()
+
+        response.grasp_pose = scored_grasps[0][1]
+        response.success = True
+        return response
+    
+    def map_grasp(self, grasp):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
         offset_rotation = Rotation.from_euler('y', 90, degrees=True)
         final_rotation = grasp_rotation * offset_rotation
@@ -352,16 +383,20 @@ class AnyGraspNode(Node):
         pose.orientation.z = final_quaternion[2]
         pose.orientation.w = final_quaternion[3]
 
-        response.grasp_pose = pose
-        response.success = True
-        return response
-        
+        return pose
+
 def main():
     rclpy.init(args=None)
 
     node = AnyGraspNode()
+    executor = MultiThreadedExecutor(num_threads=2)
+    executor.add_node(node)
+    executor.spin()
 
-    rclpy.spin(node)
+    # rclpy.spin(node)
+
+    executor.shutdown()
+    node.destroy_node()
     rclpy.shutdown()
     print("Stopped AnyGrasp Node")
 

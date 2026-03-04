@@ -187,7 +187,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME},
         ],
         arguments=[
-            '--ros-args', '--log-level', 'debug'
+            '--ros-args', '--log-level', 'info'
         ]
     )
 
@@ -389,6 +389,19 @@ def generate_launch_description():
         args=[launch_params]
     )
 
+    hts_mission = Node(
+        package="hts_robotics",
+        executable='hts_missions',
+        name='hts_missions',
+        output='screen',
+        parameters=[
+            {"use_sim_time": USE_SIM_TIME},
+        ],
+        arguments=[
+            '--ros-args', '--log-level', 'info'
+        ]
+    )
+
     state_publisher_node = OpaqueFunction(
         function = create_publisher_node,
         args=[launch_params]
@@ -536,6 +549,6 @@ def generate_launch_description():
 
         TimerAction(
             period=30.0,
-            actions=[moveit_node, rviz_node, hts_node]
+            actions=[moveit_node, rviz_node, hts_node, hts_mission]
         ),
     ])

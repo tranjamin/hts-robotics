@@ -1,0 +1,8 @@
+geometry_msgs/Pose grasp_pose
+---
+bool success
+bool is_valid
+float32 score
+string message
+---
+string progress
