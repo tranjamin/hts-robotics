@@ -54,7 +54,6 @@ class hts_missions : public rclcpp::Node {
       );
 
       grasp_request_client_ = this->create_client<hts_msgs::srv::RequestGrasp>("/request_grasp");
-      // grasp_request_client_->wait_for_service();
       
       pickup_client_ = rclcpp_action::create_client<CustomActionPickup>(this, "hts_pickup_action");
       move_client_ = rclcpp_action::create_client<CustomActionMove>(this, "hts_move_action");
@@ -65,6 +64,13 @@ class hts_missions : public rclcpp::Node {
 
 
       RCLCPP_INFO(this->get_logger(), "Constructed HTS Missions Node.");
+    }
+
+    void init() {
+      RCLCPP_INFO(this->get_logger(), "Initialising HTS Missions Node...");
+      grasp_request_client_->wait_for_service();
+      object_position_client_->wait_for_service();
+      RCLCPP_INFO(this->get_logger(), "Initialised HTS Missions Node.");
     }
 
   private:
@@ -86,8 +92,7 @@ class hts_missions : public rclcpp::Node {
     void handle_accepted_grasp_object_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
     ) {
-      // std::thread([this, goal_handle] () {
-        RCLCPP_INFO(this->get_logger(), "TESTING");
+      std::thread([this, goal_handle] () {
         
         // the result and feedback objects
         auto result = std::make_shared<CustomActionGraspObject::Result>();
@@ -100,13 +105,11 @@ class hts_missions : public rclcpp::Node {
         auto object_id = goal_handle->get_goal()->object_id;
         position_request->object_id = object_id;
 
-        RCLCPP_INFO(this->get_logger(), "TESTING2");
-        object_position_client_->wait_for_service();
-        RCLCPP_INFO(this->get_logger(), "TESTINGA");
+        RCLCPP_INFO(this->get_logger(), "Requesting Object Position...");
         auto position_future = object_position_client_->async_send_request(position_request);
-        RCLCPP_INFO(this->get_logger(), "TESTING3");
+        RCLCPP_INFO(this->get_logger(), "Received Object Position Future...");
         auto position_response = position_future.get();
-        RCLCPP_INFO(this->get_logger(), "TESTING4");
+        RCLCPP_INFO(this->get_logger(), "Received Object Position Actual.");
         if (!position_response->success) {
           RCLCPP_ERROR(this->get_logger(), "Failed to identify object pose");
           result->success = false;
@@ -180,86 +183,86 @@ class hts_missions : public rclcpp::Node {
           };    
 
 
-      auto move_send_goal_options = rclcpp_action::Client<CustomActionMove>::SendGoalOptions();
-      move_send_goal_options.result_callback =
-        [this, open_send_goal_options, goal_handle, result, progress, object_id](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &r) {
-          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "MoveIt failed to move with code: %d", (int)r.code);
-            result->success = false;
-            result->message = "MoveIt failed to move";
-            goal_handle->abort(result);
-          } else {
-            RCLCPP_INFO(this->get_logger(), "MoveIt moved target");
-            progress->progress = "MoveIt moved target";
-            goal_handle->publish_feedback(progress);
+        auto move_send_goal_options = rclcpp_action::Client<CustomActionMove>::SendGoalOptions();
+        move_send_goal_options.result_callback =
+          [this, open_send_goal_options, goal_handle, result, progress, object_id](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &r) {
+            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+              RCLCPP_ERROR(this->get_logger(), "MoveIt failed to move with code: %d", (int)r.code);
+              result->success = false;
+              result->message = "MoveIt failed to move";
+              goal_handle->abort(result);
+            } else {
+              RCLCPP_INFO(this->get_logger(), "MoveIt moved target");
+              progress->progress = "MoveIt moved target";
+              goal_handle->publish_feedback(progress);
 
-            auto open_goal = CustomActionOpen::Goal();
-            open_goal.target_id = object_id;
-            open_client_->async_send_goal(open_goal, open_send_goal_options);
-          }
-        };
+              auto open_goal = CustomActionOpen::Goal();
+              open_goal.target_id = object_id;
+              open_client_->async_send_goal(open_goal, open_send_goal_options);
+            }
+          };
 
-      auto close_send_goal_options = rclcpp_action::Client<CustomActionClose>::SendGoalOptions();
-      close_send_goal_options.result_callback =
-        [this, move_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
-          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)r.code);
-            result->success = false;
-            result->message = "Gripper failed to close";
-            goal_handle->abort(result);
-          } else {
-            RCLCPP_INFO(this->get_logger(), "Gripper closed on target");
-            progress->progress = "Gripper closed on target";
-            goal_handle->publish_feedback(progress);
+        auto close_send_goal_options = rclcpp_action::Client<CustomActionClose>::SendGoalOptions();
+        close_send_goal_options.result_callback =
+          [this, move_send_goal_options, goal_handle, result, progress](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
+            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+              RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)r.code);
+              result->success = false;
+              result->message = "Gripper failed to close";
+              goal_handle->abort(result);
+            } else {
+              RCLCPP_INFO(this->get_logger(), "Gripper closed on target");
+              progress->progress = "Gripper closed on target";
+              goal_handle->publish_feedback(progress);
 
-            auto move_goal = CustomActionMove::Goal();
-            move_goal.x = goal_handle->get_goal()->x;
-            move_goal.y = goal_handle->get_goal()->y;
-            move_goal.z = goal_handle->get_goal()->z;
+              auto move_goal = CustomActionMove::Goal();
+              move_goal.x = goal_handle->get_goal()->x;
+              move_goal.y = goal_handle->get_goal()->y;
+              move_goal.z = goal_handle->get_goal()->z;
 
-            move_client_->async_send_goal(move_goal, move_send_goal_options);
-          }
-        };
+              move_client_->async_send_goal(move_goal, move_send_goal_options);
+            }
+          };
 
-      auto pickup_send_goal_options = rclcpp_action::Client<CustomActionPickup>::SendGoalOptions();
-      pickup_send_goal_options.result_callback =
-        [this, close_send_goal_options, goal_handle, result, progress, object_id](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &r) {
-          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "Movet failed to move to target with code: %d", (int)r.code);
-            result->success = false;
-            result->message = "MoveIt failed to move to target";
-            goal_handle->abort(result);
-          } else {
-            RCLCPP_INFO(this->get_logger(), "MoveIt moved to target");            
-            progress->progress = "MoveIt moved to target";
-            goal_handle->publish_feedback(progress);
+        auto pickup_send_goal_options = rclcpp_action::Client<CustomActionPickup>::SendGoalOptions();
+        pickup_send_goal_options.result_callback =
+          [this, close_send_goal_options, goal_handle, result, progress, object_id](const rclcpp_action::ClientGoalHandle<CustomActionPickup>::WrappedResult &r) {
+            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+              RCLCPP_ERROR(this->get_logger(), "Movet failed to move to target with code: %d", (int)r.code);
+              result->success = false;
+              result->message = "MoveIt failed to move to target";
+              goal_handle->abort(result);
+            } else {
+              RCLCPP_INFO(this->get_logger(), "MoveIt moved to target");            
+              progress->progress = "MoveIt moved to target";
+              goal_handle->publish_feedback(progress);
 
-            auto close_goal = CustomActionClose::Goal();
-            close_goal.target_id = object_id;
-            close_client_->async_send_goal(close_goal, close_send_goal_options);
-          }
-        };
+              auto close_goal = CustomActionClose::Goal();
+              close_goal.target_id = object_id;
+              close_client_->async_send_goal(close_goal, close_send_goal_options);
+            }
+          };
 
-      auto first_open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
-      first_open_send_goal_options.result_callback =
-        [this, pickup_send_goal_options, goal_handle, result, progress, pickup_goal](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
-          if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
-            RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
-            result->success = false;
-            result->message = "Gripper failed to open";
-            goal_handle->abort(result);
-          } else {
-            RCLCPP_INFO(this->get_logger(), "Gripper opened on target");
-            progress->progress = "Gripper opened on target";
-            goal_handle->publish_feedback(progress);
-            pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
-          }
-        };    
+        auto first_open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
+        first_open_send_goal_options.result_callback =
+          [this, pickup_send_goal_options, goal_handle, result, progress, pickup_goal](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
+            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+              RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
+              result->success = false;
+              result->message = "Gripper failed to open";
+              goal_handle->abort(result);
+            } else {
+              RCLCPP_INFO(this->get_logger(), "Gripper opened on target");
+              progress->progress = "Gripper opened on target";
+              goal_handle->publish_feedback(progress);
+              pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
+            }
+          };    
 
-      // sends action
-      open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
-
-      }
+        // sends action
+        open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
+      }).detach();
+    }
   
     rclcpp_action::Server<CustomActionGraspObject>::SharedPtr grasp_object_server_;
     rclcpp::Client<hts_msgs::srv::GetObjectPosition>::SharedPtr object_position_client_;
@@ -276,10 +279,12 @@ int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
   auto mission_node = std::make_shared<hts_missions>();
+  mission_node->init();
 
-  rclcpp::executors::MultiThreadedExecutor executor;
-  executor.add_node(mission_node);
-  executor.spin();
+  // rclcpp::executors::MultiThreadedExecutor executor;
+  // executor.add_node(mission_node);
+  // executor.spin();
+  rclcpp::spin(mission_node);
   rclcpp::shutdown();
   return 0;
 }
