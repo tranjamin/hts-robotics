@@ -370,18 +370,20 @@ public:
     void handle_accepted_compute_grasp_validity_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle
     ) {
+      std::thread([this, goal_handle] {
+        
       RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
       move_group_interface_->setPlanningPipelineId("stomp");
 
-      // geometry_msgs::msg::Pose goal_pose = goal_handle->get_goal()->grasp_pose;
+      geometry_msgs::msg::Pose goal_pose = goal_handle->get_goal()->grasp_pose;
       auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
 
-      // moveit::planning_interface::MoveGroupInterface::Plan plan;
-      // move_group_interface_->setStartStateToCurrentState();
-      // move_group_interface_->setPoseTarget(goal_pose);
+      moveit::planning_interface::MoveGroupInterface::Plan plan;
+      move_group_interface_->setStartStateToCurrentState();
+      move_group_interface_->setPoseTarget(goal_pose);
 
-      // bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
-      bool success = true;
+      bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+      // bool success = true;
       if (!success) {
         RCLCPP_INFO(this->get_logger(), "Planning failed");
         result->success = true;
@@ -399,7 +401,11 @@ public:
       }
 
       RCLCPP_INFO(this->get_logger(), "After goal handle succeed");
+
+      }).detach();
+
     }
+    
 
     void handle_accepted_close_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
@@ -624,6 +630,8 @@ public:
     }
 
     void gazebo_scene_subscriber_callback_(tf2_msgs::msg::TFMessage::UniquePtr msg) {
+
+    // std::thread([this, msg] {
       rclcpp::Time now = this->now();
       if ((now - last_update_).seconds() < 1) {
         return;
@@ -681,7 +689,8 @@ public:
           co_target.pose = pose_target;
           planning_scene_interface_->applyCollisionObject(co_target);
         }
-      }
+      // }).detach();
+    }
 
     rclcpp_action::GoalResponse handle_goal_compute_grasp_validity_(
         const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionComputeGraspValidity::Goal> goal
