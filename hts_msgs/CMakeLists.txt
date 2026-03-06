@@ -9,7 +9,7 @@ find_package(geometry_msgs REQUIRED)
 
 # Generate services
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/RequestGrasp.srv"
+  "action/RequestGrasp.action"
   "srv/DisplayCloud.srv"
   "srv/EnableOrientationConstraints.srv"
   "srv/GetObjectPosition.srv"

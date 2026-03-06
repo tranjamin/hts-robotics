@@ -23,7 +23,7 @@
 #include "hts_msgs/action/gripper_close.hpp"
 #include "hts_msgs/action/grasp_object.hpp"
 #include "hts_msgs/action/compute_grasp_validity.hpp"
-#include "hts_msgs/srv/request_grasp.hpp"
+#include "hts_msgs/action/request_grasp.hpp"
 #include "hts_msgs/srv/enable_orientation_constraints.hpp"
 #include "hts_msgs/srv/get_object_position.hpp"
 
@@ -53,7 +53,7 @@ class hts_missions : public rclcpp::Node {
         std::bind(&hts_missions::handle_accepted_grasp_object_, this, std::placeholders::_1)
       );
 
-      grasp_request_client_ = this->create_client<hts_msgs::srv::RequestGrasp>("/request_grasp");
+      grasp_request_client_ = rclcpp_action::create_client<hts_msgs::action::RequestGrasp>(this, "request_grasp");
       
       pickup_client_ = rclcpp_action::create_client<CustomActionPickup>(this, "hts_pickup_action");
       move_client_ = rclcpp_action::create_client<CustomActionMove>(this, "hts_move_action");
@@ -68,7 +68,7 @@ class hts_missions : public rclcpp::Node {
 
     void init() {
       RCLCPP_INFO(this->get_logger(), "Initialising HTS Missions Node...");
-      grasp_request_client_->wait_for_service();
+      grasp_request_client_->wait_for_action_server();
       object_position_client_->wait_for_service();
       RCLCPP_INFO(this->get_logger(), "Initialised HTS Missions Node.");
     }
@@ -97,9 +97,6 @@ class hts_missions : public rclcpp::Node {
         auto result = std::make_shared<CustomActionGraspObject::Result>();
         auto progress = std::make_shared<CustomActionGraspObject::Feedback>();
 
-        // get the grasp for the target object
-        auto grasp_request = std::make_shared<hts_msgs::srv::RequestGrasp::Request>();
-
         auto position_request = std::make_shared<hts_msgs::srv::GetObjectPosition::Request>();
         auto object_id = goal_handle->get_goal()->object_id;
         position_request->object_id = object_id;
@@ -117,51 +114,14 @@ class hts_missions : public rclcpp::Node {
           return;
         }
 
-        grasp_request->id = object_id;
-        grasp_request->x = position_response.get()->x;
-        grasp_request->y = position_response.get()->y;
-        grasp_request->z = position_response.get()->z;
-
-        auto grasp_future = grasp_request_client_->async_send_request(grasp_request);
-        auto grasp_response = grasp_future.get();
-
-        // if anygrasp failed
-        if (!grasp_response->success) {
-          RCLCPP_ERROR(this->get_logger(), "Anygrasp failed to identify pose");
-          result->success = false;
-          result->message = "Anygrasp failed to identify pose";
-          goal_handle->abort(result);
-          return;
-        }
-
-        geometry_msgs::msg::Pose grasp_pose = grasp_response->grasp_pose;
-
-        // update progress
-        RCLCPP_INFO(this->get_logger(), "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
-          grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
-          grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
-        );
-        char buf[150];
-        std::snprintf(buf, sizeof(buf),
-          "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
-          grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
-          grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
-        );
-        progress->progress = std::string(buf);
-        goal_handle->publish_feedback(progress);
-
+        // get the grasp for the target object
+        auto grasp_request = hts_msgs::action::RequestGrasp::Goal();
+        grasp_request.id = object_id;
+        grasp_request.x = position_response.get()->x;
+        grasp_request.y = position_response.get()->y;
+        grasp_request.z = position_response.get()->z;
 
         auto pickup_goal = CustomActionPickup::Goal();
-        pickup_goal.x = grasp_pose.position.x;
-        pickup_goal.y = grasp_pose.position.y;
-        pickup_goal.z = grasp_pose.position.z;
-        pickup_goal.ox = grasp_pose.orientation.x;
-        pickup_goal.oy = grasp_pose.orientation.y;
-        pickup_goal.oz = grasp_pose.orientation.z;
-        pickup_goal.ow = grasp_pose.orientation.w;
-
-        auto first_open_goal = CustomActionOpen::Goal();
-        first_open_goal.target_id = object_id;
 
         auto open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
         open_send_goal_options.result_callback =
@@ -256,10 +216,53 @@ class hts_missions : public rclcpp::Node {
               goal_handle->publish_feedback(progress);
               pickup_client_->async_send_goal(pickup_goal, pickup_send_goal_options);
             }
-          };    
+          };
+          
+        auto grasp_object_send_goal_options = rclcpp_action::Client<hts_msgs::action::RequestGrasp>::SendGoalOptions();
+        grasp_object_send_goal_options.result_callback =
+          [this, first_open_send_goal_options, goal_handle, result, progress, &pickup_goal, object_id](const rclcpp_action::ClientGoalHandle<hts_msgs::action::RequestGrasp>::WrappedResult &r) {
+            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+              RCLCPP_ERROR(this->get_logger(), "Anygrasp failed to identify pose");
+              result->success = false;
+              result->message = "Anygrasp failed to identify pose";
+              goal_handle->abort(result);
+              return;
+            } else {
+              geometry_msgs::msg::Pose grasp_pose = r.result->grasp_pose;
+
+              // update progress
+              RCLCPP_INFO(this->get_logger(), "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
+                grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
+                grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
+              );
+              char buf[150];
+              std::snprintf(buf, sizeof(buf),
+                "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
+                grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
+                grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
+              );
+
+              progress->progress = std::string(buf);
+              goal_handle->publish_feedback(progress);
+
+              pickup_goal.x = grasp_pose.position.x;
+              pickup_goal.y = grasp_pose.position.y;
+              pickup_goal.z = grasp_pose.position.z;
+              pickup_goal.ox = grasp_pose.orientation.x;
+              pickup_goal.oy = grasp_pose.orientation.y;
+              pickup_goal.oz = grasp_pose.orientation.z;
+              pickup_goal.ow = grasp_pose.orientation.w;
+
+              auto first_open_goal = CustomActionOpen::Goal();
+              first_open_goal.target_id = object_id;
+              open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
+            }
+          };
 
         // sends action
-        open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
+        RCLCPP_INFO(this->get_logger(), "About to send grasp request goal");
+        grasp_request_client_->async_send_goal(grasp_request, grasp_object_send_goal_options);
+
       }).detach();
     }
   
@@ -267,7 +270,7 @@ class hts_missions : public rclcpp::Node {
     rclcpp::Client<hts_msgs::srv::GetObjectPosition>::SharedPtr object_position_client_;
 
     // for the top-level actions
-    rclcpp::Client<hts_msgs::srv::RequestGrasp>::SharedPtr grasp_request_client_;
+    rclcpp_action::Client<hts_msgs::action::RequestGrasp>::SharedPtr grasp_request_client_;
     rclcpp_action::Client<CustomActionPickup>::SharedPtr pickup_client_;
     rclcpp_action::Client<CustomActionMove>::SharedPtr move_client_;
     rclcpp_action::Client<CustomActionOpen>::SharedPtr open_client_;

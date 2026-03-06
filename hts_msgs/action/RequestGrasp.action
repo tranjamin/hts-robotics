@@ -5,3 +5,5 @@ float64 z
 ---
 bool success
 geometry_msgs/Pose grasp_pose
+---
+float32 progress
