@@ -91,9 +91,8 @@ class hts_missions : public rclcpp::Node {
     
     void handle_accepted_grasp_object_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
-    ) {
+    ) {        
       std::thread([this, goal_handle] () {
-        
         // the result and feedback objects
         auto result = std::make_shared<CustomActionGraspObject::Result>();
         auto progress = std::make_shared<CustomActionGraspObject::Feedback>();
@@ -281,10 +280,10 @@ int main(int argc, char * argv[])
   auto mission_node = std::make_shared<hts_missions>();
   mission_node->init();
 
-  // rclcpp::executors::MultiThreadedExecutor executor;
-  // executor.add_node(mission_node);
-  // executor.spin();
-  rclcpp::spin(mission_node);
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(mission_node);
+  executor.spin();
+  // rclcpp::spin(mission_node);
   rclcpp::shutdown();
   return 0;
 }

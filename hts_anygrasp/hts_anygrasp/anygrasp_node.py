@@ -1,6 +1,7 @@
 import os
 import time
 import argparse
+import threading
 import numpy as np
 import open3d as o3d
 
@@ -309,58 +310,61 @@ class AnyGraspNode(Node):
         return gg
 
     def grasp_callback_(self, request, response):
-        if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
-            self.get_logger().info("PointCloud Not Available")
-            response.success = False
+        def fn(self, request, response):
+            if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
+                self.get_logger().info("PointCloud Not Available")
+                response.success = False
+                return response
+
+            self.get_logger().info("Requested pose for object %d" % (request.id,))
+            self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
+
+            gg = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
+            if gg is None or len(gg) == 0:
+                self.get_logger().info("Grasp Failed")
+                response.success = False
+                return response
+            
+            scored_grasps = []
+            
+            for grasp in gg:
+                self.get_logger().info("Candidate Grasp: " + str(grasp))
+                scored_grasps.append((grasp.score, self.map_grasp(grasp)))
+            #     goal = ComputeGraspValidity.Goal()
+            #     goal.grasp_pose = self.map_grasp(grasp)
+
+            #     self.grasp_validity_client_.wait_for_server()
+            #     send_goal_future = self.grasp_validity_client_.send_goal_async(goal)
+            #     self.get_logger().info("Sent goal")
+
+            #     while not send_goal_future.done():
+            #         self.get_logger().info("Still not done yet")
+            #         time.sleep(5)
+
+            #     goal_handle = send_goal_future.result()
+            #     self.get_logger().info("Future Compelte")
+            #     if not goal_handle.accepted:
+            #         self.get_logger().warn("Goal Rejected")
+            #         continue
+
+            #     self.get_logger().info('Goal accepted, waiting for result...')
+            #     result_future = goal_handle.get_result_async()
+            #     rclpy.spin_until_future_complete(self, result_future)
+            #     result = result_future.result()
+
+            #     if not result.is_valid:
+            #         self.get_logger().info("Not a valid pose")
+            #     else:
+            #         self.get_logger().info("Valid pose with score " + str(result.score))
+            #         scored_grasps.append((result.score, goal.grasp_pose))
+
+            scored_grasps.sort()
+
+            response.grasp_pose = scored_grasps[0][1]
+            response.success = True
             return response
 
-        self.get_logger().info("Requested pose for object %d" % (request.id,))
-        self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
-
-        gg = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
-        if gg is None or len(gg) == 0:
-            self.get_logger().info("Grasp Failed")
-            response.success = False
-            return response
-        
-        scored_grasps = []
-        
-        for grasp in gg:
-            self.get_logger().info("Candidate Grasp: " + str(grasp))
-            scored_grasps.append((grasp.score, self.map_grasp(grasp)))
-        #     goal = ComputeGraspValidity.Goal()
-        #     goal.grasp_pose = self.map_grasp(grasp)
-
-        #     self.grasp_validity_client_.wait_for_server()
-        #     send_goal_future = self.grasp_validity_client_.send_goal_async(goal)
-        #     self.get_logger().info("Sent goal")
-
-        #     while not send_goal_future.done():
-        #         self.get_logger().info("Still not done yet")
-        #         time.sleep(5)
-
-        #     goal_handle = send_goal_future.result()
-        #     self.get_logger().info("Future Compelte")
-        #     if not goal_handle.accepted:
-        #         self.get_logger().warn("Goal Rejected")
-        #         continue
-
-        #     self.get_logger().info('Goal accepted, waiting for result...')
-        #     result_future = goal_handle.get_result_async()
-        #     rclpy.spin_until_future_complete(self, result_future)
-        #     result = result_future.result()
-
-        #     if not result.is_valid:
-        #         self.get_logger().info("Not a valid pose")
-        #     else:
-        #         self.get_logger().info("Valid pose with score " + str(result.score))
-        #         scored_grasps.append((result.score, goal.grasp_pose))
-
-        scored_grasps.sort()
-
-        response.grasp_pose = scored_grasps[0][1]
-        response.success = True
-        return response
+        threading.Thread(target=fn, args=(self, request, response), daemon=True).start()
     
     def map_grasp(self, grasp):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
@@ -394,11 +398,11 @@ def main():
     rclpy.init(args=None)
 
     node = AnyGraspNode()
-    # executor = MultiThreadedExecutor(num_threads=4)
-    # executor.add_node(node)
-    # executor.spin()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+    executor.spin()
 
-    rclpy.spin(node)
+    # rclpy.spin(node)
 
     # executor.shutdown()
     node.destroy_node()
