@@ -50,6 +50,10 @@ public:
   hts_node():Node("hts_node") {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
 
+    action_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
+    sub_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
+    // action_options_.callback_group = action_callback_group_;
+
     // create a subscriber for the gazebo scene
     RCLCPP_DEBUG(this->get_logger(), "Creating Gazebo scene subscriber...");
     gazebo_scene_sub_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
@@ -65,6 +69,7 @@ public:
       std::bind(&hts_node::handle_goal_pickup_, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&hts_node::handle_cancel_pickup_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_pickup_, this, std::placeholders::_1)
+      // action_options
     );
     RCLCPP_DEBUG(this->get_logger(), "Created Pickup Server.");
 
@@ -75,6 +80,7 @@ public:
       std::bind(&hts_node::handle_goal_move_, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&hts_node::handle_cancel_move_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_move_, this, std::placeholders::_1)
+      // action_options
     );
     RCLCPP_DEBUG(this->get_logger(), "Created Move Server.");
 
@@ -85,12 +91,14 @@ public:
       std::bind(&hts_node::handle_goal_open_, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&hts_node::handle_cancel_open_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_open_, this, std::placeholders::_1)
+      // action_options
     );
     gripper_close_server_ = rclcpp_action::create_server<CustomActionClose>(
       this, "gripper_close",
       std::bind(&hts_node::handle_goal_close_, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&hts_node::handle_cancel_close_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_close_, this, std::placeholders::_1)
+      // action_options
     );
     RCLCPP_DEBUG(this->get_logger(), "Created Gripper Servers.");
 
@@ -101,6 +109,7 @@ public:
       std::bind(&hts_node::handle_goal_compute_grasp_validity_, this, std::placeholders::_1, std::placeholders::_2),
       std::bind(&hts_node::handle_cancel_compute_grasp_validity_, this, std::placeholders::_1),
       std::bind(&hts_node::handle_accepted_compute_grasp_validity_, this, std::placeholders::_1)
+      // action_options
     );
     RCLCPP_DEBUG(this->get_logger(), "Created Grasping Validity Servers.");
 
@@ -330,11 +339,15 @@ public:
     // for the top-level actions
     rclcpp::Service<hts_msgs::srv::GetObjectPosition>::SharedPtr object_position_service_;
 
+    rclcpp::CallbackGroup::SharedPtr action_callback_group_;
+    rclcpp::CallbackGroup::SharedPtr sub_callback_group_;
+    // rclcpp_action::ServerOptions action_options_;
+
     void get_object_position(
       const std::shared_ptr<hts_msgs::srv::GetObjectPosition::Request> request,
       std::shared_ptr<hts_msgs::srv::GetObjectPosition::Response> response
       ) {
-          RCLCPP_INFO(this->get_logger(), "Get Object Position Done");
+          RCLCPP_INFO(this->get_logger(), "Get Object Position Started");
           int object_id = request->object_id;
           auto object_name = "target_" + std::to_string(object_id);
 
@@ -350,14 +363,13 @@ public:
           response->y = target_moveit.position.y;
           response->z = target_moveit.position.z;
           response->success = true;
-          RCLCPP_INFO(this->get_logger(), "Get Object Position Started");
+          RCLCPP_INFO(this->get_logger(), "Get Object Position Done");
           return;
     }
 
     void handle_accepted_compute_grasp_validity_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle
     ) {
-    std::thread([this, goal_handle] () {
       RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
       move_group_interface_->setPlanningPipelineId("stomp");
 
@@ -387,13 +399,11 @@ public:
       }
 
       RCLCPP_INFO(this->get_logger(), "After goal handle succeed");
-    }).detach();
     }
 
     void handle_accepted_close_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
     ) {
-      std::thread([this, goal_handle]() {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK ---------------\n\n\n\n");
         gripper_interface_->setNamedTarget("close");
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
@@ -434,13 +444,11 @@ public:
         }
 
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK END ---------------\n\n\n\n");
-      }).detach();
     }
 
     void handle_accepted_open_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
     ) {
-      std::thread([this, goal_handle]() {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK ---------------\n\n\n\n");
         
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
@@ -479,13 +487,11 @@ public:
           goal_handle->abort(result);
         }
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK END ---------------\n\n\n\n");
-      }).detach();
     }
 
     void handle_accepted_pickup_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
     ) {
-      std::thread([this, goal_handle]() {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- PICKUP CALLBACK ---------------\n\n\n\n");
 
         // set the goal
@@ -538,14 +544,12 @@ public:
         }
 
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- PICKUP CALLBACK END ---------------\n\n\n\n");
-      }).detach();
     
     }
 
     void handle_accepted_move_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionMove>> goal_handle
     ) {
-      std::thread([this, goal_handle]() {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- MOVE CALLBACK ---------------\n\n\n\n");
 
         auto goal = goal_handle->get_goal();
@@ -617,7 +621,6 @@ public:
         }
 
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- MOVE CALLBACK END ---------------\n\n\n\n");
-      }).detach();
     }
 
     void gazebo_scene_subscriber_callback_(tf2_msgs::msg::TFMessage::UniquePtr msg) {
@@ -759,11 +762,11 @@ int main(int argc, char * argv[])
   auto node = std::make_shared<hts_node>();
   node->init();
 
-  // rclcpp::executors::MultiThreadedExecutor executor;
-  // executor.add_node(node);
-  // executor.spin();
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(node);
+  executor.spin();
 
-  rclcpp::spin(node);
+  // rclcpp::spin(node);
   rclcpp::shutdown();
   return 0;
 }
