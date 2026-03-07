@@ -23,7 +23,7 @@
 #include "hts_msgs/action/gripper_close.hpp"
 #include "hts_msgs/action/grasp_object.hpp"
 #include "hts_msgs/action/compute_grasp_validity.hpp"
-#include "hts_msgs/srv/request_grasp.hpp"
+#include "hts_msgs/action/request_grasp.hpp"
 #include "hts_msgs/srv/enable_orientation_constraints.hpp"
 #include "hts_msgs/srv/get_object_position.hpp"
 
