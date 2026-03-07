@@ -12,6 +12,7 @@
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/point.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
 #include <tf2_msgs/msg/tf_message.hpp>
@@ -393,9 +394,14 @@ public:
         goal_handle->succeed(result);
       } else {
         RCLCPP_INFO(this->get_logger(), "Planning succeeded");
+        moveit_msgs::msg::RobotTrajectory plan_trajectory = plan.trajectory;
+        trajectory_msgs::msg::JointTrajectory joint_trajectory = plan_trajectory.joint_trajectory;
+        float trajectory_length = (float) compute_trajectory_length_(joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Trajectory length is %.5f", trajectory_length);
+
         result->success = true;
         result->is_valid = true;
-        result->score = 10.0;
+        result->score =trajectory_length;
         result->message = "Plan is possible";
         goal_handle->succeed(result);
       }
@@ -406,6 +412,17 @@ public:
 
     }
     
+    double compute_trajectory_length_(trajectory_msgs::msg::JointTrajectory trajectory) {
+      double total_length = 0;
+      for (size_t i=1; i < trajectory.points.size(); i++) {
+        const std::vector<double> &prev_joints = trajectory.points[i - 1].positions;
+        const std::vector<double> &curr_joints = trajectory.points[i].positions;
+        for (size_t j = 0; j < prev_joints.size(); ++j)
+          total_length += std::sqrt(pow(curr_joints[j] - prev_joints[j], 2)); // L1 norm, or use sqrt(sum squared) for L2
+      }
+
+      return total_length;
+    }
 
     void handle_accepted_close_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
