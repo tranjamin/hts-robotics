@@ -3,18 +3,22 @@
 #include <string>
 
 // includes
+#include <moveit/move_group_interface/move_group_interface.hpp>
+#include <moveit/planning_scene_interface/planning_scene_interface.hpp>
+#include <moveit/planning_scene_monitor/planning_scene_monitor.hpp>
+#include <moveit/robot_state/robot_state.hpp>
+#include <moveit/robot_model/joint_model_group.hpp>
+
 #include "rclcpp/rclcpp.hpp"
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "std_msgs/msg/string.hpp"
-#include <moveit/move_group_interface/move_group_interface.h>
-#include <moveit/planning_scene_interface/planning_scene_interface.h>
-#include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+
 #include "geometry_msgs/msg/point_stamped.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "geometry_msgs/msg/point.hpp"
-#include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "geometry_msgs/msg/quaternion.hpp"
 #include "sensor_msgs/msg/joint_state.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 
@@ -25,7 +29,6 @@
 #include "hts_msgs/action/grasp_object.hpp"
 #include "hts_msgs/action/compute_grasp_validity.hpp"
 #include "hts_msgs/action/request_grasp.hpp"
-#include "hts_msgs/srv/enable_orientation_constraints.hpp"
 #include "hts_msgs/srv/get_object_position.hpp"
 
 // for using macros like s, ms, us
@@ -35,16 +38,16 @@ class hts_node : public rclcpp::Node {
 public:
 
   // type definitions
-  using CustomActionPickup = hts_msgs::action::PickUpTarget;
-  using CustomActionMove = hts_msgs::action::MoveTarget;
-  using StampedPoint = geometry_msgs::msg::PointStamped;
-  using StampedPose = geometry_msgs::msg::PoseStamped;
-  using JointState = sensor_msgs::msg::JointState;
   using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
   using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
   using PlanningSceneMonitor = planning_scene_monitor::PlanningSceneMonitor;
+
+  using CustomActionPickup = hts_msgs::action::PickUpTarget;
+  using CustomActionMove = hts_msgs::action::MoveTarget;
+
   using CustomActionOpen = hts_msgs::action::GripperOpen;
   using CustomActionClose = hts_msgs::action::GripperClose;
+  
   using CustomActionComputeGraspValidity = hts_msgs::action::ComputeGraspValidity;
 
   // constructor
@@ -179,139 +182,11 @@ public:
     planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    // Register the target objects as collision objects
-    this->declare_parameter("objects", std::vector<std::string>{});
-    std::vector<std::string> objects = this->get_parameter("objects").as_string_array();
-
-    target_object_ids_ = std::vector<std::string>(objects.size(), "");
-    int i = 0;
-
-    RCLCPP_DEBUG(get_logger(), "Looking for objects: %ld", objects.size());
-    for (auto &obj_name : objects) {
-      moveit_msgs::msg::CollisionObject co_target;
-      shape_msgs::msg::SolidPrimitive primitive_target;
-      geometry_msgs::msg::Pose pose_target;
-
-      this->declare_parameter(obj_name + ".object_id", 0);
-      this->declare_parameter(obj_name + ".primitive_type", "");
-
-      int obj_id = this->get_parameter(obj_name + ".object_id").as_int();
-      RCLCPP_DEBUG(get_logger(), "Found an Object with ID %d", obj_id);
-
-      std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
-      if (obj_type == "BOX") {
-        this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
-        this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
-        this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
-
-        primitive_target.type = primitive_target.BOX;
-        primitive_target.dimensions = {
-          this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
-          this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
-          this->get_parameter(obj_name + ".primitive_dims.z").as_double()
-        };
-      } else if (obj_type == "SPHERE") {
-        this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
-
-        primitive_target.type = primitive_target.SPHERE;
-        primitive_target.dimensions = {
-          this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
-        };
-
-      } else if (obj_type == "CONE") {        
-        this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-        this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
-
-        primitive_target.type = primitive_target.CONE;
-        primitive_target.dimensions = {
-          this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
-          this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
-        };
-
-      } else if (obj_type == "CYLINDER") {
-        this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-        this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
-
-        primitive_target.type = primitive_target.CYLINDER;
-        primitive_target.dimensions = {
-          this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
-          this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
-        };
-      } else {
-        RCLCPP_INFO(get_logger(), "Invalid Object");
-      }
-
-      this->declare_parameter(obj_name + ".x", 0.0);
-      this->declare_parameter(obj_name + ".y", 0.0);
-      this->declare_parameter(obj_name + ".z", 0.0);
-
-      this->declare_parameter(obj_name + ".R", 0.0);
-      this->declare_parameter(obj_name + ".P", 0.0);
-      this->declare_parameter(obj_name + ".Y", 0.0);
-
-      pose_target.position.x = this->get_parameter(obj_name + ".x").as_double();
-      pose_target.position.y = this->get_parameter(obj_name + ".y").as_double();
-      pose_target.position.z = this->get_parameter(obj_name + ".z").as_double();
-
-      double roll = this->get_parameter(obj_name + ".R").as_double();
-      double pitch = this->get_parameter(obj_name + ".P").as_double();
-      double yaw = this->get_parameter(obj_name + ".Y").as_double();
-
-      tf2::Quaternion q;
-      q.setRPY(roll, pitch, yaw);
-
-      pose_target.orientation.x = q.x();
-      pose_target.orientation.y = q.y();
-      pose_target.orientation.z = q.z();
-      pose_target.orientation.w = q.w();
-      
-      co_target.id = "target_" + std::to_string(obj_id);
-      co_target.header.frame_id = move_group_interface_->getPlanningFrame();
-      co_target.primitives.push_back(primitive_target);
-      co_target.primitive_poses.push_back(pose_target);
-      co_target.operation = co_target.ADD;
-      planning_scene_interface_->applyCollisionObject(co_target);
-
-      target_object_ids_[i] = co_target.id;
-    }
-
-    planning_scene_monitor_->requestPlanningSceneState();
+    load_target_objects();
 
     move_group_interface_->setPlanningPipelineId("stomp");
     move_group_interface_->setPlannerId("stomp");
-
-    std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
-    move_group_interface_->getInterfaceDescriptions(desc);
-
-    RCLCPP_INFO(this->get_logger(), "Loaded planning pipelines and planners:");
-    for (const auto &pipeline : desc)
-    {
-        RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", pipeline.name.c_str());
-        for (const auto &planner_id : pipeline.planner_ids)
-        {
-          RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
-          std::map<std::string, std::string> params = move_group_interface_->getPlannerParams(planner_id.c_str(), "move_group");
-          for (const auto& [key, value] : params) {
-            RCLCPP_INFO(this->get_logger(), "    Move Group Param: %s = %s", key.c_str(), value.c_str());
-          }
-          std::map<std::string, std::string> params2 = move_group_interface_->getPlannerParams(planner_id.c_str(), "fr3_arm");
-          for (const auto& [key, value] : params2) {
-            RCLCPP_INFO(this->get_logger(), "    Fr3 Arm Param: %s = %s", key.c_str(), value.c_str());
-          }
-        }
-    }
-
-    moveit_msgs::msg::PlannerInterfaceDescription default_desc;
-    move_group_interface_->getInterfaceDescription(default_desc);
-    RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", default_desc.name.c_str());
-    for (const auto &planner_id : default_desc.planner_ids)
-      {
-        RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
-      }
-
-    RCLCPP_INFO(this->get_logger(), "default planning pipeline id: %s", move_group_interface_->getDefaultPlanningPipelineId().c_str());
-    RCLCPP_INFO(this->get_logger(), "default planner id: %s", move_group_interface_->getDefaultPlannerId().c_str());
-    RCLCPP_INFO(this->get_logger(), "current planner id: %s", move_group_interface_->getPlannerId().c_str());
+    log_planning_details();
 
   }
 
@@ -344,6 +219,202 @@ public:
     rclcpp::CallbackGroup::SharedPtr sub_callback_group_;
     // rclcpp_action::ServerOptions action_options_;
 
+    void log_planning_details() {
+      std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
+      move_group_interface_->getInterfaceDescriptions(desc);
+
+      RCLCPP_INFO(this->get_logger(), "Loaded planning pipelines and planners:");
+      for (const auto &pipeline : desc)
+      {
+          RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", pipeline.name.c_str());
+          for (const auto &planner_id : pipeline.planner_ids)
+          {
+            RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+            std::map<std::string, std::string> params = move_group_interface_->getPlannerParams(planner_id.c_str(), "move_group");
+            for (const auto& [key, value] : params) {
+              RCLCPP_INFO(this->get_logger(), "    Move Group Param: %s = %s", key.c_str(), value.c_str());
+            }
+            std::map<std::string, std::string> params2 = move_group_interface_->getPlannerParams(planner_id.c_str(), "fr3_arm");
+            for (const auto& [key, value] : params2) {
+              RCLCPP_INFO(this->get_logger(), "    Fr3 Arm Param: %s = %s", key.c_str(), value.c_str());
+            }
+          }
+      }
+
+      moveit_msgs::msg::PlannerInterfaceDescription default_desc;
+      move_group_interface_->getInterfaceDescription(default_desc);
+      RCLCPP_INFO(this->get_logger(), "Pipeline name: %s", default_desc.name.c_str());
+      for (const auto &planner_id : default_desc.planner_ids)
+        {
+          RCLCPP_INFO(this->get_logger(), "  Planner ID: %s", planner_id.c_str());
+        }
+
+      RCLCPP_INFO(this->get_logger(), "default planning pipeline id: %s", move_group_interface_->getDefaultPlanningPipelineId().c_str());
+      RCLCPP_INFO(this->get_logger(), "default planner id: %s", move_group_interface_->getDefaultPlannerId().c_str());
+      RCLCPP_INFO(this->get_logger(), "current planner id: %s", move_group_interface_->getPlannerId().c_str());
+    }
+
+    void load_target_objects() {
+      // Register the target objects as collision objects
+      this->declare_parameter("objects", std::vector<std::string>{});
+      std::vector<std::string> objects = this->get_parameter("objects").as_string_array();
+
+      target_object_ids_ = std::vector<std::string>(objects.size(), "");
+      int i = 0;
+
+      RCLCPP_DEBUG(get_logger(), "Looking for objects: %ld", objects.size());
+      for (auto &obj_name : objects) {
+        moveit_msgs::msg::CollisionObject co_target;
+        shape_msgs::msg::SolidPrimitive primitive_target;
+        geometry_msgs::msg::Pose pose_target;
+
+        this->declare_parameter(obj_name + ".object_id", 0);
+        this->declare_parameter(obj_name + ".primitive_type", "");
+
+        int obj_id = this->get_parameter(obj_name + ".object_id").as_int();
+        RCLCPP_DEBUG(get_logger(), "Found an Object with ID %d", obj_id);
+
+        std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
+        if (obj_type == "BOX") {
+          this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
+
+          primitive_target.type = primitive_target.BOX;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.z").as_double()
+          };
+        } else if (obj_type == "SPHERE") {
+          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+          primitive_target.type = primitive_target.SPHERE;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+          };
+
+        } else if (obj_type == "CONE") {        
+          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+          primitive_target.type = primitive_target.CONE;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+          };
+
+        } else if (obj_type == "CYLINDER") {
+          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+          primitive_target.type = primitive_target.CYLINDER;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+          };
+        } else {
+          RCLCPP_INFO(get_logger(), "Invalid Object");
+        }
+
+        this->declare_parameter(obj_name + ".x", 0.0);
+        this->declare_parameter(obj_name + ".y", 0.0);
+        this->declare_parameter(obj_name + ".z", 0.0);
+
+        this->declare_parameter(obj_name + ".R", 0.0);
+        this->declare_parameter(obj_name + ".P", 0.0);
+        this->declare_parameter(obj_name + ".Y", 0.0);
+
+        pose_target.position.x = this->get_parameter(obj_name + ".x").as_double();
+        pose_target.position.y = this->get_parameter(obj_name + ".y").as_double();
+        pose_target.position.z = this->get_parameter(obj_name + ".z").as_double();
+
+        double roll = this->get_parameter(obj_name + ".R").as_double();
+        double pitch = this->get_parameter(obj_name + ".P").as_double();
+        double yaw = this->get_parameter(obj_name + ".Y").as_double();
+
+        tf2::Quaternion q;
+        q.setRPY(roll, pitch, yaw);
+
+        pose_target.orientation.x = q.x();
+        pose_target.orientation.y = q.y();
+        pose_target.orientation.z = q.z();
+        pose_target.orientation.w = q.w();
+        
+        co_target.id = "target_" + std::to_string(obj_id);
+        co_target.header.frame_id = move_group_interface_->getPlanningFrame();
+        co_target.primitives.push_back(primitive_target);
+        co_target.primitive_poses.push_back(pose_target);
+        co_target.operation = co_target.ADD;
+        planning_scene_interface_->applyCollisionObject(co_target);
+
+        target_object_ids_[i] = co_target.id;
+      }
+
+      planning_scene_monitor_->requestPlanningSceneState();
+    }
+
+    void log_pose(const geometry_msgs::msg::Pose &pose, const char* descriptor="") {
+        RCLCPP_INFO(this->get_logger(), "%s Position is (%.2f, %.2f, %.2f)", descriptor, pose.position.x, pose.position.y, pose.position.z);
+        RCLCPP_INFO(this->get_logger(), "%s Quaternion is (%.2f, %.2f, %.2f, %.2f)", descriptor, pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w);
+    }
+
+    bool plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+      move_group_interface_->setPlanningPipelineId("stomp");
+      move_group_interface_->setStartState(start_state);
+      
+      moveit_msgs::msg::OrientationConstraint orientation_constraint;
+      orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+      orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+
+      auto current_pose = move_group_interface_->getCurrentPose();
+      orientation_constraint.orientation = current_pose.pose.orientation;
+      RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
+        current_pose.pose.orientation.x, current_pose.pose.orientation.y,
+        current_pose.pose.orientation.z, current_pose.pose.orientation.w
+      );
+
+      move_group_interface_->clearPathConstraints();
+      RCLCPP_INFO(this->get_logger(), "Cleared Path Constraints");
+
+      move_group_interface_->setPoseTarget(target_pose);
+
+      bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+      return success;
+    }
+
+    bool plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+      move_group_interface_->setPlanningPipelineId("stomp");
+      move_group_interface_->setStartState(start_state);
+      
+      // Apply orientation constraints
+      moveit_msgs::msg::OrientationConstraint orientation_constraint;
+      orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+      orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+      orientation_constraint.orientation = start_pose.orientation;
+      orientation_constraint.absolute_x_axis_tolerance = 0.2;
+      orientation_constraint.absolute_y_axis_tolerance = 0.2;
+      orientation_constraint.absolute_z_axis_tolerance = 10;
+      orientation_constraint.weight = 1.0;
+      orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
+      
+      moveit_msgs::msg::Constraints all_constraints;
+      all_constraints.orientation_constraints.emplace_back(orientation_constraint);
+
+      move_group_interface_->clearPathConstraints();
+      move_group_interface_->setPathConstraints(all_constraints);
+      RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
+
+      // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
+      move_group_interface_->setPoseTarget(target_pose);
+
+      bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+
+      move_group_interface_->clearPathConstraints();
+
+      return success;
+    }
+
     void get_object_position(
       const std::shared_ptr<hts_msgs::srv::GetObjectPosition::Request> request,
       std::shared_ptr<hts_msgs::srv::GetObjectPosition::Response> response
@@ -372,39 +443,66 @@ public:
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle
     ) {
       std::thread([this, goal_handle] {
-        
+      auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
+      bool success;
+      std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
+      geometry_msgs::msg::Pose grasp_pose = goal_handle->get_goal()->grasp_pose;
+
       RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
       move_group_interface_->setPlanningPipelineId("stomp");
+      move_group_interface_->clearPathConstraints();
 
-      geometry_msgs::msg::Pose goal_pose = goal_handle->get_goal()->grasp_pose;
-      auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
+      moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
+      success = plan_pickup(*current_state, grasp_pose, pickup_plan);
 
-      moveit::planning_interface::MoveGroupInterface::Plan plan;
-      move_group_interface_->setStartStateToCurrentState();
-      move_group_interface_->setPoseTarget(goal_pose);
-
-      bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
-      // bool success = true;
       if (!success) {
-        RCLCPP_INFO(this->get_logger(), "Planning failed");
+        RCLCPP_INFO(this->get_logger(), "Planning (pickup) failed");
         result->success = true;
         result->is_valid = false;
         result->score = 0.0;
-        result->message = "Plan is impossible";
+        result->message = "Plan (pickup) is not valid";
         goal_handle->succeed(result);
-      } else {
-        RCLCPP_INFO(this->get_logger(), "Planning succeeded");
-        moveit_msgs::msg::RobotTrajectory plan_trajectory = plan.trajectory;
-        trajectory_msgs::msg::JointTrajectory joint_trajectory = plan_trajectory.joint_trajectory;
-        float trajectory_length = (float) compute_trajectory_length_(joint_trajectory);
-        RCLCPP_INFO(this->get_logger(), "Trajectory length is %.5f", trajectory_length);
-
-        result->success = true;
-        result->is_valid = true;
-        result->score =trajectory_length;
-        result->message = "Plan is possible";
-        goal_handle->succeed(result);
+        return;
       }
+
+      RCLCPP_INFO(this->get_logger(), "Planning (pickup) succeeded");
+
+      trajectory_msgs::msg::JointTrajectory pickup_joint_trajectory = pickup_plan.trajectory.joint_trajectory;
+      float trajectory_length_pickup = (float) compute_trajectory_length_(pickup_joint_trajectory);
+      RCLCPP_INFO(this->get_logger(), "Trajectory length (pickup) is %.5f", trajectory_length_pickup);
+
+      moveit::core::RobotState move_start_state(*current_state);
+      const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
+      move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
+
+      geometry_msgs::msg::Pose goal_pose = grasp_pose;
+      goal_pose.position.x = goal_handle->get_goal()->goal_x;
+      goal_pose.position.y = goal_handle->get_goal()->goal_y;
+      goal_pose.position.z = goal_handle->get_goal()->goal_z;
+
+      moveit::planning_interface::MoveGroupInterface::Plan move_plan;
+      success = plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
+
+      if (!success) {
+        RCLCPP_INFO(this->get_logger(), "Planning (move) failed");
+        result->success = true;
+        result->is_valid = false;
+        result->score = 0.0;
+        result->message = "Plan (move) is not valid";
+        goal_handle->succeed(result);
+        return;
+      } 
+      
+      RCLCPP_INFO(this->get_logger(), "Planning (move) succeeded");
+      trajectory_msgs::msg::JointTrajectory move_joint_trajectory = move_plan.trajectory.joint_trajectory;
+      float trajectory_length_move = (float) compute_trajectory_length_(move_joint_trajectory);
+      RCLCPP_INFO(this->get_logger(), "Trajectory length (move) is %.5f", trajectory_length_move);
+
+      result->success = true;
+      result->is_valid = true;
+      result->score = trajectory_length_pickup + trajectory_length_move;
+      result->message = "Plan is valid";
+      goal_handle->succeed(result);
 
       RCLCPP_INFO(this->get_logger(), "After goal handle succeed");
 
@@ -451,7 +549,9 @@ public:
         bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
 
         // attach object
-        gripper_interface_->attachObject(object_name);
+        if (goal_handle->get_goal()->target_id >= 0) {
+          gripper_interface_->attachObject(object_name);
+        }
 
         // log results
         auto result = std::make_shared<CustomActionClose::Result>();
@@ -479,7 +579,9 @@ public:
         gripper_interface_->setNamedTarget("open");
 
         // detach object
-        gripper_interface_->detachObject(object_name);
+        if (goal_handle->get_goal()->target_id >= 0) {
+          gripper_interface_->detachObject(object_name);
+        }
 
         // move
         bool success = (gripper_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
@@ -515,135 +617,119 @@ public:
     void handle_accepted_pickup_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
     ) {
+      std::thread([this, goal_handle] {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- PICKUP CALLBACK ---------------\n\n\n\n");
 
-        // set the goal
-        auto goal = goal_handle->get_goal();
-        geometry_msgs::msg::Pose target;
-        target.position.x = goal->x;
-        target.position.y = goal->y;
-        target.position.z = goal->z;
-
-        tf2::Quaternion q;
-        q.setRPY(goal->ox, goal->oy, goal->oz);
-
-        target.orientation.x = goal->ox;
-        target.orientation.y = goal->oy;
-        target.orientation.z = goal->oz;
-        target.orientation.w = goal->ow;
-
-        RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
-        RCLCPP_INFO(this->get_logger(), "Target Angle is (%.2f, %.2f, %.2f)", goal->ox, goal->oy, goal->oz);
-        RCLCPP_INFO(this->get_logger(), "Target Quaternion is (%.2f, %.2f, %.2f, %.2f)", q.x(), q.y(), q.z(), q.w());
-
-        
-        auto current_state = move_group_interface_->getCurrentState();
-
-
-        move_group_interface_->setStartStateToCurrentState();
-        move_group_interface_->setPlanningPipelineId("stomp");
-
-        move_group_interface_->clearPathConstraints();
-        RCLCPP_INFO(this->get_logger(), "Cleared Path Constraints");
-        move_group_interface_->setPoseTarget(target);
-        bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
-
-        auto current_position = move_group_interface_->getCurrentPose().pose;
-        RCLCPP_INFO(this->get_logger(), "End Position is (%.2f, %.2f, %.2f)", 
-          current_position.position.x, current_position.position.y, current_position.position.z);
-        RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
-          current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
-        
         auto result = std::make_shared<CustomActionPickup::Result>();
-        result->success = success;
+        auto feedback = std::make_shared<CustomActionPickup::Feedback>();
+        bool success;
+
+        // set the goal
+        geometry_msgs::msg::Pose target = goal_handle->get_goal()->pose;
+        log_pose(target, "Target Pickup");
+        
+        std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        success = plan_pickup(*current_state, target, plan);
+
+        if (!current_state) {
+          RCLCPP_WARN(this->get_logger(), "Current State is NULL");
+        }
+      
+        if (!success) {
+          RCLCPP_ERROR(this->get_logger(), "Planning Failed");
+          result->success = false;
+          result->message = "Planning failed";
+          goal_handle->abort(result);
+          return;
+        }
+          
+        feedback->progress = "Planning succeeded. Executing...";
+        goal_handle->publish_feedback(feedback);
+
+        success = (move_group_interface_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+
+        geometry_msgs::msg::Pose end_pose = move_group_interface_->getCurrentPose().pose;
+        log_pose(end_pose, "End Pickup");
+        
         if (success) {
-          RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-          result->message = "Goal reached successfully";
+          RCLCPP_INFO(this->get_logger(), "Plan Execution Succeeded");
+          result->success = true;
+          result->message = "Planning & execution succeeded";
           goal_handle->succeed(result);
         } else {
-          RCLCPP_INFO(this->get_logger(), "Goal failed");
-          result->message = "Goal failed";
+          RCLCPP_ERROR(this->get_logger(), "Plan Execution Failed");
+          result->success = false;
+          result->message = "Plan execution failed";
           goal_handle->abort(result);
         }
 
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- PICKUP CALLBACK END ---------------\n\n\n\n");
-    
+      }).detach();
     }
 
     void handle_accepted_move_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionMove>> goal_handle
     ) {
+      std::thread([this, goal_handle] {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- MOVE CALLBACK ---------------\n\n\n\n");
+
+        auto result = std::make_shared<CustomActionMove::Result>();
+        auto feedback = std::make_shared<CustomActionMove::Feedback>();
+        bool success;
 
         auto goal = goal_handle->get_goal();
 
-        // Apply orientation constraints
-        moveit_msgs::msg::OrientationConstraint orientation_constraint;
-        orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
-        orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+        std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
+        geometry_msgs::msg::Pose current_pose = move_group_interface_->getCurrentPose().pose;
 
-        auto current_pose = move_group_interface_->getCurrentPose();
-        orientation_constraint.orientation = current_pose.pose.orientation;
-        RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
-          current_pose.pose.orientation.x, current_pose.pose.orientation.y,
-          current_pose.pose.orientation.z, current_pose.pose.orientation.w
-        );
+        if (!current_state) {
+          RCLCPP_WARN(this->get_logger(), "Current State is NULL");
+        }
 
         geometry_msgs::msg::Pose target_pose;
-        target_pose.orientation.x = current_pose.pose.orientation.x;
-        target_pose.orientation.y = current_pose.pose.orientation.y;
-        target_pose.orientation.z = current_pose.pose.orientation.z;
-        target_pose.orientation.w = current_pose.pose.orientation.w;
+        target_pose.orientation.x = current_pose.orientation.x;
+        target_pose.orientation.y = current_pose.orientation.y;
+        target_pose.orientation.z = current_pose.orientation.z;
+        target_pose.orientation.w = current_pose.orientation.w;
         target_pose.position.x = goal->x;
         target_pose.position.y = goal->y;
         target_pose.position.z = goal->z;
+        log_pose(target_pose, "Target Move");
 
-        orientation_constraint.absolute_x_axis_tolerance = 0.2;
-        orientation_constraint.absolute_y_axis_tolerance = 0.2;
-        orientation_constraint.absolute_z_axis_tolerance = 10;
-        orientation_constraint.weight = 1.0;
-        orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        success = this->plan_move(*current_state, current_pose, target_pose, plan);
+      
+        if (!success) {
+          RCLCPP_ERROR(this->get_logger(), "Planning Failed");
+          result->success = false;
+          result->message = "Planning failed";
+          goal_handle->abort(result);
+          return;
+        }
 
-        moveit_msgs::msg::Constraints all_constraints;
-        all_constraints.orientation_constraints.emplace_back(orientation_constraint);
+        feedback->progress = "Planning succeeded. Executing...";
+        goal_handle->publish_feedback(feedback);
 
-        move_group_interface_->clearPathConstraints();
-        move_group_interface_->setPathConstraints(all_constraints);
-        RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
+        success = (move_group_interface_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS);
 
-        RCLCPP_INFO(this->get_logger(), "Target Position is (%.2f, %.2f, %.2f)", goal->x, goal->y, goal->z);
-
-        move_group_interface_->getCurrentState();
-        move_group_interface_->setStartStateToCurrentState();
-        move_group_interface_->setPlanningPipelineId("ompl");
+        geometry_msgs::msg::Pose end_pose = move_group_interface_->getCurrentPose().pose;
+        log_pose(end_pose, "End Move");
         
-        // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
-        move_group_interface_->setPoseTarget(target_pose);
-        bool success = (move_group_interface_->move() == moveit::core::MoveItErrorCode::SUCCESS);
-
-        auto current_position = move_group_interface_->getCurrentPose().pose;
-        double roll2, pitch2, yaw2;
-
-        RCLCPP_INFO(this->get_logger(), "End Position is (%.2f, %.2f, %.2f)", 
-          current_position.position.x, current_position.position.y, current_position.position.z);
-        RCLCPP_INFO(this->get_logger(), "End Quaternion is (%.2f, %.2f, %.2f, %.2f)",
-          current_position.orientation.x, current_position.orientation.y, current_position.orientation.z, current_position.orientation.w);
-
-        move_group_interface_->clearPathConstraints();
-
-        auto result = std::make_shared<CustomActionMove::Result>();
-        result->success = success;
         if (success) {
-          RCLCPP_INFO(this->get_logger(), "Goal reached successfully");
-          result->message = "Goal reached successfully";
+          RCLCPP_INFO(this->get_logger(), "Plan Execution Succeeded");
+          result->success = true;
+          result->message = "Planning & execution succeeded";
           goal_handle->succeed(result);
         } else {
-          RCLCPP_INFO(this->get_logger(), "Goal failed");
-          result->message = "Goal failed";
+          RCLCPP_ERROR(this->get_logger(), "Plan Execution Failed");
+          result->success = false;
+          result->message = "Plan execution failed";
           goal_handle->abort(result);
         }
 
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- MOVE CALLBACK END ---------------\n\n\n\n");
+      }).detach();
     }
 
     void gazebo_scene_subscriber_callback_(tf2_msgs::msg::TFMessage::UniquePtr msg) {
@@ -740,7 +826,7 @@ public:
     rclcpp_action::GoalResponse handle_goal_move_(
       const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionMove::Goal> goal
     ) {
-      RCLCPP_INFO(this->get_logger(), "Received move request (%.2f %.2f %.2f)", goal->x, goal->y, goal->z);
+      RCLCPP_INFO(this->get_logger(), "Received move request");
       return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
@@ -754,7 +840,7 @@ public:
     rclcpp_action::GoalResponse handle_goal_pickup_(
       const rclcpp_action::GoalUUID&, std::shared_ptr<const CustomActionPickup::Goal> goal
     ) {
-      RCLCPP_INFO(this->get_logger(), "Received pickup request Position (%.2f %.2f %.2f) and Orientation (%.2f %.2f %.2f %.2f)", goal->x, goal->y, goal->z, goal->ox, goal->oy, goal->oz, goal->ow);
+      RCLCPP_INFO(this->get_logger(), "Received pickup request Position");
       return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 

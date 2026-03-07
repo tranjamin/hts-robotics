@@ -5,4 +5,4 @@ float64 z
 bool success
 string message
 ---
-float32 progress
+string progress

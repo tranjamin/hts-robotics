@@ -1,4 +1,7 @@
 geometry_msgs/Pose grasp_pose
+float32 goal_x
+float32 goal_y
+float32 goal_z
 ---
 bool success
 bool is_valid
