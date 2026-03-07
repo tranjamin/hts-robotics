@@ -289,8 +289,8 @@ class AnyGraspNode(Node):
                 exclude_grasps.append(ind)
                 continue
 
-            if abs(yaw) > 90:
-                exclude_grasps.append(ind)
+            # if abs(yaw) > 90:
+            #     exclude_grasps.append(ind)
 
         gg.remove(exclude_grasps)
 
@@ -309,7 +309,7 @@ class AnyGraspNode(Node):
         AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z])
         AnyGraspNode.display_grasps(gg, cloud, only_first=True, origin_position=[x,y,z])
 
-        return gg
+        return gg, cloud
 
     async def grasp_callback_(self, goal_handle):
         request = goal_handle.request
@@ -324,7 +324,7 @@ class AnyGraspNode(Node):
         self.get_logger().info("Requested pose for object %d" % (request.id,))
         self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
 
-        gg = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
+        gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
         if gg is None or len(gg) == 0:
             self.get_logger().info("Grasp Failed")
             goal_handle.abort()
@@ -335,7 +335,6 @@ class AnyGraspNode(Node):
         
         for grasp in gg:
             self.get_logger().info("Candidate Grasp: " + str(grasp))
-            scored_grasps.append((grasp.score, self.map_grasp(grasp)))
             goal = ComputeGraspValidity.Goal()
             goal.grasp_pose = self.map_grasp(grasp)
 
@@ -363,14 +362,21 @@ class AnyGraspNode(Node):
                 self.get_logger().info("Not a valid pose")
             else:
                 self.get_logger().info("Valid pose with score " + str(result.score))
-                scored_grasps.append((result.score, goal.grasp_pose))
+                final_grasp_group = GraspGroup()
+                final_grasp_group.add(grasp)
+                AnyGraspNode.display_grasps(final_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z])
+                scored_grasps.append((result.score, grasp))
 
         scored_grasps.sort(key=lambda x:x[0])
 
         self.get_logger().info(str(dir(goal_handle)))
         if len(scored_grasps):
             self.get_logger().info("Found the best grasp")
-            response.grasp_pose = scored_grasps[0][1]
+            final_grasp_group = GraspGroup()
+            final_grasp_group.add(scored_grasps[0][1])
+            AnyGraspNode.display_grasps(final_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z])
+
+            response.grasp_pose = self.map_grasp(scored_grasps[0][1])
             response.success = True        
             goal_handle.succeed()
         else:
