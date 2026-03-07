@@ -4,6 +4,7 @@ float64 y
 float64 z
 ---
 bool success
+string message
 geometry_msgs/Pose grasp_pose
 ---
-float32 progress
+string progress

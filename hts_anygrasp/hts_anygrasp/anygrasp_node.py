@@ -313,12 +313,14 @@ class AnyGraspNode(Node):
 
     async def grasp_callback_(self, goal_handle):
         request = goal_handle.request
+        feedback = RequestGrasp.Feedback()
         response = RequestGrasp.Result()
 
         if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
             self.get_logger().info("PointCloud Not Available")
-            goal_handle.abort()
             response.success = False
+            response.message = "Point cloud not available"
+            goal_handle.abort()
             return response
 
         self.get_logger().info("Requested pose for object %d" % (request.id,))
@@ -327,10 +329,14 @@ class AnyGraspNode(Node):
         gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
         if gg is None or len(gg) == 0:
             self.get_logger().info("Grasp Failed")
-            goal_handle.abort()
             response.success = False
+            response.message = "Unable to identify any grasps"
+            goal_handle.abort()
             return response
         
+        feedback.progress = f"Identified {len(gg)} grasps. Evaluating efficiency..."
+        goal_handle.publish_feedback(feedback)
+
         scored_grasps = []
         
         for grasp in gg:
@@ -367,9 +373,11 @@ class AnyGraspNode(Node):
                 AnyGraspNode.display_grasps(final_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z])
                 scored_grasps.append((result.score, grasp))
 
+        feedback.progress = f"Evaluated efficiency. {len(scored_grasps)} valid grasps found."
+        goal_handle.publish_feedback(feedback)
+
         scored_grasps.sort(key=lambda x:x[0])
 
-        self.get_logger().info(str(dir(goal_handle)))
         if len(scored_grasps):
             self.get_logger().info("Found the best grasp")
             final_grasp_group = GraspGroup()
