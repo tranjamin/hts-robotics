@@ -384,7 +384,7 @@ public:
     }
 
     bool plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
-      move_group_interface_->setPlanningPipelineId("stomp");
+      move_group_interface_->setPlanningPipelineId("ompl");
       move_group_interface_->setStartState(start_state);
       
       // Apply orientation constraints
@@ -392,9 +392,9 @@ public:
       orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
       orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
       orientation_constraint.orientation = start_pose.orientation;
-      orientation_constraint.absolute_x_axis_tolerance = 0.2;
-      orientation_constraint.absolute_y_axis_tolerance = 0.2;
-      orientation_constraint.absolute_z_axis_tolerance = 10;
+      orientation_constraint.absolute_x_axis_tolerance = 0.3;
+      orientation_constraint.absolute_y_axis_tolerance = 0.3;
+      orientation_constraint.absolute_z_axis_tolerance = 8.0;
       orientation_constraint.weight = 1.0;
       orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
       
@@ -404,6 +404,9 @@ public:
       move_group_interface_->clearPathConstraints();
       move_group_interface_->setPathConstraints(all_constraints);
       RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
+
+      log_pose(start_pose, "Start Pose");
+      log_pose(target_pose, "Target Pose");
 
       // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
       move_group_interface_->setPoseTarget(target_pose);
@@ -474,6 +477,21 @@ public:
       moveit::core::RobotState move_start_state(*current_state);
       const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
       move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
+      move_start_state.enforceBounds();
+      move_start_state.update();
+
+      std::vector<double> vals;
+      move_start_state.copyJointGroupPositions(joint_model_group, vals);
+      const auto& names = joint_model_group->getVariableNames();
+
+      for (size_t i = 0; i < vals.size(); ++i)
+      {
+        RCLCPP_INFO(this->get_logger(),
+          "Start state joint %s: %.6f",
+          names[i].c_str(),
+          vals[i]
+        );
+      }
 
       geometry_msgs::msg::Pose goal_pose = grasp_pose;
       goal_pose.position.x = goal_handle->get_goal()->goal_x;

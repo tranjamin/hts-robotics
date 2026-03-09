@@ -107,6 +107,9 @@ class hts_missions : public rclcpp::Node {
         grasp_request.x = position_response.get()->x;
         grasp_request.y = position_response.get()->y;
         grasp_request.z = position_response.get()->z;
+        grasp_request.goal_x = goal_handle->get_goal()->x;
+        grasp_request.goal_y = goal_handle->get_goal()->y;
+        grasp_request.goal_z = goal_handle->get_goal()->z;
 
         auto pickup_goal = CustomActionPickup::Goal();
 
