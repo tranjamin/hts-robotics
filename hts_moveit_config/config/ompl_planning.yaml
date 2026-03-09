@@ -4,7 +4,7 @@ min_angle_change: 0.001
 
 default_workspace_bounds: 2.0
 start_state_max_bounds_error: 0.01
-start_state_max_dt: 0.1
+start_state_max_dt: 10.0
 jiggle_fraction: 0.005
 max_sampling_attempts: 500
 
@@ -19,8 +19,8 @@ planning_plugins:
 request_adapters:
   - default_planning_request_adapters/ResolveConstraintFrames
   - default_planning_request_adapters/ValidateWorkspaceBounds
-  - default_planning_request_adapters/CheckStartStateBounds
-  - default_planning_request_adapters/CheckStartStateCollision
+  # - default_planning_request_adapters/CheckStartStateBounds
+  # - default_planning_request_adapters/CheckStartStateCollision
 response_adapters:
   - default_planning_response_adapters/AddTimeOptimalParameterization
   - default_planning_response_adapters/ValidateSolution
@@ -64,12 +64,14 @@ planner_configs:
     goal_bias: 0.05  # When close to goal select goal, with this probability? default: 0.05
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
-    range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    range: 0.05  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    enforce_joint_state_space: true
   RRTstarkConfigDefault:
     type: geometric::RRTstar
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability? default: 0.05
     delay_collision_checking: 1  # Stop collision checking as soon as C-free parent found. default 1
+    enforce_joint_state_space: true
   TRRTkConfigDefault:
     type: geometric::TRRT
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()

@@ -18,7 +18,7 @@ max_grasp_pitch_roll_deg: 5.0
 nms_translation_thresh: 0.005
 nms_angle_thresh_deg: 5.0
 
-grasp_z_offset: 0.0
+grasp_z_offset: 0.1
 grasp_axis_offset: 0.14
 
 max_gripper_width: 0.1
