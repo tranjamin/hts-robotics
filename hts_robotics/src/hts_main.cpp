@@ -150,12 +150,15 @@ public:
     gripper_interface_->setGoalPositionTolerance(0.001);
     gripper_interface_->setGoalJointTolerance(0.001);
     gripper_interface_->setGoalOrientationTolerance(0.1);    
+    gripper_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
 
     // set tolerances for arm
-    move_group_interface_->setGoalPositionTolerance(0.001);
-    move_group_interface_->setGoalOrientationTolerance(0.001);
+    move_group_interface_->setGoalPositionTolerance(0.005);
+    move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
     move_group_interface_->setPlanningTime(30.0);
+    move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
+
     RCLCPP_DEBUG(this->get_logger(), "Set planning tolerances.");
 
     // for dynamically updating the planning scene (enabling and disabling collisions)
@@ -186,6 +189,8 @@ public:
 
     move_group_interface_->setPlanningPipelineId("stomp");
     move_group_interface_->setPlannerId("stomp");
+    gripper_interface_->setPlanningPipelineId("ompl");
+    gripper_interface_->setPlannerId("ompl");
     log_planning_details();
 
   }
@@ -446,6 +451,8 @@ public:
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle
     ) {
       std::thread([this, goal_handle] {
+      RCLCPP_INFO(this->get_logger(), "\n---BREAK---\n");
+      auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
       auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
       bool success;
       std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
@@ -473,25 +480,17 @@ public:
       trajectory_msgs::msg::JointTrajectory pickup_joint_trajectory = pickup_plan.trajectory.joint_trajectory;
       float trajectory_length_pickup = (float) compute_trajectory_length_(pickup_joint_trajectory);
       RCLCPP_INFO(this->get_logger(), "Trajectory length (pickup) is %.5f", trajectory_length_pickup);
+      RCLCPP_INFO(this->get_logger(), "\n---\n");
+        
+      if (goal_handle->get_goal()->target_id >= 0) {
+          gripper_interface_->attachObject(object_name);
+      }
 
       moveit::core::RobotState move_start_state(*current_state);
       const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
       move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
       move_start_state.enforceBounds();
       move_start_state.update();
-
-      std::vector<double> vals;
-      move_start_state.copyJointGroupPositions(joint_model_group, vals);
-      const auto& names = joint_model_group->getVariableNames();
-
-      for (size_t i = 0; i < vals.size(); ++i)
-      {
-        RCLCPP_INFO(this->get_logger(),
-          "Start state joint %s: %.6f",
-          names[i].c_str(),
-          vals[i]
-        );
-      }
 
       geometry_msgs::msg::Pose goal_pose = grasp_pose;
       goal_pose.position.x = goal_handle->get_goal()->goal_x;
@@ -500,6 +499,10 @@ public:
 
       moveit::planning_interface::MoveGroupInterface::Plan move_plan;
       success = plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
+      
+      if (goal_handle->get_goal()->target_id >= 0) {
+        gripper_interface_->detachObject(object_name);
+      }
 
       if (!success) {
         RCLCPP_INFO(this->get_logger(), "Planning (move) failed");
@@ -510,6 +513,8 @@ public:
         goal_handle->succeed(result);
         return;
       } 
+
+      
       
       RCLCPP_INFO(this->get_logger(), "Planning (move) succeeded");
       trajectory_msgs::msg::JointTrajectory move_joint_trajectory = move_plan.trajectory.joint_trajectory;
@@ -522,7 +527,7 @@ public:
       result->message = "Plan is valid";
       goal_handle->succeed(result);
 
-      RCLCPP_INFO(this->get_logger(), "After goal handle succeed");
+      RCLCPP_INFO(this->get_logger(), "\n---BREAK---\n");
 
       }).detach();
 
@@ -646,6 +651,7 @@ public:
         geometry_msgs::msg::Pose target = goal_handle->get_goal()->pose;
         log_pose(target, "Target Pickup");
         
+        planning_scene_monitor_->updateFrameTransforms();
         std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
         moveit::planning_interface::MoveGroupInterface::Plan plan;
         success = plan_pickup(*current_state, target, plan);

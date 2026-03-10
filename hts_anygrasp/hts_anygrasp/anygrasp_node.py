@@ -325,9 +325,6 @@ class AnyGraspNode(Node):
             goal_handle.abort()
             return response
 
-        self.get_logger().info("Requested pose for object %d" % (request.id,))
-        self.get_logger().info(f"Pose is centred at {request.x}, {request.y}, {request.z}")
-
         gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
         if gg is None or len(gg) == 0:
             self.get_logger().error("Grasp Failed")
@@ -350,6 +347,7 @@ class AnyGraspNode(Node):
             goal.goal_x = request.goal_x
             goal.goal_y = request.goal_y
             goal.goal_z = request.goal_z
+            goal.target_id = request.id
             self.get_logger().info(f"Candidate Grasp {ind}/{len(gg)}: " + str(goal.grasp_pose))
 
             self.grasp_validity_client_.wait_for_server()
@@ -414,6 +412,7 @@ class AnyGraspNode(Node):
             AnyGraspNode.display_grasps(final_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
             response.grasp_pose = self.map_grasp(best_grasp)
+            self.get_logger().info("--> " + str(response.grasp_pose))
             response.success = True        
             goal_handle.succeed()
         else:
@@ -427,7 +426,6 @@ class AnyGraspNode(Node):
         offset_rotation = Rotation.from_euler('y', 90, degrees=True)
         final_rotation = grasp_rotation * offset_rotation
         final_quaternion = final_rotation.as_quat()
-        print(final_quaternion)
 
         # local axes:
             # z points in the direction of grasp attack
@@ -437,7 +435,6 @@ class AnyGraspNode(Node):
         offset_translation = np.array([0, 0, -self.GRASP_AXIS_OFFSET])
         grasp.translation[2] += self.GRASP_Z_OFFSET
         final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
-        print(final_translation)
 
         pose = Pose()
         pose.position.x = final_translation[0]
