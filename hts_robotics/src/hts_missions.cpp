@@ -188,24 +188,9 @@ class hts_missions : public rclcpp::Node {
             }
           };
 
-        auto first_open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
-        first_open_send_goal_options.result_callback =
-          [this, pickup_send_goal_options, goal_handle, result, feedback, pickup_goal](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
-            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
-              RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
-              result->success = false;
-              result->message = "Gripper failed to open";
-              goal_handle->abort(result);
-            } else {
-              feedback->progress = "Gripper opened on target";
-              goal_handle->publish_feedback(feedback);
-              pickup_client_->async_send_goal(*pickup_goal, pickup_send_goal_options);
-            }
-          };
-          
         auto grasp_object_send_goal_options = rclcpp_action::Client<hts_msgs::action::RequestGrasp>::SendGoalOptions();
         grasp_object_send_goal_options.result_callback =
-          [this, first_open_send_goal_options, goal_handle, result, feedback, pickup_goal, object_id](const rclcpp_action::ClientGoalHandle<hts_msgs::action::RequestGrasp>::WrappedResult &r) {
+          [this, pickup_send_goal_options, goal_handle, result, feedback, pickup_goal](const rclcpp_action::ClientGoalHandle<hts_msgs::action::RequestGrasp>::WrappedResult &r) {
             if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
               RCLCPP_ERROR(this->get_logger(), "Anygrasp failed to identify pose");
               result->success = false;
@@ -225,11 +210,8 @@ class hts_missions : public rclcpp::Node {
               feedback->progress = std::string(buf);
               goal_handle->publish_feedback(feedback);
 
-              pickup_goal->pose = grasp_pose;
-
-              auto first_open_goal = CustomActionOpen::Goal();
-              first_open_goal.target_id = object_id;
-              open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
+              pickup_goal->pose = grasp_pose;             
+              pickup_client_->async_send_goal(*pickup_goal, pickup_send_goal_options);
             }
           };
         grasp_object_send_goal_options.feedback_callback =
@@ -240,10 +222,30 @@ class hts_missions : public rclcpp::Node {
             goal_handle->publish_feedback(feedback);
           };
 
+        auto first_open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
+        first_open_send_goal_options.result_callback =
+          [this, grasp_object_send_goal_options, goal_handle, result, feedback, grasp_request](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
+            if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
+              RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
+              result->success = false;
+              result->message = "Gripper failed to open";
+              goal_handle->abort(result);
+            } else {
+              feedback->progress = "Gripper opened on target";
+              goal_handle->publish_feedback(feedback);
+
+              feedback->progress = "Sending Grasp Request...";
+              goal_handle->publish_feedback(feedback);
+              grasp_request_client_->async_send_goal(grasp_request, grasp_object_send_goal_options);
+            }
+          };
+
         // sends action
-        feedback->progress = "Sending Grasp Request...";
+        feedback->progress = "Opening gripper...";
         goal_handle->publish_feedback(feedback);
-        grasp_request_client_->async_send_goal(grasp_request, grasp_object_send_goal_options);
+        auto first_open_goal = CustomActionOpen::Goal();
+        first_open_goal.target_id = object_id;
+        open_client_->async_send_goal(first_open_goal, first_open_send_goal_options);
 
       }).detach();
     }
