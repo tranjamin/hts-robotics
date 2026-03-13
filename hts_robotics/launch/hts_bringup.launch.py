@@ -187,7 +187,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME},
         ],
         arguments=[
-            '--ros-args', '--log-level', 'debug'
+            '--ros-args', '--log-level', 'error'
         ]
     )
 
@@ -208,7 +208,7 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
         output='log',
         arguments=[
             '-d', rviz_full_config,
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', 'error'
             ],
         parameters=[
             robot_description,

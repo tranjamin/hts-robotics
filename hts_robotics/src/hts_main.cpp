@@ -161,7 +161,7 @@ public:
     move_group_interface_->setPlanningTime(30.0);
     move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
     move_group_interface_->setPlanningPipelineId("ompl");
-    move_group_interface_->setPlannerId("fr3_arm[PRMstarkConfigDefault]");
+    move_group_interface_->setPlannerId("fr3_arm[RRTConnectkConfigDefault]");
 
     log_planning_details();
 

@@ -269,3 +269,9 @@ colcon build --symlink-install --packages-select moveit_common moveit_core  --cm
 source install/setup.bash
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --executor sequential
 ```
+
+```bash
+export XDG_RUNTIME_DIR=/tmp/runtime-root
+mkdir -p $XDG_RUNTIME_DIR
+export OPEN3D_CPU_RENDERING=true
+```
