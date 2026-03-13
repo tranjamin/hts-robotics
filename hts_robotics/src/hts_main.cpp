@@ -151,13 +151,19 @@ public:
     gripper_interface_->setGoalJointTolerance(0.001);
     gripper_interface_->setGoalOrientationTolerance(0.1);    
     gripper_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
+    gripper_interface_->setPlanningPipelineId("ompl");
+    gripper_interface_->setPlannerId("ompl");
 
     // set tolerances for arm
-    move_group_interface_->setGoalPositionTolerance(0.005);
-    move_group_interface_->setGoalOrientationTolerance(0.01);
+    move_group_interface_->setGoalPositionTolerance(0.001);
+    move_group_interface_->setGoalOrientationTolerance(0.001);
     move_group_interface_->setGoalJointTolerance(0.01);
     move_group_interface_->setPlanningTime(30.0);
     move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
+    move_group_interface_->setPlanningPipelineId("ompl");
+    move_group_interface_->setPlannerId("fr3_arm[PRMstarkConfigDefault]");
+
+    log_planning_details();
 
     RCLCPP_DEBUG(this->get_logger(), "Set planning tolerances.");
 
@@ -186,13 +192,6 @@ public:
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
     load_target_objects();
-
-    move_group_interface_->setPlanningPipelineId("stomp");
-    move_group_interface_->setPlannerId("stomp");
-    gripper_interface_->setPlanningPipelineId("ompl");
-    gripper_interface_->setPlannerId("ompl");
-    log_planning_details();
-
   }
 
   private:
@@ -366,7 +365,6 @@ public:
 
     bool plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
       move_group_interface_->getCurrentState(10.0);
-      move_group_interface_->setPlanningPipelineId("stomp");
       move_group_interface_->setStartState(start_state);
       
       moveit_msgs::msg::OrientationConstraint orientation_constraint;
@@ -390,7 +388,6 @@ public:
     }
 
     bool plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
-      move_group_interface_->setPlanningPipelineId("ompl");
       move_group_interface_->setStartState(start_state);
       
       // Apply orientation constraints
@@ -460,7 +457,6 @@ public:
       geometry_msgs::msg::Pose grasp_pose = goal_handle->get_goal()->grasp_pose;
 
       RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
-      move_group_interface_->setPlanningPipelineId("stomp");
       move_group_interface_->clearPathConstraints();
 
       moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
@@ -549,6 +545,7 @@ public:
     void handle_accepted_close_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionClose>> goal_handle
     ) {
+      std::thread([this, goal_handle] {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK ---------------\n\n\n\n");
         gripper_interface_->setNamedTarget("close");
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
@@ -591,11 +588,13 @@ public:
         }
 
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK END ---------------\n\n\n\n");
+      }).detach();
     }
 
     void handle_accepted_open_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionOpen>> goal_handle
     ) {
+      std::thread([this, goal_handle] {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK ---------------\n\n\n\n");
         
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
@@ -636,6 +635,7 @@ public:
           goal_handle->abort(result);
         }
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK END ---------------\n\n\n\n");
+      }).detach();
     }
 
     void handle_accepted_pickup_(
@@ -654,6 +654,7 @@ public:
         
         planning_scene_monitor_->updateFrameTransforms();
         std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
+        current_state->enforceBounds();
         moveit::planning_interface::MoveGroupInterface::Plan plan;
         success = plan_pickup(*current_state, target, plan);
 
