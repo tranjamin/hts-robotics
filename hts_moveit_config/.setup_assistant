@@ -3,7 +3,7 @@ moveit_setup_assistant_config:
     package: franka_description
     relative_path: robots/common/fr3/fr3.urdf.xacro
   SRDF:
-    relative_path: config/fr3_arm_hand.srdf.xacro
+    relative_path: robot/fr3_arm_hand.srdf.xacro
   CONFIG:
     author_name: Mike Lautman
     author_email: mike@picknik.ai

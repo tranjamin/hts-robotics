@@ -25,18 +25,18 @@ USE_SIM_TIME = True
 moveit_config = (
     MoveItConfigsBuilder("hts")
     .robot_description(
-        file_path="config/fr3.urdf.xacro",
+        file_path="robot/fr3.urdf.xacro",
         mappings={
             "ros2_control_hardware_type": LaunchConfiguration(
                 "ros2_control_hardware_type"
             )
         },
     )
-    .robot_description_semantic(file_path="config/fr3.srdf")
+    .robot_description_semantic(file_path="robot/fr3.srdf")
     .planning_scene_monitor(
         publish_robot_description=True, publish_robot_description_semantic=True
     )
-    .trajectory_execution(file_path="config/gripper_moveit_controllers.yaml")
+    .trajectory_execution(file_path="config/moveit_controllers.yaml")
     .planning_pipelines(
         pipelines=["stomp", "ompl", "chomp", "pilz_industrial_motion_planner"]
     )

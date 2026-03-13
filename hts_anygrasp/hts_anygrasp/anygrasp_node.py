@@ -348,7 +348,7 @@ class AnyGraspNode(Node):
             goal.goal_y = request.goal_y
             goal.goal_z = request.goal_z
             goal.target_id = request.id
-            self.get_logger().info(f"Candidate Grasp {ind}/{len(gg)}: " + str(goal.grasp_pose))
+            self.get_logger().info(f"Candidate Grasp {ind + 1}/{len(gg)}: " + str(goal.grasp_pose))
 
             self.grasp_validity_client_.wait_for_server()
             send_goal_future = self.grasp_validity_client_.send_goal_async(goal)
@@ -392,7 +392,7 @@ class AnyGraspNode(Node):
                 color = np.array([[0.0], [0.0], [0.0]], dtype=np.float64)
                 g.paint_uniform_color(color)
             else:
-                color = np.array(cm.RdYlGn_r((grasp_scores[ind] - min_score)/(max_score - min_score))[:3], dtype=np.float64)
+                color = np.array(cm.RdYlGn_r((grasp_scores[ind] - min_score)/(max_score - min_score + 0.0001))[:3], dtype=np.float64)
                 g.paint_uniform_color(color)
         o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name="Scored Grasps")
 

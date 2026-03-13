@@ -365,6 +365,7 @@ public:
     }
 
     bool plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+      move_group_interface_->getCurrentState(10.0);
       move_group_interface_->setPlanningPipelineId("stomp");
       move_group_interface_->setStartState(start_state);
       

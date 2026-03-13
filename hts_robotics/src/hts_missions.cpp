@@ -217,7 +217,7 @@ class hts_missions : public rclcpp::Node {
 
               char buf[150];
               std::snprintf(buf, sizeof(buf),
-                "AnyGrasp Found a Grasp of (%.2f, %.2f, %.2f) (%.2f, %.2f, %.2f, %.2f)", 
+                "AnyGrasp Found a Grasp of (%.3f, %.3f, %.3f) (%.3f, %.3f, %.3f, %.3f)", 
                 grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
                 grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
               );
