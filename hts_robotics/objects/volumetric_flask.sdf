@@ -11,7 +11,7 @@
         </inertia>
       </inertial>
       <collision name="collision">
-        <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose>
+        <!-- <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose> -->
         <geometry>
           <mesh>
             <uri>package://hts_robotics/objects/meshes/volumetric_flask_collision.stl</uri>
@@ -26,7 +26,7 @@
         </geometry> -->
       </collision>
       <visual name="visual">
-        <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose>
+        <!-- <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose> -->
         <geometry>
           <mesh>
             <uri>package://hts_robotics/objects/meshes/volumetric_flask.stl</uri>

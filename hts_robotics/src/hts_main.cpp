@@ -31,6 +31,9 @@
 #include "hts_msgs/action/request_grasp.hpp"
 #include "hts_msgs/srv/get_object_position.hpp"
 
+#include <geometric_shapes/shape_operations.h>
+#include <shape_msgs/msg/mesh.hpp>
+
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
 
@@ -270,6 +273,7 @@ public:
       for (auto &obj_name : objects) {
         moveit_msgs::msg::CollisionObject co_target;
         shape_msgs::msg::SolidPrimitive primitive_target;
+        shape_msgs::msg::Mesh mesh_target;
         geometry_msgs::msg::Pose pose_target;
 
         this->declare_parameter(obj_name + ".object_id", 0);
@@ -277,49 +281,6 @@ public:
 
         int obj_id = this->get_parameter(obj_name + ".object_id").as_int();
         RCLCPP_DEBUG(get_logger(), "Found an Object with ID %d", obj_id);
-
-        std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
-        if (obj_type == "BOX") {
-          this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
-
-          primitive_target.type = primitive_target.BOX;
-          primitive_target.dimensions = {
-            this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
-            this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
-            this->get_parameter(obj_name + ".primitive_dims.z").as_double()
-          };
-        } else if (obj_type == "SPHERE") {
-          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
-
-          primitive_target.type = primitive_target.SPHERE;
-          primitive_target.dimensions = {
-            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
-          };
-
-        } else if (obj_type == "CONE") {        
-          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
-
-          primitive_target.type = primitive_target.CONE;
-          primitive_target.dimensions = {
-            this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
-            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
-          };
-
-        } else if (obj_type == "CYLINDER") {
-          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
-
-          primitive_target.type = primitive_target.CYLINDER;
-          primitive_target.dimensions = {
-            this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
-            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
-          };
-        } else {
-          RCLCPP_INFO(get_logger(), "Invalid Object");
-        }
 
         this->declare_parameter(obj_name + ".x", 0.0);
         this->declare_parameter(obj_name + ".y", 0.0);
@@ -347,8 +308,73 @@ public:
         
         co_target.id = "target_" + std::to_string(obj_id);
         co_target.header.frame_id = move_group_interface_->getPlanningFrame();
-        co_target.primitives.push_back(primitive_target);
-        co_target.primitive_poses.push_back(pose_target);
+
+        std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
+        if (obj_type == "BOX") {
+          this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
+
+          primitive_target.type = primitive_target.BOX;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.z").as_double()
+          };
+
+          co_target.primitives.push_back(primitive_target);
+          co_target.primitive_poses.push_back(pose_target);
+        } else if (obj_type == "SPHERE") {
+          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+          primitive_target.type = primitive_target.SPHERE;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+          };
+
+          co_target.primitives.push_back(primitive_target);
+          co_target.primitive_poses.push_back(pose_target);
+
+        } else if (obj_type == "CONE") {        
+          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+          primitive_target.type = primitive_target.CONE;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+          };
+
+          co_target.primitives.push_back(primitive_target);
+          co_target.primitive_poses.push_back(pose_target);
+
+        } else if (obj_type == "CYLINDER") {
+          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+
+          primitive_target.type = primitive_target.CYLINDER;
+          primitive_target.dimensions = {
+            this->get_parameter(obj_name + ".primitive_dims.height").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.radius").as_double()
+          };
+
+          co_target.primitives.push_back(primitive_target);
+          co_target.primitive_poses.push_back(pose_target);
+
+        } else if (obj_type == "MESH") {
+          this->declare_parameter(obj_name + ".primitive_dims.file", "");
+          shapes::Mesh* mesh = shapes::createMeshFromResource( this->get_parameter(obj_name + ".primitive_dims.file").as_string(), Eigen::Vector3d(0.001, 0.001, 0.001));
+          shape_msgs::msg::Mesh mesh_msg;
+          shapes::ShapeMsg mesh_tmp;
+          shapes::constructMsgFromShape(mesh, mesh_tmp);
+          mesh_msg = boost::get<shape_msgs::msg::Mesh>(mesh_tmp);
+
+          co_target.meshes.push_back(mesh_msg);
+          co_target.mesh_poses.push_back(pose_target);
+        } else {
+          RCLCPP_ERROR(get_logger(), "Invalid Object");
+        }
+
         co_target.operation = co_target.ADD;
         planning_scene_interface_->applyCollisionObject(co_target);
 
@@ -454,6 +480,7 @@ public:
       auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
       bool success;
       std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
+      current_state->enforceBounds();
       geometry_msgs::msg::Pose grasp_pose = goal_handle->get_goal()->grasp_pose;
 
       RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
@@ -707,6 +734,7 @@ public:
         auto goal = goal_handle->get_goal();
 
         std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
+        current_state->enforceBounds();
         geometry_msgs::msg::Pose current_pose = move_group_interface_->getCurrentPose().pose;
 
         if (!current_state) {
