@@ -6,6 +6,7 @@ import matplotlib.cm as cm
 import threading
 import numpy as np
 import open3d as o3d
+import time
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -59,6 +60,7 @@ class AnyGraspNode(Node):
         self.declare_parameter('top_down_grasp', False)
         self.declare_parameter('grasp_z_offset', 0.00)
         self.declare_parameter('grasp_axis_offset', 0.14)
+        self.declare_parameter('save_data', False)
 
         self.Z_COORDS_MIN = self.get_parameter('z_coords_min').value
         self.Z_COORDS_MAX = self.get_parameter('z_coords_max').value
@@ -86,6 +88,7 @@ class AnyGraspNode(Node):
         self.TOP_DOWN_GRASP = self.get_parameter('top_down_grasp').value
         self.GRASP_Z_OFFSET = self.get_parameter('grasp_z_offset').value
         self.GRASP_AXIS_OFFSET = self.get_parameter('grasp_axis_offset').value
+        self.SAVE_DATA = self.get_parameter('save_data').value
 
         self.depth_pointcloud_: PointCloud2 = None
 
@@ -120,19 +123,22 @@ class AnyGraspNode(Node):
         self.get_logger().info("Started AnyGrasp Node")
 
     def display_grasps(gg, cloud, only_first=False, origin_position=[0,0,0], description=""):
-        trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
-        cloud.transform(trans_mat)
-        grippers = gg.to_open3d_geometry_list()
-        for gripper in grippers:
-            gripper.transform(trans_mat)
-        origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
-            size=0.1,      # length of the axes
-            origin=origin_position
-        )
-        if not only_first:
-            o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name=description)
-        else:
-            o3d.visualization.draw_geometries([grippers[0], cloud, origin_frame], window_name=description)
+        try:
+            trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+            cloud.transform(trans_mat)
+            grippers = gg.to_open3d_geometry_list()
+            for gripper in grippers:
+                gripper.transform(trans_mat)
+            origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
+                size=0.1,      # length of the axes
+                origin=origin_position
+            )
+            if not only_first:
+                o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name=description)
+            else:
+                o3d.visualization.draw_geometries([grippers[0], cloud, origin_frame], window_name=description)
+        except Exception as e:
+            pass
 
     def display_pointcloud(points, colors=None, save=False, filename=None, origin_position=[0,0,0], description=""):
         pcd = o3d.geometry.PointCloud()
@@ -140,9 +146,8 @@ class AnyGraspNode(Node):
         if colors is not None:
             pcd.colors = o3d.utility.Vector3dVector(colors) 
         if save:
-            now = int(time.time())
-            o3d.io.write_point_cloud(f"/ros2_ws/src/{filename}_{now}.pcd", pcd, write_ascii=True)
-            np.savez(f"/ros2_ws/src/{filename}_{now}.npz", points=points, colors=colors)
+            o3d.io.write_point_cloud(f"{filename}.pcd", pcd, write_ascii=True)
+            np.savez(f"{filename}.npz", points=points, colors=colors)
         origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=origin_position)
         o3d.visualization.draw_geometries([pcd, origin_frame], window_name=description)
 
@@ -212,7 +217,7 @@ class AnyGraspNode(Node):
 
         return points.astype(np.float32), colors.astype(np.float32)
 
-    def generate_pose_(self, x, y, z, radius):
+    def generate_pose_(self, x, y, z, radius, save_folder):
         if self.NO_RGB:
             if not self.POINTCLOUD_FROM_FILE:
                 points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
@@ -220,7 +225,7 @@ class AnyGraspNode(Node):
                 points = self.file_points
                 colors = np.zeros_like(points, dtype=np.float32)
             if self.VISUALISE:
-                AnyGraspNode.display_pointcloud(points, save=True, filename="full_cloud", description="Full Point Cloud")
+                AnyGraspNode.display_pointcloud(points, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
         else:
             if not self.POINTCLOUD_FROM_FILE:
                 points, colors = self.fast_pc2_to_numpy(self.depth_pointcloud_)
@@ -228,7 +233,7 @@ class AnyGraspNode(Node):
                 points = self.file_points
                 colors = self.file_colors
             if self.VISUALISE:
-                AnyGraspNode.display_pointcloud(points, colors, save=True, filename="full_cloud", description="Full Point Cloud")
+                AnyGraspNode.display_pointcloud(points, colors, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
 
         # filter according to z
         z_coords = points[:, 2]
@@ -248,11 +253,11 @@ class AnyGraspNode(Node):
         # show cropped and uncropped pointclouds
         if self.VISUALISE:
             if self.NO_RGB:
-                AnyGraspNode.display_pointcloud(cropped_points, description="Cropped Point Cloud")
-                AnyGraspNode.display_pointcloud(uncropped_points, description="Uncropped Point Cloud")
+                AnyGraspNode.display_pointcloud(cropped_points, save=self.SAVE_DATA, filename=f"{save_folder}/cropped_cloud", description="Cropped Point Cloud")
+                AnyGraspNode.display_pointcloud(uncropped_points, save=self.SAVE_DATA, filename=f"{save_folder}/uncropped_cloud", description="Uncropped Point Cloud")
             else:
-                AnyGraspNode.display_pointcloud(cropped_points, cropped_colors, description="Cropped Point Cloud")
-                AnyGraspNode.display_pointcloud(uncropped_points, uncropped_colors, description="Uncropped Point Cloud")
+                AnyGraspNode.display_pointcloud(cropped_points, cropped_colors, save=self.SAVE_DATA, filename=f"{save_folder}/cropped_cloud", description="Cropped Point Cloud")
+                AnyGraspNode.display_pointcloud(uncropped_points, uncropped_colors, save=self.SAVE_DATA, filename=f"{save_folder}/uncropped_cloud", description="Uncropped Point Cloud")
 
         # set workspace to filter output grasps
         xmin, xmax = self.X_GRASP_MIN, self.X_GRASP_MAX
@@ -260,6 +265,7 @@ class AnyGraspNode(Node):
         zmin, zmax = self.Z_GRASP_MIN, self.Z_GRASP_MAX
         lims = [xmin, xmax, ymin, ymax, zmin, zmax]
 
+        t0 = time.time()
         gg, cloud = self.anygrasp.get_grasp(
             cropped_points, cropped_colors, 
             lims=lims, 
@@ -267,13 +273,21 @@ class AnyGraspNode(Node):
             dense_grasp=self.DENSE_GRASP, 
             collision_detection=self.APPLY_COLLISIONS
             )
+        t1 = time.time()
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasping_time.txt", "w") as f:
+                f.write(str(t1 - t0))
 
         if gg is None or len(gg) == 0:
             self.get_logger().error('No Grasp detected after collision detection!')
             return None
         
         if self.VISUALISE:
-            AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z], description="All Grasps")
+            unfiltered_gg = gg.nms(
+                translation_thresh = self.NMS_TRANSLATION_THRESH,
+                rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
+            )
+            AnyGraspNode.display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="All Grasps")
 
         exclude_grasps = []
         for ind, grasp in enumerate(gg):
@@ -318,6 +332,10 @@ class AnyGraspNode(Node):
         feedback = RequestGrasp.Feedback()
         response = RequestGrasp.Result()
 
+        if self.SAVE_DATA:
+            folder = f"/ros2_ws/src/out/{time.time()}"
+            os.makedirs(folder)
+
         if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
             self.get_logger().error("PointCloud Not Available")
             response.success = False
@@ -325,7 +343,7 @@ class AnyGraspNode(Node):
             goal_handle.abort()
             return response
 
-        gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS)
+        gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS, folder)
         if gg is None or len(gg) == 0:
             self.get_logger().error("Grasp Failed")
             response.success = False
@@ -340,8 +358,10 @@ class AnyGraspNode(Node):
         max_score = -math.inf
 
         grasp_scores = []
+        timings = []
 
         for ind, grasp in enumerate(gg):
+            t0 = time.time()
             goal = ComputeGraspValidity.Goal()
             goal.grasp_pose = self.map_grasp(grasp)
             goal.goal_x = request.goal_x
@@ -366,6 +386,7 @@ class AnyGraspNode(Node):
             result_future = goal_handle_inner.get_result_async()
             rclpy.spin_until_future_complete(self, result_future)
             result = result_future.result().result
+            t1 = time.time()
 
             if not result.is_valid:
                 self.get_logger().info("Not a valid pose")
@@ -378,6 +399,17 @@ class AnyGraspNode(Node):
                     max_score = result.score
                 if result.score < min_score:
                     min_score = result.score
+            
+            if self.SAVE_DATA:
+                with open(f"{folder}/grasp_validities.txt", "a") as f:
+                    f.write(f"time {t1 - t0} | score {result.score}\r\n")
+                    timings.append(t1 - t0)
+                with open(f"{folder}/grasps.txt", "a") as f:
+                    f.write(f"{goal.grasp_pose}\r\n")
+
+            # temp_grasp_group = GraspGroup()
+            # temp_grasp_group.add(grasp)
+            # AnyGraspNode.display_grasps(temp_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Temp Grasp")
 
         trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
         cloud.transform(trans_mat)
@@ -399,6 +431,11 @@ class AnyGraspNode(Node):
         num_valid_grasps = sum([not math.isinf(score) for score in grasp_scores ])
         feedback.progress = f"Evaluated efficiency. {num_valid_grasps} valid grasps found."
         goal_handle.publish_feedback(feedback)
+
+        if self.SAVE_DATA:
+            with open(f"{folder}/grasp_validities.txt", "a") as f:
+                f.write(f"----\r\n")
+                f.write(f"total time: {sum(timings)} | success rate: {num_valid_grasps}/{len(gg)}\r\n")
 
         if num_valid_grasps:
             self.get_logger().info("Found the best grasp")
@@ -425,7 +462,8 @@ class AnyGraspNode(Node):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
         offset_rotation = Rotation.from_euler('y', 90, degrees=True)
         final_rotation = grasp_rotation * offset_rotation
-        final_quaternion = final_rotation.as_quat()
+
+
 
         # local axes:
             # z points in the direction of grasp attack
@@ -435,6 +473,17 @@ class AnyGraspNode(Node):
         offset_translation = np.array([0, 0, -self.GRASP_AXIS_OFFSET])
         grasp.translation[2] += self.GRASP_Z_OFFSET
         final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
+
+        # detect if camera is pointing downwards
+        flip_rotation = Rotation.from_euler('z', 180, degrees=True)
+        _, _, yaw = final_rotation.as_euler('xyz', degrees=True)
+        if yaw < 0:
+            self.get_logger().info("Identified Flipped Grasp. Unflipping...")
+            self.get_logger().info("Started at: " + str(final_rotation.as_quat()))
+            final_rotation = final_rotation * flip_rotation
+            self.get_logger().info("Now at: " + str(final_rotation.as_quat()))
+
+        final_quaternion = final_rotation.as_quat()
 
         pose = Pose()
         pose.position.x = final_translation[0]

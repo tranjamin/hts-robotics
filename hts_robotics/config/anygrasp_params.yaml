@@ -13,7 +13,7 @@ dense_grasp: True
 top_down_grasp: False
 
 min_grasp_width: 0.0
-max_grasp_pitch_roll_deg: 5.0
+max_grasp_pitch_roll_deg: 10.0
 
 nms_translation_thresh: 0.005
 nms_angle_thresh_deg: 5.0
@@ -28,6 +28,7 @@ mask_radius: 0.08
 no_rgb: True
 pointcloud_topic: "/octomap_point_cloud_centers"
 visualise: True
+save_data: True
 
 pointcloud_from_file: True
 pointcloud_file: "/ros2_ws/src/full_cloud_test_1.npz"

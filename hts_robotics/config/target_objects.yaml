@@ -50,30 +50,26 @@ conic_flask:
   geometry_file: "conic_flask.sdf"
   x: -0.4
   y: -0.4
-  z: 0.5
-  primitive_type: CONE
+  z: 0.03
+  primitive_type: MESH
   primitive_dims:
-    radius: 0.035
-    height: 0.11
+    file: "package://hts_robotics/objects/meshes/conic_flask_collision.stl"
 
 volumetric_flask:
   object_id: 4
   geometry_file: "volumetric_flask.sdf"
   x: -0.4
   y: 0.0
-  z: 0.5
-  primitive_type: CONE
+  z: 0.03
+  primitive_type: MESH
   primitive_dims:
-    radius: 0.055
-    height: 0.24
-
+    file: "package://hts_robotics/objects/meshes/volumetric_flask_collision.stl"
 round_bottomed_flask:
   object_id: 5
   geometry_file: "round_bottomed_flask.sdf"
   x: -0.4
   y: 0.4
-  z: 0.5
-  primitive_type: CONE
+  z: 0.03
+  primitive_type: MESH
   primitive_dims:
-    radius: 0.035
-    height: 0.085
+    file: "package://hts_robotics/objects/meshes/round_bottomed_flask_collision.stl"
