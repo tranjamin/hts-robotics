@@ -335,6 +335,9 @@ class AnyGraspNode(Node):
         if self.SAVE_DATA:
             folder = f"/ros2_ws/src/out/{time.time()}"
             os.makedirs(folder)
+            with open(f"{folder}/info.txt", "a") as f:
+                f.write(f"Request: Object ID {request.id} | Centred At ({request.x}, {request.y}, {request.z}) | Target ({request.goal_x},{request.goal_y},{request.goal_z})\r\n")
+                f.write(f"")
 
         if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
             self.get_logger().error("PointCloud Not Available")
