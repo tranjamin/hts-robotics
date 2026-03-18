@@ -472,7 +472,7 @@ def generate_launch_description():
             'frame_id': 'world',
             'base_frame_id': 'world',
 
-            'resolution': 0.005,
+            'resolution': 0.002,
             'use_sim_time': True,
 
             # 'occupancy_min_z': 0.01,
