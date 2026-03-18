@@ -1,15 +1,10 @@
 objects:
-  - box
-  - cylinder
-  - sphere
   - conic_flask
-  - round_bottomed_flask
-  - volumetric_flask
 
 box:
   object_id: 0
   geometry_file: "box.sdf"
-  x: 0.4
+  x: -0.4
   y: -0.4
   z: 0.025
   R: 0.0
@@ -24,7 +19,7 @@ box:
 cylinder:
   object_id: 1
   geometry_file: "cylinder.sdf"
-  x: 0.4
+  x: -0.4
   y: 0.0
   z: 0.05
   R: 0.0
@@ -38,7 +33,7 @@ cylinder:
 sphere:
   object_id: 2
   geometry_file: "sphere.sdf"
-  x: 0.4
+  x: -0.4
   y: 0.4
   z: 0.02
   primitive_type: SPHERE
@@ -48,28 +43,28 @@ sphere:
 conic_flask:
   object_id: 3
   geometry_file: "conic_flask.sdf"
-  x: -0.4
+  x: 0.4
   y: -0.4
   z: 0.03
   primitive_type: MESH
   primitive_dims:
-    file: "package://hts_robotics/objects/meshes/conic_flask_collision.stl"
+    file: "package://hts_robotics/objects/meshes/conic_flask_thick.stl"
 
 volumetric_flask:
   object_id: 4
   geometry_file: "volumetric_flask.sdf"
-  x: -0.4
+  x: 0.4
   y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:
-    file: "package://hts_robotics/objects/meshes/volumetric_flask_collision.stl"
+    file: "package://hts_robotics/objects/meshes/volumetric_flask_thick.stl"
 round_bottomed_flask:
   object_id: 5
   geometry_file: "round_bottomed_flask.sdf"
-  x: -0.4
+  x: 0.4
   y: 0.4
   z: 0.03
   primitive_type: MESH
   primitive_dims:
-    file: "package://hts_robotics/objects/meshes/round_bottomed_flask_collision.stl"
+    file: "package://hts_robotics/objects/meshes/round_bottomed_flask_thick.stl"
