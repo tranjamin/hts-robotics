@@ -1,5 +1,8 @@
 objects:
   - conic_flask
+  - volumetric_flask
+  - round_bottomed_flask
+  - cylinder
 
 box:
   object_id: 0
@@ -19,8 +22,8 @@ box:
 cylinder:
   object_id: 1
   geometry_file: "cylinder.sdf"
-  x: -0.4
-  y: 0.0
+  x: -0.3
+  y: -0.3
   z: 0.05
   R: 0.0
   P: 0.0
@@ -43,8 +46,8 @@ sphere:
 conic_flask:
   object_id: 3
   geometry_file: "conic_flask.sdf"
-  x: 0.4
-  y: -0.4
+  x: 0.3
+  y: 0.3
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -53,8 +56,8 @@ conic_flask:
 volumetric_flask:
   object_id: 4
   geometry_file: "volumetric_flask.sdf"
-  x: 0.4
-  y: 0.0
+  x: 0.3
+  y: -0.3
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -62,8 +65,8 @@ volumetric_flask:
 round_bottomed_flask:
   object_id: 5
   geometry_file: "round_bottomed_flask.sdf"
-  x: 0.4
-  y: 0.4
+  x: -0.3
+  y: 0.3
   z: 0.03
   primitive_type: MESH
   primitive_dims:
