@@ -14,7 +14,7 @@
         <!-- <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose> -->
         <geometry>
           <mesh>
-            <uri>package://hts_robotics/objects/meshes/volumetric_flask_collision.stl</uri>
+            <uri>package://hts_robotics/objects/meshes/volumetric_flask_thick.stl</uri>
             <scale>0.001 0.001 0.001</scale>
           </mesh>
         </geometry>
@@ -29,7 +29,7 @@
         <!-- <pose>0.0 0.0 -0.12 0.0 0.0 0.0</pose> -->
         <geometry>
           <mesh>
-            <uri>package://hts_robotics/objects/meshes/volumetric_flask.stl</uri>
+            <uri>package://hts_robotics/objects/meshes/volumetric_flask_thick.stl</uri>
             <scale>0.001 0.001 0.001</scale>
           </mesh>
         </geometry>
