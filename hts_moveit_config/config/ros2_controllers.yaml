@@ -32,4 +32,6 @@ fr3_arm_controller:
 
 fr3_hand_controller:
   ros__parameters:
-    joint: fr3_finger_joint1
+    joint: 
+      - fr3_finger_joint1
+      - fr3_finger_joint2
