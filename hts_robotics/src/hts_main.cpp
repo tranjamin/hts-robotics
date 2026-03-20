@@ -574,6 +574,11 @@ public:
     ) {
       std::thread([this, goal_handle] {
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- CLOSE CALLBACK ---------------\n\n\n\n");
+
+        std::shared_ptr<moveit::core::RobotState> current_state = gripper_interface_->getCurrentState(10.0);
+        current_state->enforceBounds();
+        gripper_interface_->setStartState(*current_state);
+
         gripper_interface_->setNamedTarget("close");
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
 
@@ -625,6 +630,10 @@ public:
         RCLCPP_INFO(get_logger(), "\n\n\n\n--------------- OPEN CALLBACK ---------------\n\n\n\n");
         
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
+
+        std::shared_ptr<moveit::core::RobotState> current_state = gripper_interface_->getCurrentState(10.0);
+        current_state->enforceBounds();
+        gripper_interface_->setStartState(*current_state);
 
         gripper_interface_->setNamedTarget("open");
 

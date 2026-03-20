@@ -8,7 +8,7 @@ gripper_position_controller:
   default: true
   joints:
     - fr3_finger_joint1
-    # - fr3_finger_joint2
+    - fr3_finger_joint2
 
 fr3_arm_controller:
   type: FollowJointTrajectory
