@@ -1,0 +1,7 @@
+Request: Object ID 5 | Centred At (-0.2999999999996398, 0.2999999999999536, 0.02910406733115535) | Target (-0.4,0.4,0.4)
+z-coords point cloud bounding [0.001, 100.0]
+grasping bounds [-1.0,1.0,-1.0,1.0,0.05,1.0]
+apply: object mask [False] collisions [True] dense_grasp [True]
+NMS thresholds: translation [0.005] rotation [2.0]
+max pitch/roll filtering: [10.0] degrees
+grasp offsets: approach axis [0.15] vertical [0.0]
