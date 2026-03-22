@@ -275,12 +275,16 @@ class AnyGraspNode(Node):
             )
         t1 = time.time()
         if self.SAVE_DATA:
-            with open(f"{save_folder}/grasping_time.txt", "w") as f:
-                f.write(str(t1 - t0))
+            with open(f"{save_folder}/grasp_metrics.txt", "w") as f:
+                f.write(f"Grasp algorithm time: {t1 - t0}\r\n")
 
         if gg is None or len(gg) == 0:
             self.get_logger().error('No Grasp detected after collision detection!')
             return None
+        
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Total num grasps: {len(gg)}\r\n")
         
         if self.VISUALISE:
             unfiltered_gg = gg.nms(
@@ -288,6 +292,10 @@ class AnyGraspNode(Node):
                 rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
             )
             AnyGraspNode.display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="All Grasps")
+
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Total num grasps after nms: {len(unfiltered_gg)}\r\n")        
 
         exclude_grasps = []
         for ind, grasp in enumerate(gg):
@@ -313,6 +321,10 @@ class AnyGraspNode(Node):
         if len(gg) == 0:
             self.get_logger().error('No Grasps obtained after orientation filtering performed')
             return
+        
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Filtered num grasps: {len(gg)}\r\n")
 
         # perform non-maximum suppression
         gg = gg.nms(
@@ -320,12 +332,24 @@ class AnyGraspNode(Node):
             rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
         ).sort_by_score()
 
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Filtered num grasps after nms: {len(gg)}\r\n")
+
         # visualization
         if self.VISUALISE:
             AnyGraspNode.display_grasps(gg, cloud, origin_position=[x,y,z], description="Filtered Grasps")
             AnyGraspNode.display_grasps(gg, cloud, only_first=True, origin_position=[x,y,z], description="Highest Grasp Score")
 
         return gg, cloud
+
+    def log_anygrasp_data(self, f):
+        f.write(f"z-coords point cloud bounding [{self.Z_COORDS_MIN}, {self.Z_COORDS_MAX}]\r\n")
+        f.write(f"grasping bounds [{self.X_GRASP_MIN},{self.X_GRASP_MAX},{self.Y_GRASP_MIN},{self.Y_GRASP_MAX},{self.Z_GRASP_MIN},{self.Z_GRASP_MAX}]\r\n")
+        f.write(f"apply: object mask [{self.APPLY_OBJECT_MASK}] collisions [{self.APPLY_COLLISIONS}] dense_grasp [{self.DENSE_GRASP}]\r\n")
+        f.write(f"NMS thresholds: translation [{self.NMS_TRANSLATION_THRESH}] rotation [{self.NMS_ANGLE_THRESH_DEG}]\r\n")
+        f.write(f"max pitch/roll filtering: [{self.MAX_GRASP_PITCH_ROLL_DEG}] degrees\r\n")
+        f.write(f"grasp offsets: approach axis [{self.GRASP_AXIS_OFFSET}] vertical [{self.GRASP_Z_OFFSET}]\r\n")
 
     async def grasp_callback_(self, goal_handle):
         request = goal_handle.request
@@ -337,7 +361,7 @@ class AnyGraspNode(Node):
             os.makedirs(folder)
             with open(f"{folder}/info.txt", "a") as f:
                 f.write(f"Request: Object ID {request.id} | Centred At ({request.x}, {request.y}, {request.z}) | Target ({request.goal_x},{request.goal_y},{request.goal_z})\r\n")
-                f.write(f"")
+                self.log_anygrasp_data(f)
 
         if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
             self.get_logger().error("PointCloud Not Available")
@@ -405,7 +429,9 @@ class AnyGraspNode(Node):
             
             if self.SAVE_DATA:
                 with open(f"{folder}/grasp_validities.txt", "a") as f:
-                    f.write(f"time {t1 - t0} | score {result.score}\r\n")
+                    if ind == 0:
+                        f.write(f"planning_time,planing_score,grasp_score\r\n") 
+                    f.write(f"{t1 - t0},{result.score},{grasp.score}\r\n")
                     timings.append(t1 - t0)
                 with open(f"{folder}/grasps.txt", "a") as f:
                     f.write(f"{goal.grasp_pose}\r\n")
@@ -431,14 +457,20 @@ class AnyGraspNode(Node):
                 g.paint_uniform_color(color)
         o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name="Scored Grasps")
 
-        num_valid_grasps = sum([not math.isinf(score) for score in grasp_scores ])
+        valid_scores = [score for score in grasp_scores if not math.isinf(score)]
+        num_valid_grasps = len(valid_scores)
         feedback.progress = f"Evaluated efficiency. {num_valid_grasps} valid grasps found."
         goal_handle.publish_feedback(feedback)
 
         if self.SAVE_DATA:
-            with open(f"{folder}/grasp_validities.txt", "a") as f:
-                f.write(f"----\r\n")
-                f.write(f"total time: {sum(timings)} | success rate: {num_valid_grasps}/{len(gg)}\r\n")
+            with open(f"{folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Total Grasps: {len(gg)}\r\n")
+                f.write(f"Valid Grasps: {num_valid_grasps}\r\n")
+                f.write(f"Percent Valid Grasps: {num_valid_grasps / len(gg)}\r\n")
+                f.write(f"Total Planning Time: {sum(timings)}\r\n")
+                f.write(f"Average Planning Time: {sum(timings) / len(gg)}\r\n")
+                f.write(f"Average Planning Distance: {sum(valid_scores) / len(valid_scores)}\r\n")
+                f.write(f"Shortest Planning Distance: {min(valid_scores) / len(valid_scores)}\r\n")
 
         if num_valid_grasps:
             self.get_logger().info("Found the best grasp")

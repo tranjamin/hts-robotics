@@ -158,8 +158,8 @@ public:
     gripper_interface_->setPlannerId("ompl");
 
     // set tolerances for arm
-    move_group_interface_->setGoalPositionTolerance(0.001);
-    move_group_interface_->setGoalOrientationTolerance(0.001);
+    move_group_interface_->setGoalPositionTolerance(0.002);
+    move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
     move_group_interface_->setPlanningTime(30.0);
     move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
