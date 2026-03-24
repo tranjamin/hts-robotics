@@ -389,7 +389,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "%s Quaternion is (%.2f, %.2f, %.2f, %.2f)", descriptor, pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w);
     }
 
-    bool plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+    moveit::core::MoveItErrorCode plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
       move_group_interface_->getCurrentState(10.0);
       move_group_interface_->setStartState(start_state);
       
@@ -409,11 +409,11 @@ public:
 
       move_group_interface_->setPoseTarget(target_pose);
 
-      bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
-      return success;
+      moveit::core::MoveItErrorCode status = move_group_interface_->plan(plan);
+      return status;
     }
 
-    bool plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+    moveit::core::MoveItErrorCode plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
       move_group_interface_->setStartState(start_state);
       
       // Apply orientation constraints
@@ -440,11 +440,11 @@ public:
       // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
       move_group_interface_->setPoseTarget(target_pose);
 
-      bool success = (move_group_interface_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+      moveit::core::MoveItErrorCode status = move_group_interface_->plan(plan);
 
       move_group_interface_->clearPathConstraints();
 
-      return success;
+      return status;
     }
 
     void get_object_position(
@@ -478,7 +478,8 @@ public:
       RCLCPP_INFO(this->get_logger(), "\n---BREAK---\n");
       auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
       auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
-      bool success;
+      moveit::core::MoveItErrorCode err_code;
+
       std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
       current_state->enforceBounds();
       geometry_msgs::msg::Pose grasp_pose = goal_handle->get_goal()->grasp_pose;
@@ -487,14 +488,17 @@ public:
       move_group_interface_->clearPathConstraints();
 
       moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
-      success = plan_pickup(*current_state, grasp_pose, pickup_plan);
+      err_code = plan_pickup(*current_state, grasp_pose, pickup_plan);
 
-      if (!success) {
+      if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
         RCLCPP_INFO(this->get_logger(), "Planning (pickup) failed");
         result->success = true;
         result->is_valid = false;
         result->score = 0.0;
         result->message = "Plan (pickup) is not valid";
+        result->err_code = err_code.val;
+        result->err_source = err_code.source;
+        result->err_message = err_code.message;
         goal_handle->succeed(result);
         return;
       }
@@ -522,24 +526,25 @@ public:
       goal_pose.position.z = goal_handle->get_goal()->goal_z;
 
       moveit::planning_interface::MoveGroupInterface::Plan move_plan;
-      success = plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
+      err_code = plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
       
       if (goal_handle->get_goal()->target_id >= 0) {
         gripper_interface_->detachObject(object_name);
       }
 
-      if (!success) {
+      if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
         RCLCPP_INFO(this->get_logger(), "Planning (move) failed");
         result->success = true;
         result->is_valid = false;
         result->score = 0.0;
         result->message = "Plan (move) is not valid";
+        result->err_code = err_code.val;
+        result->err_source = err_code.source;
+        result->err_message = err_code.message;
         goal_handle->succeed(result);
         return;
       } 
 
-      
-      
       RCLCPP_INFO(this->get_logger(), "Planning (move) succeeded");
       trajectory_msgs::msg::JointTrajectory move_joint_trajectory = move_plan.trajectory.joint_trajectory;
       float trajectory_length_move = (float) compute_trajectory_length_(move_joint_trajectory);
@@ -682,7 +687,7 @@ public:
 
         auto result = std::make_shared<CustomActionPickup::Result>();
         auto feedback = std::make_shared<CustomActionPickup::Feedback>();
-        bool success;
+        moveit::core::MoveItErrorCode success;
 
         // set the goal
         geometry_msgs::msg::Pose target = goal_handle->get_goal()->pose;
@@ -738,7 +743,7 @@ public:
 
         auto result = std::make_shared<CustomActionMove::Result>();
         auto feedback = std::make_shared<CustomActionMove::Feedback>();
-        bool success;
+        moveit::core::MoveItErrorCode success;
 
         auto goal = goal_handle->get_goal();
 

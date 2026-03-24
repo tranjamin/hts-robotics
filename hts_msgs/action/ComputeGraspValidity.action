@@ -7,6 +7,9 @@ int64 target_id
 bool success
 bool is_valid
 float32 score
+int64 err_code
 string message
+string err_source
+string err_message
 ---
 string progress
