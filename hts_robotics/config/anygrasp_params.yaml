@@ -31,4 +31,4 @@ visualise: True
 save_data: True
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/dense_new_cloud.npz"
+pointcloud_file: "/ros2_ws/src/raised_cloud.npz"

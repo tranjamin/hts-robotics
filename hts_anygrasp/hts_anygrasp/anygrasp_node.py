@@ -439,9 +439,10 @@ class AnyGraspNode(Node):
                 with open(f"{folder}/grasps.txt", "a") as f:
                     f.write(f"{goal.grasp_pose}\r\n")
 
-            # temp_grasp_group = GraspGroup()
-            # temp_grasp_group.add(grasp)
-            # AnyGraspNode.display_grasps(temp_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Temp Grasp")
+            
+            temp_grasp_group = GraspGroup()
+            temp_grasp_group.add(grasp)
+            AnyGraspNode.display_grasps(temp_grasp_group, cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Temp Grasp")
 
         trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
         cloud.transform(trans_mat)
@@ -515,11 +516,11 @@ class AnyGraspNode(Node):
         # detect if camera is pointing downwards
         flip_rotation = Rotation.from_euler('z', 180, degrees=True)
         _, _, yaw = final_rotation.as_euler('xyz', degrees=True)
-        if yaw < 0:
-            self.get_logger().info("Identified Flipped Grasp. Unflipping...")
-            self.get_logger().info("Started at: " + str(final_rotation.as_quat()))
-            final_rotation = final_rotation * flip_rotation
-            self.get_logger().info("Now at: " + str(final_rotation.as_quat()))
+        # if yaw < 0:
+        #     self.get_logger().info("Identified Flipped Grasp. Unflipping...")
+        #     self.get_logger().info("Started at: " + str(final_rotation.as_quat()))
+        #     final_rotation = final_rotation * flip_rotation
+        #     self.get_logger().info("Now at: " + str(final_rotation.as_quat()))
 
         final_quaternion = final_rotation.as_quat()
 
