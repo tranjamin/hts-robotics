@@ -415,8 +415,11 @@ class AnyGraspNode(Node):
             result = result_future.result().result
             t1 = time.time()
 
+            if self.SAVE_DATA:
+                with open(f"{folder}/grasp_messages.txt", "a") as f:
+                    f.write(f"Message {result.message} | Err Code {result.err_code} | Err Source {result.err_source} | Err Msg {result.err_message}\r\n")
             if not result.is_valid:
-                self.get_logger().info("Not a valid pose")
+                self.get_logger().info(f"Not a valid pose with msg: {result.message} and error code {result.err_code}")
                 grasp_scores.append(math.inf)
             else:
                 self.get_logger().info("Valid pose with score " + str(result.score))            
