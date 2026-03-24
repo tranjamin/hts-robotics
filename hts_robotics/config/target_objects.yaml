@@ -1,30 +1,34 @@
 objects:
+  - pillar1
+  - pillar2
+  - pillar3
+  - pillar4
   - conic_flask
   - volumetric_flask
   - round_bottomed_flask
   - cylinder
 
-box:
-  object_id: 0
-  geometry_file: "box.sdf"
-  x: -0.4
+pillar1:
+  object_id: 99
+  geometry_file: "pillar.sdf"
+  x: 0.5
   y: -0.4
-  z: 0.025
+  z: 0.05
   R: 0.0
   P: 0.0
   Y: 0.0
   primitive_type: BOX # or SPHERE, CYLINDER, CONE
   primitive_dims:
-    x: 0.05
-    y: 0.05
-    z: 0.05
+    x: 0.1
+    y: 0.1
+    z: 0.1
 
 cylinder:
-  object_id: 1
+  object_id: 0
   geometry_file: "cylinder.sdf"
-  x: -0.3
-  y: -0.3
-  z: 0.05
+  x: 0.5
+  y: -0.4
+  z: 1.0
   R: 0.0
   P: 0.0
   Y: 0.0
@@ -33,41 +37,77 @@ cylinder:
     radius: 0.03
     height: 0.1
 
-sphere:
-  object_id: 2
-  geometry_file: "sphere.sdf"
-  x: -0.4
-  y: 0.4
-  z: 0.02
-  primitive_type: SPHERE
+pillar2:
+  object_id: 98
+  geometry_file: "pillar.sdf"
+  x: 0.6
+  y: -0.15
+  z: 0.05
+  R: 0.0
+  P: 0.0
+  Y: 0.0
+  primitive_type: BOX # or SPHERE, CYLINDER, CONE
   primitive_dims:
-    radius: 0.03
+    x: 0.1
+    y: 0.1
+    z: 0.1
 
 conic_flask:
-  object_id: 3
+  object_id: 1
   geometry_file: "conic_flask.sdf"
-  x: 0.3
-  y: 0.3
-  z: 0.03
+  x: 0.6
+  y: -0.15
+  z: 1.0
   primitive_type: MESH
   primitive_dims:
     file: "package://hts_robotics/objects/meshes/conic_flask_thick.stl"
 
+pillar3:
+  object_id: 97
+  geometry_file: "pillar.sdf"
+  x: 0.6
+  y: 0.15
+  z: 0.05
+  R: 0.0
+  P: 0.0
+  Y: 0.0
+  primitive_type: BOX # or SPHERE, CYLINDER, CONE
+  primitive_dims:
+    x: 0.1
+    y: 0.1
+    z: 0.1
+
 volumetric_flask:
-  object_id: 4
+  object_id: 2
   geometry_file: "volumetric_flask.sdf"
-  x: 0.3
-  y: -0.3
-  z: 0.03
+  x: 0.6
+  y: 0.15
+  z: 1.0
   primitive_type: MESH
   primitive_dims:
     file: "package://hts_robotics/objects/meshes/volumetric_flask_thick.stl"
+
+pillar4:
+  object_id: 96
+  geometry_file: "pillar.sdf"
+  x: 0.5
+  y: 0.4
+  z: 0.05
+  R: 0.0
+  P: 0.0
+  Y: 0.0
+  primitive_type: BOX # or SPHERE, CYLINDER, CONE
+  primitive_dims:
+    x: 0.1
+    y: 0.1
+    z: 0.1
+
 round_bottomed_flask:
-  object_id: 5
+  object_id: 3
   geometry_file: "round_bottomed_flask.sdf"
-  x: -0.3
-  y: 0.3
-  z: 0.03
+  x: 0.5
+  y: 0.4
+  z: 1.0
   primitive_type: MESH
   primitive_dims:
     file: "package://hts_robotics/objects/meshes/round_bottomed_flask_thick.stl"
