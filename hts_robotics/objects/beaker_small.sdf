@@ -14,7 +14,7 @@
         <!-- <pose>0.0 0.0 -0.055 0.0 0.0 0.0</pose> -->
         <geometry>
           <mesh>
-            <uri>package://hts_robotics/objects/meshes/Conic_Flask_Measured_Low_Fidelity_mm.stl</uri>
+            <uri>package://hts_robotics/objects/meshes/Beaker_Small_Low_Fidelity_mm.stl</uri>
             <scale>0.001 0.001 0.001</scale>
           </mesh>
         </geometry>
@@ -32,7 +32,7 @@
         <!-- <pose>0.0 0.0 -0.055 0.0 0.0 0.0</pose> -->
         <geometry>
           <mesh>
-            <uri>package://hts_robotics/objects/meshes/Conic_Flask_Measured_Medium_Fidelity_mm.stl</uri>
+            <uri>package://hts_robotics/objects/meshes/Beaker_Small_Medium_Fidelity_mm.stl</uri>
             <scale>0.001 0.001 0.001</scale>
           </mesh>
         </geometry>
