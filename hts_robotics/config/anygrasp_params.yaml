@@ -4,8 +4,8 @@ x_grasp_min: -1.0
 x_grasp_max: 1.0
 y_grasp_min: -1.0
 y_grasp_max: 1.0
-z_grasp_min: 0.08
-z_grasp_max: 1.0
+z_grasp_min: 0.05
+z_grasp_max: 0.5
 
 apply_object_mask: False
 apply_collisions: True
