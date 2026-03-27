@@ -161,7 +161,7 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(30.0);
+    move_group_interface_->setPlanningTime(10.0);
     move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
     move_group_interface_->setPlanningPipelineId("ompl");
     move_group_interface_->setPlannerId("fr3_arm[RRTConnectkConfigDefault]");
@@ -497,7 +497,7 @@ public:
         result->score = 0.0;
         result->message = "Plan (pickup) is not valid";
         result->err_code = err_code.val;
-        result->err_source = err_code.source;
+        result->err_source = "pickup";
         result->err_message = err_code.message;
         goal_handle->succeed(result);
         return;
@@ -539,7 +539,7 @@ public:
         result->score = 0.0;
         result->message = "Plan (move) is not valid";
         result->err_code = err_code.val;
-        result->err_source = err_code.source;
+        result->err_source = "move";
         result->err_message = err_code.message;
         goal_handle->succeed(result);
         return;

@@ -4,7 +4,7 @@ x_grasp_min: -1.0
 x_grasp_max: 1.0
 y_grasp_min: -1.0
 y_grasp_max: 1.0
-z_grasp_min: 0.05
+z_grasp_min: 0.08
 z_grasp_max: 1.0
 
 apply_object_mask: False
@@ -31,4 +31,4 @@ visualise: True
 save_data: True
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/dense_new_cloud.npz"
+pointcloud_file: "/ros2_ws/src/measured_flasks.npz"
