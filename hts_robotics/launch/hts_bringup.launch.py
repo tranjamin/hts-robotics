@@ -133,12 +133,22 @@ def create_hts_node(context: LaunchContext, launch_configurations):
         namespace=namespace_str,
         parameters=[
             objects_yaml,
-            {"use_sim_time": USE_SIM_TIME},
+            {"use_sim_time": USE_SIM_TIME,
+             "test_parameter": "test",            
+             "planning_plugin": "stomp_moveit/StompPlanner",
+             "stomp_moveit": load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
+             },
             robot_description,
             robot_description_semantic,
+
+            moveit_config.joint_limits,
+            moveit_config.planning_pipelines,
+            moveit_config.pilz_cartesian_limits,
+            moveit_config.trajectory_execution,
+            moveit_config.robot_description_kinematics,
         ],
         arguments=[
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', 'debug'
         ]
     )
 
@@ -183,6 +193,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             moveit_config.robot_description_kinematics,
             moveit_controllers,
             load_yaml("hts_moveit_config", "config/planning_parameters.yaml"),
+            load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
             planning_scene_monitor_parameters,
             {"use_sim_time": USE_SIM_TIME},
         ],

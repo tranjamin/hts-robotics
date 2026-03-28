@@ -6,6 +6,10 @@
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.hpp>
+
+#include <moveit/planning_interface/planning_interface.hpp>
+#include <moveit/planning_pipeline/planning_pipeline.hpp>
+
 #include <moveit/robot_state/robot_state.hpp>
 #include <moveit/robot_model/joint_model_group.hpp>
 
@@ -54,8 +58,17 @@ public:
   using CustomActionComputeGraspValidity = hts_msgs::action::ComputeGraspValidity;
 
   // constructor
-  hts_node():Node("hts_node") {
+  hts_node(
+    const rclcpp::NodeOptions& options = (rclcpp::NodeOptions()
+      .allow_undeclared_parameters(true)
+      .automatically_declare_parameters_from_overrides(true)
+    )
+  ):Node("hts_node", "") {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
+
+    // this->declare_parameter("stomp_moveit", "");
+    // this->declare_parameter("stomp_moveit.planning_pipeline", "stomp_moveit/StompPlanner");
+    // this->declare_parameter("test_parameter", "");
 
     action_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
     sub_callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
@@ -148,6 +161,11 @@ public:
     planning_scene_monitor_->startStateMonitor();
     RCLCPP_DEBUG(this->get_logger(), "Started scene monitors.");
 
+    planning_pipeline = std::make_shared<planning_pipeline::PlanningPipeline>(
+      planning_scene_monitor_->getRobotModel(),
+      shared_from_this(),
+      "stomp_moveit"
+    );
 
     // set tolerances for gripper
     gripper_interface_->setGoalPositionTolerance(0.001);
@@ -161,8 +179,10 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(10.0);
+    move_group_interface_->setPlanningTime(30.0);
     move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
+    move_group_interface_->setMaxVelocityScalingFactor(0.6);
+    move_group_interface_->setMaxAccelerationScalingFactor(0.4);
     move_group_interface_->setPlanningPipelineId("ompl");
     move_group_interface_->setPlannerId("fr3_arm[RRTConnectkConfigDefault]");
 
@@ -194,7 +214,7 @@ public:
     planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    load_target_objects();
+    // load_target_objects();
   }
 
   private:
@@ -207,6 +227,7 @@ public:
     std::shared_ptr<PlanningSceneInterface> planning_scene_interface_;
     std::shared_ptr<MoveGroupInterface> gripper_interface_;
     std::shared_ptr<PlanningSceneMonitor> planning_scene_monitor_;
+    std::shared_ptr<planning_pipeline::PlanningPipeline> planning_pipeline;
 
     // subscribers and publishers
     rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr gazebo_scene_sub_;
@@ -389,28 +410,75 @@ public:
         RCLCPP_INFO(this->get_logger(), "%s Quaternion is (%.2f, %.2f, %.2f, %.2f)", descriptor, pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w);
     }
 
+    bool compute_IK_manually(const geometry_msgs::msg::Pose& target_pose, moveit::core::RobotState& ik_state) {
+      std::string group_name = move_group_interface_->getName();
+      const moveit::core::JointModelGroup* joint_model_group = planning_scene_monitor_->getRobotModel()->getJointModelGroup(group_name);
+
+      return ik_state.setFromIK(joint_model_group, target_pose, move_group_interface_->getEndEffectorLink(), 1.0);
+    }
+
+    moveit::core::MoveItErrorCode refine_path_with_stomp(moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+      planning_interface::MotionPlanResponse motion_plan_response;
+      planning_interface::MotionPlanRequest motion_plan_request;
+      move_group_interface_->constructMotionPlanRequest(motion_plan_request);
+
+      moveit_msgs::msg::GenericTrajectory generic_trajectory;
+      generic_trajectory.joint_trajectory.push_back(plan.trajectory.joint_trajectory);
+      motion_plan_request.reference_trajectories.clear();
+      motion_plan_request.reference_trajectories.push_back(generic_trajectory);
+      motion_plan_request.pipeline_id = "stomp";
+
+      planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
+
+      bool stomp_status = planning_pipeline->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
+
+      if (stomp_status) {
+        moveit_msgs::msg::RobotTrajectory stomp_traj;
+        motion_plan_response.trajectory->getRobotTrajectoryMsg(stomp_traj);
+
+        plan.trajectory.joint_trajectory = stomp_traj.joint_trajectory;
+        plan.trajectory.multi_dof_joint_trajectory = stomp_traj.multi_dof_joint_trajectory;
+      }
+
+      RCLCPP_INFO(this->get_logger(), "Finished Planning STOMP. Result success is %d with error code %d", stomp_status, motion_plan_response.error_code.val);
+      return motion_plan_response.error_code;
+    }
+
     moveit::core::MoveItErrorCode plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
       move_group_interface_->getCurrentState(10.0);
       move_group_interface_->setStartState(start_state);
-      
-      moveit_msgs::msg::OrientationConstraint orientation_constraint;
-      orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
-      orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
 
       auto current_pose = move_group_interface_->getCurrentPose();
-      orientation_constraint.orientation = current_pose.pose.orientation;
-      RCLCPP_INFO(get_logger(), "Current Pose Orientation: (%f, %f, %f, %f)",
-        current_pose.pose.orientation.x, current_pose.pose.orientation.y,
-        current_pose.pose.orientation.z, current_pose.pose.orientation.w
-      );
-
       move_group_interface_->clearPathConstraints();
-      RCLCPP_INFO(this->get_logger(), "Cleared Path Constraints");
-
       move_group_interface_->setPoseTarget(target_pose);
+      
+      RCLCPP_INFO(this->get_logger(), "Computing IK...");
+      moveit::core::RobotState computed_ik(planning_scene_monitor_->getRobotModel());
+      if (!compute_IK_manually(target_pose, computed_ik)) {
+        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found.");
+        return moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+      }
 
-      moveit::core::MoveItErrorCode status = move_group_interface_->plan(plan);
-      return status;
+      RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
+      moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
+      RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
+
+      if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
+      }
+
+      RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+
+      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+
+      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      }
+
+
+      return ompl_status;
     }
 
     moveit::core::MoveItErrorCode plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
@@ -440,11 +508,33 @@ public:
       // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
       move_group_interface_->setPoseTarget(target_pose);
 
-      moveit::core::MoveItErrorCode status = move_group_interface_->plan(plan);
+      RCLCPP_INFO(this->get_logger(), "Computing IK...");
+      moveit::core::RobotState computed_ik(planning_scene_monitor_->getRobotModel());
+      if (!compute_IK_manually(target_pose, computed_ik)) {
+        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found.");
+        return moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+      }
+
+      RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
+      moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
+      RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
+
+      if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
+      }
+
+      RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+
+      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      }
 
       move_group_interface_->clearPathConstraints();
 
-      return status;
+      return ompl_status;
     }
 
     void get_object_position(
