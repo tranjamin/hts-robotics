@@ -12,6 +12,8 @@ goal_orientation_tolerance: 0.001
 goal_position_tolerance: 0.005
 planning_time: 30.0
 
+longest_valid_segment_fraction: 0.001   # or smaller
+
 planning_plugins:
   - ompl_interface/OMPLPlanner
 request_adapters:
@@ -43,12 +45,14 @@ planner_configs:
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     border_fraction: 0.9  # Fraction of time focused on boarder default: 0.9
     min_valid_path_fraction: 0.5  # Accept partially valid moves above fraction. default: 0.5
+    enforce_joint_state_space: true
   BKPIECEkConfigDefault:
     type: geometric::BKPIECE
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     border_fraction: 0.9  # Fraction of time focused on boarder default: 0.9
     failed_expansion_score_factor: 0.5  # When extending motion fails, scale score by factor. default: 0.5
     min_valid_path_fraction: 0.5  # Accept partially valid moves above fraction. default: 0.5
+    enforce_joint_state_space: true
   KPIECEkConfigDefault:
     type: geometric::KPIECE
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
@@ -56,13 +60,15 @@ planner_configs:
     border_fraction: 0.9  # Fraction of time focused on boarder default: 0.9 (0.0,1.]
     failed_expansion_score_factor: 0.5  # When extending motion fails, scale score by factor. default: 0.5
     min_valid_path_fraction: 0.5  # Accept partially valid moves above fraction. default: 0.5
+    enforce_joint_state_space: true
   RRTkConfigDefault:
     type: geometric::RRT
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability? default: 0.05
+    enforce_joint_state_space: true
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
-    range: 0.05  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    range: 0.005  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     enforce_joint_state_space: true
   RRTstarkConfigDefault:
     type: geometric::RRTstar
@@ -81,6 +87,7 @@ planner_configs:
     frountier_threshold: 0.0  # dist new state to nearest neighbor to disqualify as frontier. default: 0.0 set in setup()
     frountierNodeRatio: 0.1  # 1/10, or 1 nonfrontier for every 10 frontier. default: 0.1
     k_constant: 0.0  # value used to normalize expresssion. default: 0.0 set in setup()
+    enforce_joint_state_space: true
   PRMkConfigDefault:
     type: geometric::PRM
     max_nearest_neighbors: 10  # use k nearest neighbors. default: 10
@@ -104,6 +111,7 @@ planner_configs:
     heuristics: 1  # activates cost to go heuristics. default: 1
     cache_cc: 1  # use the collision checking cache. default: 1
     extended_fmt: 1  # Activates the extended FMT*: adding new samples if planner does not finish successfully. default: 1
+    enforce_joint_state_space: true
   PDSTkConfigDefault:
     type: geometric::PDST
   STRIDEkConfigDefault:
@@ -130,16 +138,20 @@ planner_configs:
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability. default: 0.05
     epsilon: 0.4  # optimality approximation factor. default: 0.4
+    enforce_joint_state_space: true
   BiESTkConfigDefault:
     type: geometric::BiEST
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    enforce_joint_state_space: true
   ProjESTkConfigDefault:
     type: geometric::ProjEST
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability. default: 0.05
+    enforce_joint_state_space: true
   LazyPRMkConfigDefault:
     type: geometric::LazyPRM
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    enforce_joint_state_space: true
   LazyPRMstarkConfigDefault:
     type: geometric::LazyPRMstar
   SPARSkConfigDefault:
