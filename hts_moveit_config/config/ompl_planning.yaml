@@ -12,7 +12,7 @@ goal_orientation_tolerance: 0.001
 goal_position_tolerance: 0.005
 planning_time: 5.0
 
-longest_valid_segment_fraction: 0.001   # or smaller
+longest_valid_segment_fraction: 0.01   # or smaller
 
 planning_plugins:
   - ompl_interface/OMPLPlanner
@@ -68,11 +68,11 @@ planner_configs:
     enforce_joint_state_space: true
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
-    range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    range: 0.01  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     enforce_joint_state_space: true
   RRTstarkConfigDefault:
     type: geometric::RRTstar
-    range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
+    range: 0.01  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability? default: 0.05
     delay_collision_checking: 1  # Stop collision checking as soon as C-free parent found. default 1
     enforce_joint_state_space: true
