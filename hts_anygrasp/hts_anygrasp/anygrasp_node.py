@@ -565,7 +565,7 @@ class AnyGraspNode(Node):
                 hts_grasp.save_grasp_info(folder)
 
             hts_grasp_group.append(hts_grasp)
-            AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
+            # AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
 
         for ind, grasp in enumerate(gg):
             self.get_logger().info(f"Candidate Grasp Flipped {ind + 1}/{len(gg)}")
@@ -605,7 +605,7 @@ class AnyGraspNode(Node):
                 hts_grasp.save_grasp_info(folder)
 
             hts_grasp_group.append(hts_grasp)
-            AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
+            # AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
 
         feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
         goal_handle.publish_feedback(feedback)
