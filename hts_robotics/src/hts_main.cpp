@@ -24,7 +24,9 @@
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include <tf2_msgs/msg/tf_message.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2_eigen/tf2_eigen.hpp>
 
 #include "hts_msgs/action/move_target.hpp"
 #include "hts_msgs/action/pick_up_target.hpp"
@@ -486,19 +488,19 @@ public:
 
       RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
 
-      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+      // moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
 
-      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
-        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
-      }
+      // if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+      //   float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+      //   RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      // }
 
-              const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
-        for (size_t i = 0; i < pt2.positions.size(); ++i) {
-          RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-            pt2.positions[i]);
-        }
+      // const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
+      //   for (size_t i = 0; i < pt2.positions.size(); ++i) {
+      //     RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+      //       plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+      //       pt2.positions[i]);
+      //   }
 
 
       return ompl_status;
@@ -547,13 +549,13 @@ public:
         RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
       }
 
-      RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
-      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+      // RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+      // moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
 
-      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
-        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
-      }
+      // if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+      //   float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+      //   RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      // }
 
       move_group_interface_->clearPathConstraints();
 
@@ -628,24 +630,30 @@ public:
           gripper_interface_->attachObject(object_name);
       }
 
-      moveit::core::RobotState move_start_state = planning_scene_monitor_->getPlanningScene()->getCurrentState();
-      // moveit::core::RobotState move_start_state(*current_state);
+      moveit::core::RobotState move_start_state(*current_state);
       const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
       move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
-      move_start_state.enforceBounds();
       move_start_state.update();
+      
+      geometry_msgs::msg::Pose actual_grasp_pose = tf2::toMsg(move_start_state.getGlobalLinkTransform(move_group_interface_->getEndEffectorLink()));
+      log_pose(actual_grasp_pose, "Check: Path is grasping at this pose");
+      log_pose(grasp_pose, "It is meant to grasp at this pose");
 
-      geometry_msgs::msg::Pose goal_pose = grasp_pose;
+      geometry_msgs::msg::Pose goal_pose;
       goal_pose.position.x = goal_handle->get_goal()->goal_x;
       goal_pose.position.y = goal_handle->get_goal()->goal_y;
       goal_pose.position.z = goal_handle->get_goal()->goal_z;
+      goal_pose.orientation.x = actual_grasp_pose.orientation.x;
+      goal_pose.orientation.y = actual_grasp_pose.orientation.y;
+      goal_pose.orientation.z = actual_grasp_pose.orientation.z;
+      goal_pose.orientation.w = actual_grasp_pose.orientation.w;
 
       moveit::planning_interface::MoveGroupInterface::Plan move_plan;
       err_code = plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
-      
+
       if (goal_handle->get_goal()->target_id >= 0) {
-        gripper_interface_->detachObject(object_name);
-        // deregister_grasped_object(object_name);
+        // gripper_interface_->detachObject(object_name);
+        deregister_grasped_object(object_name);
       }
 
       if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
