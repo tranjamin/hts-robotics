@@ -536,6 +536,9 @@ class AnyGraspNode(Node):
 
             goal = hts_grasp.validity_request_goal(request)
 
+            if self.SAVE_DATA:
+                hts_grasp.save_grasp_info(folder)
+
             hts_grasp.start_timer()
 
             self.grasp_validity_client_.wait_for_server()
@@ -562,7 +565,6 @@ class AnyGraspNode(Node):
             if self.SAVE_DATA:
                 hts_grasp.save_grasp_message(folder)
                 hts_grasp.save_grasp_validity(folder, ind == 0)
-                hts_grasp.save_grasp_info(folder)
 
             hts_grasp_group.append(hts_grasp)
             # AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
@@ -575,6 +577,9 @@ class AnyGraspNode(Node):
             hts_grasp.set_pose(self.map_grasp(grasp, flip_z=True))
 
             goal = hts_grasp.validity_request_goal(request)
+
+            if self.SAVE_DATA:
+                hts_grasp.save_grasp_info(folder)
 
             hts_grasp.start_timer()
 
@@ -602,7 +607,6 @@ class AnyGraspNode(Node):
             if self.SAVE_DATA:
                 hts_grasp.save_grasp_message(folder)
                 hts_grasp.save_grasp_validity(folder, False)
-                hts_grasp.save_grasp_info(folder)
 
             hts_grasp_group.append(hts_grasp)
             # AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")

@@ -181,7 +181,7 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(50.0);
+    move_group_interface_->setPlanningTime(5.0);
     move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     move_group_interface_->setMaxVelocityScalingFactor(0.5);
     move_group_interface_->setMaxAccelerationScalingFactor(0.3);
@@ -424,6 +424,8 @@ public:
     }
 
     moveit::core::MoveItErrorCode refine_path_with_stomp(moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+      return moveit::core::MoveItErrorCode::SUCCESS;
+
       planning_interface::MotionPlanResponse motion_plan_response;
       planning_interface::MotionPlanRequest motion_plan_request;
       move_group_interface_->constructMotionPlanRequest(motion_plan_request);
@@ -460,40 +462,36 @@ public:
       auto current_pose = move_group_interface_->getCurrentPose();
       move_group_interface_->clearPathConstraints();
       move_group_interface_->setPoseTarget(target_pose);
-      
-      RCLCPP_INFO(this->get_logger(), "Computing IK...");
-      moveit::core::RobotState computed_ik(planning_scene_monitor_->getRobotModel());
-      if (!compute_IK_manually(target_pose, computed_ik)) {
-        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found.");
-        return moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
-      }
 
       RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
       moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
       RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
 
-      const auto& pt = plan.trajectory.joint_trajectory.points.front();
-      for (size_t i = 0; i < pt.positions.size(); ++i) {
-        RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-          plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-          pt.positions[i]);
-      }
-
-      print_robot_state(plan.start_state);
-
       if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
+      } else {
+        return ompl_status;
       }
+
+      print_robot_state(plan.start_state);
+      // const auto& pt = plan.trajectory.joint_trajectory.points.front();
+      // for (size_t i = 0; i < pt.positions.size(); ++i) {
+      //   RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+      //     plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+      //     pt.positions[i]);
+      // }
 
       RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
 
-      // moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
 
-      // if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-      //   float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
-      //   RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
-      // }
+      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      } else {
+        return ompl_status;
+      }
 
       // const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
       //   for (size_t i = 0; i < pt2.positions.size(); ++i) {
@@ -533,13 +531,6 @@ public:
       // move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
       move_group_interface_->setPoseTarget(target_pose);
 
-      RCLCPP_INFO(this->get_logger(), "Computing IK...");
-      moveit::core::RobotState computed_ik(planning_scene_monitor_->getRobotModel());
-      if (!compute_IK_manually(target_pose, computed_ik)) {
-        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found.");
-        return moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
-      }
-
       RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
       moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
       RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
@@ -547,17 +538,37 @@ public:
       if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
+      } else {
+        return ompl_status;
       }
 
-      // RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
-      // moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
-
-      // if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-      //   float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
-      //   RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      // const auto& pt = plan.trajectory.joint_trajectory.points.front();
+      // for (size_t i = 0; i < pt.positions.size(); ++i) {
+      //   RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+      //     plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+      //     pt.positions[i]);
       // }
 
+      RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+
       move_group_interface_->clearPathConstraints();
+
+      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      } else {
+        return ompl_status;
+      }
+
+      // const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
+      //   for (size_t i = 0; i < pt2.positions.size(); ++i) {
+      //     RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+      //       plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+      //       pt2.positions[i]);
+      //   }
+
+
 
       return ompl_status;
     }
@@ -602,6 +613,21 @@ public:
       RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
       move_group_interface_->clearPathConstraints();
 
+      RCLCPP_INFO(this->get_logger(), "Computing IK (Pickup)...");
+      moveit::core::RobotState computed_ik_pickup(planning_scene_monitor_->getRobotModel());
+      if (!compute_IK_manually(grasp_pose, computed_ik_pickup)) {
+        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (pickup).");
+        result->success = true;
+        result->is_valid = false;
+        result->score = 0.0;
+        result->message = "Plan (pickup IK) is not valid";
+        result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+        result->err_source = "pickup IK";
+        result->err_message = "";
+        goal_handle->succeed(result);
+        return;
+      }
+
       moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
       err_code = plan_pickup(*current_state, grasp_pose, pickup_plan);
 
@@ -625,11 +651,6 @@ public:
       RCLCPP_INFO(this->get_logger(), "Trajectory length (pickup) is %.5f", trajectory_length_pickup);
       RCLCPP_INFO(this->get_logger(), "\n---\n");
         
-      if (goal_handle->get_goal()->target_id >= 0) {
-          // register_grasped_object(object_name);
-          gripper_interface_->attachObject(object_name);
-      }
-
       moveit::core::RobotState move_start_state(*current_state);
       const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
       move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
@@ -648,12 +669,32 @@ public:
       goal_pose.orientation.z = actual_grasp_pose.orientation.z;
       goal_pose.orientation.w = actual_grasp_pose.orientation.w;
 
+      RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
+      moveit::core::RobotState computed_ik_move(planning_scene_monitor_->getRobotModel());
+      if (!compute_IK_manually(goal_pose, computed_ik_move)) {
+        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
+        result->success = true;
+        result->is_valid = false;
+        result->score = 0.0;
+        result->message = "Plan (move IK) is not valid";
+        result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+        result->err_source = "move IK";
+        result->err_message = "";
+        goal_handle->succeed(result);
+        return;
+      }
+
+      if (goal_handle->get_goal()->target_id >= 0) {
+          // register_grasped_object(object_name);
+          gripper_interface_->attachObject(object_name);
+      }
+
       moveit::planning_interface::MoveGroupInterface::Plan move_plan;
       err_code = plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
 
       if (goal_handle->get_goal()->target_id >= 0) {
-        // gripper_interface_->detachObject(object_name);
-        deregister_grasped_object(object_name);
+        gripper_interface_->detachObject(object_name);
+        // deregister_grasped_object(object_name);
       }
 
       if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
