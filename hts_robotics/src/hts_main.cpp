@@ -179,7 +179,7 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(15.0);
+    move_group_interface_->setPlanningTime(50.0);
     move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     move_group_interface_->setMaxVelocityScalingFactor(0.5);
     move_group_interface_->setMaxAccelerationScalingFactor(0.3);
@@ -528,8 +528,8 @@ public:
       log_pose(start_pose, "Start Pose");
       log_pose(target_pose, "Target Pose");
 
-      move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
-      // move_group_interface_->setPoseTarget(target_pose);
+      // move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
+      move_group_interface_->setPoseTarget(target_pose);
 
       RCLCPP_INFO(this->get_logger(), "Computing IK...");
       moveit::core::RobotState computed_ik(planning_scene_monitor_->getRobotModel());
