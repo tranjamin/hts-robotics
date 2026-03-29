@@ -171,7 +171,7 @@ public:
     gripper_interface_->setGoalPositionTolerance(0.001);
     gripper_interface_->setGoalJointTolerance(0.001);
     gripper_interface_->setGoalOrientationTolerance(0.1);    
-    gripper_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
+    gripper_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     gripper_interface_->setPlanningPipelineId("ompl");
     gripper_interface_->setPlannerId("ompl");
 
@@ -179,10 +179,10 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(30.0);
-    move_group_interface_->setWorkspace(-2.0, 2.0, -2.0, 2.0, 0.0, 2.0);
-    move_group_interface_->setMaxVelocityScalingFactor(0.6);
-    move_group_interface_->setMaxAccelerationScalingFactor(0.4);
+    move_group_interface_->setPlanningTime(15.0);
+    move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
+    move_group_interface_->setMaxVelocityScalingFactor(0.5);
+    move_group_interface_->setMaxAccelerationScalingFactor(0.3);
     move_group_interface_->setPlanningPipelineId("ompl");
     move_group_interface_->setPlannerId("fr3_arm[RRTConnectkConfigDefault]");
 
@@ -214,7 +214,7 @@ public:
     planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    // load_target_objects();
+    load_target_objects();
   }
 
   private:
@@ -318,6 +318,9 @@ public:
         double roll = this->get_parameter(obj_name + ".R").as_double();
         double pitch = this->get_parameter(obj_name + ".P").as_double();
         double yaw = this->get_parameter(obj_name + ".Y").as_double();
+        // double roll = 0.0;
+        // double pitch = 0.0;
+        // double yaw = 0.0;
 
         tf2::Quaternion q;
         q.setRPY(roll, pitch, yaw);
@@ -382,7 +385,8 @@ public:
           co_target.primitives.push_back(primitive_target);
           co_target.primitive_poses.push_back(pose_target);
 
-        } else if (obj_type == "MESH") {
+        } 
+        else if (obj_type == "MESH") {
           this->declare_parameter(obj_name + ".primitive_dims.file", "");
           shapes::Mesh* mesh = shapes::createMeshFromResource( this->get_parameter(obj_name + ".primitive_dims.file").as_string(), Eigen::Vector3d(0.001, 0.001, 0.001));
           shape_msgs::msg::Mesh mesh_msg;
@@ -422,6 +426,9 @@ public:
       planning_interface::MotionPlanRequest motion_plan_request;
       move_group_interface_->constructMotionPlanRequest(motion_plan_request);
 
+      motion_plan_request.start_state = plan.start_state;
+      motion_plan_request.start_state.is_diff = false;
+
       moveit_msgs::msg::GenericTrajectory generic_trajectory;
       generic_trajectory.joint_trajectory.push_back(plan.trajectory.joint_trajectory);
       motion_plan_request.reference_trajectories.clear();
@@ -436,8 +443,8 @@ public:
         moveit_msgs::msg::RobotTrajectory stomp_traj;
         motion_plan_response.trajectory->getRobotTrajectoryMsg(stomp_traj);
 
-        plan.trajectory.joint_trajectory = stomp_traj.joint_trajectory;
-        plan.trajectory.multi_dof_joint_trajectory = stomp_traj.multi_dof_joint_trajectory;
+        // plan.trajectory.joint_trajectory = stomp_traj.joint_trajectory;
+        // plan.trajectory.multi_dof_joint_trajectory = stomp_traj.multi_dof_joint_trajectory;
       }
 
       RCLCPP_INFO(this->get_logger(), "Finished Planning STOMP. Result success is %d with error code %d", stomp_status, motion_plan_response.error_code.val);
@@ -463,6 +470,15 @@ public:
       moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
       RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
 
+      const auto& pt = plan.trajectory.joint_trajectory.points.front();
+      for (size_t i = 0; i < pt.positions.size(); ++i) {
+        RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+          plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+          pt.positions[i]);
+      }
+
+      print_robot_state(plan.start_state);
+
       if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
@@ -476,6 +492,13 @@ public:
         float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
       }
+
+              const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
+        for (size_t i = 0; i < pt2.positions.size(); ++i) {
+          RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+            pt2.positions[i]);
+        }
 
 
       return ompl_status;
@@ -505,8 +528,8 @@ public:
       log_pose(start_pose, "Start Pose");
       log_pose(target_pose, "Target Pose");
 
-      // move_group_interface_->setPositionTarget(goal->x, goal->y, goal->z);
-      move_group_interface_->setPoseTarget(target_pose);
+      move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
+      // move_group_interface_->setPoseTarget(target_pose);
 
       RCLCPP_INFO(this->get_logger(), "Computing IK...");
       moveit::core::RobotState computed_ik(planning_scene_monitor_->getRobotModel());
@@ -601,10 +624,12 @@ public:
       RCLCPP_INFO(this->get_logger(), "\n---\n");
         
       if (goal_handle->get_goal()->target_id >= 0) {
+          // register_grasped_object(object_name);
           gripper_interface_->attachObject(object_name);
       }
 
-      moveit::core::RobotState move_start_state(*current_state);
+      moveit::core::RobotState move_start_state = planning_scene_monitor_->getPlanningScene()->getCurrentState();
+      // moveit::core::RobotState move_start_state(*current_state);
       const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
       move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
       move_start_state.enforceBounds();
@@ -620,6 +645,7 @@ public:
       
       if (goal_handle->get_goal()->target_id >= 0) {
         gripper_interface_->detachObject(object_name);
+        // deregister_grasped_object(object_name);
       }
 
       if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
@@ -662,6 +688,39 @@ public:
       }
 
       return total_length;
+    }
+
+    void register_grasped_object(std::string object_name) {
+        // disable collisions
+        planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
+        auto &acm = scene->getAllowedCollisionMatrixNonConst();
+        acm.setEntry(object_name, "fr3_hand", true);
+        acm.setEntry(object_name, "fr3_leftfinger", true);
+        acm.setEntry(object_name, "fr3_rightfinger", true);
+        moveit_msgs::msg::PlanningScene ps_msg;
+        ps_msg.is_diff = true;
+        scene->getPlanningSceneMsg(ps_msg);
+        planning_scene_interface_->applyPlanningScene(ps_msg);
+
+        // planning_scene_monitor_->triggerSceneUpdateEvent(
+        //   planning_scene_monitor::PlanningSceneMonitor::UPDATE_SCENE
+        // );
+        // rclcpp::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    void deregister_grasped_object(std::string object_name) {
+      // enable collisions
+      planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
+      auto &acm = scene->getAllowedCollisionMatrixNonConst();
+      acm.setEntry(object_name, "fr3_hand", false);
+      acm.setEntry(object_name, "fr3_leftfinger", false);
+      acm.setEntry(object_name, "fr3_rightfinger", false);
+      moveit_msgs::msg::PlanningScene ps_msg;
+      ps_msg.is_diff = true;
+
+      // scene->getPlanningSceneMsg(ps_msg);
+
+      // planning_scene_interface_->applyPlanningScene(ps_msg);
     }
 
     void handle_accepted_close_(
@@ -769,6 +828,51 @@ public:
       }).detach();
     }
 
+    void print_robot_state(moveit_msgs::msg::RobotState msg) {
+      // --- Joint states ---
+      const auto& names = msg.joint_state.name;
+      const auto& positions = msg.joint_state.position;
+
+      RCLCPP_INFO(this->get_logger(), "---- RobotState ----");
+
+      for (size_t i = 0; i < names.size(); ++i) {
+        double val = (i < positions.size()) ? positions[i] : 0.0;
+        RCLCPP_INFO(this->get_logger(), "  %s: %f", names[i].c_str(), val);
+      }
+
+
+      RCLCPP_INFO(this->get_logger(), "--------------------");
+    }
+
+    void print_robot_state(moveit::core::RobotState state) {
+      // --- Joint positions ---
+      std::vector<std::string> joint_names;
+      std::vector<double> joint_values;
+
+      joint_names = state.getVariableNames();
+      joint_values.resize(joint_names.size());
+      state.copyJointGroupPositions(state.getRobotModel()->getJointModelGroupNames()[0], joint_values);
+
+      RCLCPP_INFO(this->get_logger(), "---- RobotState ----");
+
+      for (size_t i = 0; i < joint_names.size(); ++i) {
+        RCLCPP_INFO(this->get_logger(), "  %s: %f", joint_names[i].c_str(), joint_values[i]);
+      }
+
+      // --- Attached objects ---
+      // const auto& attached_bodies = state.getAttachedBodies();
+      // RCLCPP_INFO(this->get_logger(), "Attached bodies: %zu", attached_bodies.size());
+
+      // for (const auto* body : attached_bodies)
+      // {
+      //   RCLCPP_INFO(this->get_logger(), "  - %s (link: %s)",
+      //       body->getName().c_str(),
+      //       body->getAttachedLinkName().c_str());
+      // }
+
+      RCLCPP_INFO(this->get_logger(), "--------------------");
+    }
+
     void handle_accepted_pickup_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionPickup>> goal_handle
     ) {
@@ -786,12 +890,16 @@ public:
         planning_scene_monitor_->updateFrameTransforms();
         std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
         current_state->enforceBounds();
-        moveit::planning_interface::MoveGroupInterface::Plan plan;
-        success = plan_pickup(*current_state, target, plan);
 
         if (!current_state) {
           RCLCPP_WARN(this->get_logger(), "Current State is NULL");
+        } else {
+          RCLCPP_INFO(this->get_logger(), "Current Joint State: ");
+          print_robot_state(*current_state);
         }
+
+        moveit::planning_interface::MoveGroupInterface::Plan plan;
+        success = plan_pickup(*current_state, target, plan);
       
         if (!success) {
           RCLCPP_ERROR(this->get_logger(), "Planning Failed");
@@ -803,6 +911,19 @@ public:
           
         feedback->progress = "Planning succeeded. Executing...";
         goal_handle->publish_feedback(feedback);
+
+        RCLCPP_INFO(this->get_logger(), "Current Joint State: ");
+        print_robot_state(*current_state);
+
+        RCLCPP_INFO(this->get_logger(), "Plan Start State: ");
+        print_robot_state(plan.start_state);
+
+        const auto& pt = plan.trajectory.joint_trajectory.points.front();
+        for (size_t i = 0; i < pt.positions.size(); ++i) {
+          RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+            pt.positions[i]);
+        }
 
         success = (move_group_interface_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS);
 

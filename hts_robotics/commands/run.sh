@@ -1,0 +1,1 @@
+ros2 launch hts_robotics hts_bringup.launch.py | grep -vi -E "\[rcl\]|robot state update|\[rcl_action\]|\[rclcpp_action\]|\[hts_node.moveit.kinematics.kdl_kinematics_plugin\]|\[moveit.moveit.kinematics.kdl_kinematics_plugin\]"

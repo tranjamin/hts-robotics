@@ -133,8 +133,7 @@ def create_hts_node(context: LaunchContext, launch_configurations):
         namespace=namespace_str,
         parameters=[
             objects_yaml,
-            {"use_sim_time": USE_SIM_TIME,
-             "test_parameter": "test",            
+            {"use_sim_time": USE_SIM_TIME,      
              "planning_plugin": "stomp_moveit/StompPlanner",
              "stomp_moveit": load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
              },
@@ -198,7 +197,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME},
         ],
         arguments=[
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', 'debug'
         ]
     )
 
