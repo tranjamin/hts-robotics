@@ -433,6 +433,11 @@ class AnyGraspNode(Node):
             collision_detection=self.APPLY_COLLISIONS
             )
         t1 = time.time()
+
+        # replace cloud with rainbow point cloud
+        cloud = o3d.geometry.PointCloud()
+        cloud.points = o3d.utility.Vector3dVector(cropped_points)
+        
         if self.SAVE_DATA:
             with open(f"{save_folder}/grasp_metrics.txt", "w") as f:
                 f.write(f"Grasp algorithm time: {t1 - t0}\r\n")
