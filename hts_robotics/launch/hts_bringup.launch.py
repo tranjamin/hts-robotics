@@ -137,6 +137,7 @@ def create_hts_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME,      
              "planning_plugin": "stomp_moveit/StompPlanner",
              "stomp_moveit": load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
+             "ompl": load_yaml("hts_moveit_config", "config/ompl_planning.yaml"),
              },
             robot_description,
             robot_description_semantic,

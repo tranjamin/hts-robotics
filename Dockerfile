@@ -197,6 +197,10 @@ RUN rm -rf /home/$USERNAME/.ros \
 COPY franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
 
+RUN echo "XDG_RUNTIME_DIR=/tmp/runtime-root" >> /home/$USERNAME/.bashrc \
+    && mkdir -p $XDG_RUNTIME_DIR \
+    && chmod 700 $XDG_RUNTIME_DIR
+
 # Set the default shell to bash and the workdir to the source directory
 SHELL [ "/bin/bash", "-c" ]
 ENTRYPOINT [ "/franka_entrypoint.sh" ]
