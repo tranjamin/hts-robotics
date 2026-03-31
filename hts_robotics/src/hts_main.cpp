@@ -13,6 +13,8 @@
 #include <moveit/robot_state/robot_state.hpp>
 #include <moveit/robot_model/joint_model_group.hpp>
 
+#include <moveit/collision_detection/collision_common.hpp>
+
 #include "rclcpp/rclcpp.hpp"
 #include <rclcpp_action/rclcpp_action.hpp>
 #include "std_msgs/msg/string.hpp"
@@ -168,6 +170,11 @@ public:
       shared_from_this(),
       "stomp_moveit"
     );
+    planning_pipeline_ompl = std::make_shared<planning_pipeline::PlanningPipeline>(
+      planning_scene_monitor_->getRobotModel(),
+      shared_from_this(),
+      "ompl"
+    );
 
     // set tolerances for gripper
     gripper_interface_->setGoalPositionTolerance(0.001);
@@ -181,7 +188,7 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(5.0);
+    move_group_interface_->setPlanningTime(30.0);
     move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     move_group_interface_->setMaxVelocityScalingFactor(0.5);
     move_group_interface_->setMaxAccelerationScalingFactor(0.3);
@@ -230,6 +237,7 @@ public:
     std::shared_ptr<MoveGroupInterface> gripper_interface_;
     std::shared_ptr<PlanningSceneMonitor> planning_scene_monitor_;
     std::shared_ptr<planning_pipeline::PlanningPipeline> planning_pipeline;
+    std::shared_ptr<planning_pipeline::PlanningPipeline> planning_pipeline_ompl;
 
     // subscribers and publishers
     rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr gazebo_scene_sub_;
@@ -514,7 +522,7 @@ public:
       orientation_constraint.orientation = start_pose.orientation;
       orientation_constraint.absolute_x_axis_tolerance = 0.3;
       orientation_constraint.absolute_y_axis_tolerance = 0.3;
-      orientation_constraint.absolute_z_axis_tolerance = 8.0;
+      orientation_constraint.absolute_z_axis_tolerance = 3.142;
       orientation_constraint.weight = 1.0;
       orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
       
@@ -530,10 +538,38 @@ public:
 
       // move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
       move_group_interface_->setPoseTarget(target_pose);
+      double orig_goal_tolerance = move_group_interface_->getGoalOrientationTolerance();
 
-      RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
-      moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
-      RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
+      RCLCPP_INFO(this->get_logger(), "Displaying some info about the move...");
+      planning_interface::MotionPlanResponse motion_plan_response;
+      planning_interface::MotionPlanRequest motion_plan_request;
+      bool ompl_status;
+      moveit::core::MoveItErrorCode err_code;
+
+      #define USE_SELF_PIPELINE true
+
+      if (!USE_SELF_PIPELINE) {
+        RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL built in pipeline...");
+        ompl_status = (err_code = move_group_interface_->plan(plan)) == moveit::core::MoveItErrorCode::SUCCESS;
+      } else {
+        move_group_interface_->setGoalOrientationTolerance(1.0);
+        move_group_interface_->constructMotionPlanRequest(motion_plan_request);
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = orig_goal_tolerance;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = orig_goal_tolerance;      
+        printMotionPlanRequestFull(motion_plan_request);
+        planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
+        RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL self pipeline...");
+        ompl_status = planning_pipeline_ompl->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
+
+        moveit_msgs::msg::RobotTrajectory traj;
+        motion_plan_response.trajectory->getRobotTrajectoryMsg(traj);
+        plan.trajectory.joint_trajectory = traj.joint_trajectory;
+        plan.trajectory.multi_dof_joint_trajectory = traj.multi_dof_joint_trajectory;
+
+        err_code = motion_plan_response.error_code;
+        plan.planning_time = motion_plan_response.planning_time;
+        plan.start_state = motion_plan_response.start_state;
+      }
 
       if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
@@ -542,24 +578,26 @@ public:
         return ompl_status;
       }
 
-      // const auto& pt = plan.trajectory.joint_trajectory.points.front();
-      // for (size_t i = 0; i < pt.positions.size(); ++i) {
-      //   RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-      //     plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-      //     pt.positions[i]);
-      // }
-
-      RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
-      moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+      const auto& pt = plan.trajectory.joint_trajectory.points.front();
+      for (size_t i = 0; i < pt.positions.size(); ++i) {
+        RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+          plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+          pt.positions[i]);
+      }
 
       move_group_interface_->clearPathConstraints();
+      move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
 
-      if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-        float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
-        RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
-      } else {
-        return ompl_status;
-      }
+      // RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+      // moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+
+
+      // if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+      //   float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+      //   RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+      // } else {
+      //   return ompl_status;
+      // }
 
       // const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
       //   for (size_t i = 0; i < pt2.positions.size(); ++i) {
@@ -597,24 +635,148 @@ public:
           return;
     }
 
+  void printCollisionContacts(const collision_detection::CollisionResult& res, const rclcpp::Logger& logger)
+    {
+      if (!res.collision)
+      {
+        RCLCPP_INFO(logger, "No collision detected.");
+        return;
+      }
+
+      RCLCPP_WARN(logger, "Collision detected! Number of contact pairs: %zu", res.contacts.size());
+
+      for (const auto& contact_pair : res.contacts)
+      {
+        const std::string& body_1 = contact_pair.first.first;
+        const std::string& body_2 = contact_pair.first.second;
+
+        const std::vector<collision_detection::Contact>& contacts = contact_pair.second;
+
+        RCLCPP_WARN(logger, "Collision between: [%s] and [%s] (%zu contact points)",
+                    body_1.c_str(), body_2.c_str(), contacts.size());
+
+        for (size_t i = 0; i < contacts.size(); ++i)
+        {
+          const auto& c = contacts[i];
+
+          RCLCPP_INFO(logger, "  Contact %zu:", i);
+          RCLCPP_INFO(logger, "    Position: [%.4f, %.4f, %.4f]",
+                      c.pos.x(), c.pos.y(), c.pos.z());
+
+          RCLCPP_INFO(logger, "    Normal:   [%.4f, %.4f, %.4f]",
+                      c.normal.x(), c.normal.y(), c.normal.z());
+
+          RCLCPP_INFO(logger, "    Depth:    %.6f", c.depth);
+        }
+      }
+    }
+
+void printConstraints(const moveit_msgs::msg::Constraints& c)
+{
+    // --- Position Constraints ---
+    for (size_t i = 0; i < c.position_constraints.size(); ++i)
+    {
+        const auto& pc = c.position_constraints[i];
+        RCLCPP_INFO(this->get_logger(), "    [PositionConstraint %zu] link: %s", i, pc.link_name.c_str());
+        RCLCPP_INFO(this->get_logger(), "      frame: %s", pc.header.frame_id.c_str());
+        RCLCPP_INFO(this->get_logger(), "      target point offset: (%f, %f, %f)",
+                    pc.target_point_offset.x,
+                    pc.target_point_offset.y,
+                    pc.target_point_offset.z);
+        RCLCPP_INFO(this->get_logger(), "      tolerance: x=%f y=%f z=%f",
+                    pc.constraint_region.primitive_poses[0].position.x,
+                    pc.constraint_region.primitive_poses[0].position.y,
+                    pc.constraint_region.primitive_poses[0].position.z);
+    }
+
+    // --- Orientation Constraints ---
+    for (size_t i = 0; i < c.orientation_constraints.size(); ++i)
+    {
+        const auto& oc = c.orientation_constraints[i];
+        RCLCPP_INFO(this->get_logger(), "    [OrientationConstraint %zu] link: %s", i, oc.link_name.c_str());
+        RCLCPP_INFO(this->get_logger(), "      frame: %s", oc.header.frame_id.c_str());
+        RCLCPP_INFO(this->get_logger(), "      orientation: (%f, %f, %f, %f)",
+                    oc.orientation.x, oc.orientation.y, oc.orientation.z, oc.orientation.w);
+        RCLCPP_INFO(this->get_logger(), "      tolerances: x=%f y=%f z=%f, weight=%f",
+                    oc.absolute_x_axis_tolerance, oc.absolute_y_axis_tolerance,
+                    oc.absolute_z_axis_tolerance, oc.weight);
+    }
+
+    // --- Joint Constraints ---
+    for (size_t i = 0; i < c.joint_constraints.size(); ++i)
+    {
+        const auto& jc = c.joint_constraints[i];
+        RCLCPP_INFO(this->get_logger(), "    [JointConstraint %zu] joint: %s", i, jc.joint_name.c_str());
+        RCLCPP_INFO(this->get_logger(), "      position: %f, tolerance: %f, weight: %f",
+                    jc.position, jc.tolerance_above, jc.weight);
+    }
+
+    // --- Visibility Constraints ---
+    // for (size_t i = 0; i < c.visibility_constraints.size(); ++i)
+    // {
+    //     const auto& vc = c.visibility_constraints[i];
+    //     RCLCPP_INFO(node->get_logger(), "    [VisibilityConstraint %zu] sensor: %s, target: %s", i,
+    //                 vc.sensor_frame.c_str(), vc.target_frame.c_str());
+    //     RCLCPP_INFO(node->get_logger(), "      cone_angle: %f, max_range: %f, weight: %f",
+    //                 vc.cone_angle, vc.max_range, vc.weight);
+    // }
+}
+
+void printMotionPlanRequestFull(const moveit_msgs::msg::MotionPlanRequest& request)
+{
+    RCLCPP_INFO(this->get_logger(), "=== MotionPlanRequest ===");
+
+    // --- Goal Constraints ---
+    RCLCPP_INFO(this->get_logger(), "Goal Constraints (%zu):", request.goal_constraints.size());
+    for (size_t i = 0; i < request.goal_constraints.size(); ++i)
+    {
+        RCLCPP_INFO(this->get_logger(), "  Goal %zu:", i);
+        printConstraints(request.goal_constraints[i]);
+    }
+
+    // --- Path Constraints ---
+    RCLCPP_INFO(this->get_logger(), "Path Constraints:");
+    printConstraints(request.path_constraints);
+
+    // --- Trajectory Constraints ---
+    RCLCPP_INFO(this->get_logger(), "Trajectory Constraints (%zu):", request.trajectory_constraints.constraints.size());
+    for (size_t i = 0; i < request.trajectory_constraints.constraints.size(); ++i)
+    {
+        RCLCPP_INFO(this->get_logger(), "  Constraint %zu:", i);
+        printConstraints(request.trajectory_constraints.constraints[i]);
+    }
+
+    // // --- Reference Trajectories ---
+    // RCLCPP_INFO(this->get_logger(), "Reference Trajectories (%zu):", request.reference_trajectories.size());
+    // for (size_t i = 0; i < request.reference_trajectories.size(); ++i)
+    // {
+    //     const auto& ref = request.reference_trajectories[i];
+    //     RCLCPP_INFO(this->get_logger(), "  Reference trajectory %zu:", i);
+    //     RCLCPP_INFO(this->get_logger(), "    Trajectory points: %zu", ref.trajectory.joint_trajectory.points.size());
+    // }
+
+    RCLCPP_INFO(this->get_logger(), "=========================");
+}
+
     void handle_accepted_compute_grasp_validity_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle
     ) {
       std::thread([this, goal_handle] {
-      RCLCPP_INFO(this->get_logger(), "\n---BREAK---\n");
+      
       auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
       auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
       moveit::core::MoveItErrorCode err_code;
 
+      planning_scene_monitor::LockedPlanningSceneRW planning_scene(planning_scene_monitor_);
+
       std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
       current_state->enforceBounds();
+      move_group_interface_->clearPathConstraints();
+      
       geometry_msgs::msg::Pose grasp_pose = goal_handle->get_goal()->grasp_pose;
 
-      RCLCPP_INFO(this->get_logger(), "Computing grasp validity");
-      move_group_interface_->clearPathConstraints();
-
       RCLCPP_INFO(this->get_logger(), "Computing IK (Pickup)...");
-      moveit::core::RobotState computed_ik_pickup(planning_scene_monitor_->getRobotModel());
+      moveit::core::RobotState computed_ik_pickup(planning_scene->getRobotModel());
       if (!compute_IK_manually(grasp_pose, computed_ik_pickup)) {
         RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (pickup).");
         result->success = true;
@@ -627,6 +789,31 @@ public:
         goal_handle->succeed(result);
         return;
       }
+
+      // RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
+      // collision_detection::CollisionRequest collision_request;
+      // collision_detection::CollisionResult collision_response;
+      // collision_request.contacts = true;
+      // collision_request.verbose = true;
+      // collision_request.distance = true;
+      // collision_request.detailed_distance = true;
+      // planning_scene->checkCollision(collision_request, collision_response, computed_ik_pickup);
+
+      // if (collision_response.collision) {
+      //   RCLCPP_ERROR(this->get_logger(), "Goal Collision Failed...");
+      //   printCollisionContacts(collision_response, get_logger());
+      //   result->success = true;
+      //   result->is_valid = false;
+      //   result->score = 0.0;
+      //   result->message = "Plan (pickup goal collisions) is not valid";
+      //   result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
+      //   result->err_source = "pickup goal collisions";
+      //   result->err_message = "";
+      //   goal_handle->succeed(result);
+      //   return;
+      // } else {
+      //   RCLCPP_INFO(this->get_logger(), "Goal Collision Succeeded. Closest distance is %f", collision_response.distance);
+      // }
 
       moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
       err_code = plan_pickup(*current_state, grasp_pose, pickup_plan);
@@ -670,19 +857,37 @@ public:
       goal_pose.orientation.w = actual_grasp_pose.orientation.w;
 
       RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
-      moveit::core::RobotState computed_ik_move(planning_scene_monitor_->getRobotModel());
+      moveit::core::RobotState computed_ik_move(planning_scene->getRobotModel());
       if (!compute_IK_manually(goal_pose, computed_ik_move)) {
         RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
         result->success = true;
         result->is_valid = false;
         result->score = 0.0;
-        result->message = "Plan (move IK) is not valid";
-        result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
-        result->err_source = "move IK";
+        result->message = "Plan (move goal IK) is not valid";
+        result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
+        result->err_source = "move goal IK";
         result->err_message = "";
         goal_handle->succeed(result);
         return;
       }
+
+      // RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
+      // planning_scene->checkCollision(collision_request, collision_response, computed_ik_move);
+
+      // if (collision_response.collision) {
+      //   RCLCPP_ERROR(this->get_logger(), "Goal Collision Failed...");
+      //   result->success = true;
+      //   result->is_valid = false;
+      //   result->score = 0.0;
+      //   result->message = "Plan (move collisions) is not valid";
+      //   result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+      //   result->err_source = "move collisions";
+      //   result->err_message = "";
+      //   goal_handle->succeed(result);
+      //   return;
+      // } else {
+      //   RCLCPP_INFO(this->get_logger(), "Goal Collision Succeeded. Closest distance is %f", collision_response.distance);
+      // }
 
       if (goal_handle->get_goal()->target_id >= 0) {
           // register_grasped_object(object_name);

@@ -1,1 +1,0 @@
-Request: Object ID 4 | Centred At (0.3, -0.3, -8.267360187820616e-07) | Target (0.4,-0.4,0.4)

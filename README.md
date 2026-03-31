@@ -258,7 +258,7 @@ sudo apt install ros-humble-octomap-server
 
 Instructions to install stomp:
 ```bash
-sudo apt remove ros-humble-moveit*
+sudo apt remove -y ros-humble-moveit*
 git clone https://github.com/moveit/moveit2.git -b main
 for repo in moveit2/moveit2.repos $(f="moveit2/moveit2_$ROS_DISTRO.repos"; test -r $f && echo $f); do vcs import < "$repo"; done
 sudo apt update && rosdep update
@@ -268,10 +268,12 @@ colcon build --symlink-install --packages-select moveit_resources moveit_resourc
 colcon build --symlink-install --packages-select moveit_common moveit_core  --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --executor sequential
+rm -rf install/moveit_ros_tests
 ```
 
 ```bash
 export XDG_RUNTIME_DIR=/tmp/runtime-root
 mkdir -p $XDG_RUNTIME_DIR
+chmod 700 $XDG_RUNTIME_DIR
 export OPEN3D_CPU_RENDERING=true
 ```
