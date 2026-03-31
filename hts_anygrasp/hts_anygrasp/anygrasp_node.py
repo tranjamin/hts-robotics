@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import time
 import argparse
@@ -7,6 +8,7 @@ import threading
 import numpy as np
 import open3d as o3d
 import time
+import typing
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -26,36 +28,38 @@ lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
 os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
 checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
 
+from graspnetAPI.grasp import Grasp as GraspNetGrasp
 from graspnetAPI import GraspGroup
 from gsnet import AnyGrasp
 
 class HTSGrasp():
     def __init__(self):
-        self.grasp_score = 0.0
-        self.path_score = 0.0
+        self.grasp_score: float = 0.0
+        self.path_score: float = 0.0
 
-        self.grasp_object = None
-        self.pose = None
+        self.grasp_object: GraspNetGrasp = None
+        self.pose: Pose = None
+        self._t0 = 0.0
     
-    def set_pose(self, pose):
+    def set_pose(self, pose: Pose):
         self.pose = pose
 
-    def get_pose(self):
+    def get_pose(self) -> Pose:
         return self.pose
     
-    def set_grasp_object(self, grasp):
+    def set_grasp_object(self, grasp: GraspNetGrasp):
         self.grasp_object = grasp
         self.grasp_score = grasp.score
     
-    def get_grasp_object(self):
+    def get_grasp_object(self) -> GraspNetGrasp:
         return self.grasp_object
 
-    def single_grasp_group(self):
+    def single_grasp_group(self) -> GraspGroup:
         temp_grasp_group = GraspGroup()
         temp_grasp_group.add(self.get_grasp_object())
         return temp_grasp_group
         
-    def validity_request_goal(self, request):
+    def validity_request_goal(self, request: ComputeGraspValidity.Request) -> ComputeGraspValidity.Goal:
         goal = ComputeGraspValidity.Goal()
         goal.grasp_pose = self.get_pose()
         goal.goal_x = request.goal_x
@@ -65,7 +69,7 @@ class HTSGrasp():
 
         return goal
 
-    def process_result(self, result):
+    def process_result(self, result: ComputeGraspValidity.Result):
         self.result_message = result.message
         self.result_err_code = result.err_code
         self.result_err_source = result.err_source
@@ -73,16 +77,16 @@ class HTSGrasp():
         self._is_valid = result.is_valid
         self.path_score = result.score if result.is_valid else math.inf
     
-    def is_valid(self):
+    def is_valid(self) -> bool:
         return self._is_valid
     
-    def pickup_failed(self):
+    def pickup_failed(self) -> bool:
         return self.result_err_source == "pickup"
 
-    def move_failed(self):
+    def move_failed(self) -> bool:
         return self.result_err_source == "move"
 
-    def save_grasp_message(self, folder):
+    def save_grasp_message(self, folder: str):
         with open(f"{folder}/grasp_messages.txt", "a") as f:
             f.write(f"Message {self.result_message} | Err Code {self.result_err_code} | Err Source {self.result_err_source} | Err Msg {self.result_err_message}\r\n")
     
@@ -92,30 +96,31 @@ class HTSGrasp():
     def end_timer(self):
         self.time = time.time() - self._t0
 
-    def save_grasp_validity(self, folder, include_header=False):
+    def save_grasp_validity(self, folder: str, include_header: bool=False):
         with open(f"{folder}/grasp_validities.txt", "a") as f:
             if include_header:
                 f.write(f"planning_time,planing_score,grasp_score\r\n") 
             f.write(f"{self.time},{self.path_score},{self.grasp_score}\r\n")
     
-    def save_grasp_info(self, folder):
+    def save_grasp_info(self, folder: str):
+        pose = self.get_pose()
         with open(f"{folder}/grasps.txt", "a") as f:
-            f.write(f"{self.get_pose()}\r\n")
+            f.write(f"{pose.position.x} {pose.position.y} {pose.position.z} {pose.orientation.x} {pose.orientation.y} {pose.orientation.z} {pose.orientation.w}\r\n")
 
 class HTSGraspGroup():
     def __init__(self, grasp_list=[]):
-        self._grasps = grasp_list
+        self._grasps: list[HTSGrasp] = grasp_list
     
-    def append(self, hts_grasp):
+    def append(self, hts_grasp: HTSGrasp):
         self._grasps.append(hts_grasp)
         
     def __len__(self):
         return len(self._grasps)
     
-    def num_valid(self):
+    def num_valid(self) -> int:
         return len([grasp for grasp in self._grasps if grasp.is_valid()])
 
-    def save_metrics(self, folder):
+    def save_metrics(self, folder: str):
         valid_grasps = [grasp for grasp in self._grasps if grasp.is_valid()]
         valid_scores = [grasp.path_score for grasp in valid_grasps]
         total_time = sum([grasp.time for grasp in self._grasps])
@@ -123,21 +128,21 @@ class HTSGraspGroup():
         with open(f"{folder}/grasp_metrics.txt", "a") as f:
             f.write(f"Total Grasps: {len(self)}\r\n")
             f.write(f"Valid Grasps: {len(valid_grasps)}\r\n")
-            f.write(f"Percent Valid Grasps: {len(valid_grasps) / len(self)}\r\n")
+            f.write(f"Percent Valid Grasps: {(len(valid_grasps) / len(self)) if len(self) else '-'}\r\n")
             f.write(f"Total Planning Time: {total_time}\r\n")
-            f.write(f"Average Planning Time: {total_time / len(self)}\r\n")
+            f.write(f"Average Planning Time: {(total_time / len(self)) if len(self) else '-'}\r\n")
             if len(valid_grasps):
                 f.write(f"Average Planning Distance: {sum(valid_scores) / len(valid_grasps) if len(valid_grasps) else '-'}\r\n")
             f.write(f"Shortest Planning Distance: {min(valid_scores) if len(valid_grasps) else '-'}\r\n")
 
-    def best_grasp(self):
+    def best_grasp(self) -> HTSGrasp:
         self._grasps.sort(key=lambda x: x.path_score)
         return self._grasps[0]
     
-    def valid_grasp_group(self):
+    def valid_grasp_group(self) -> HTSGraspGroup:
         return HTSGraspGroup([grasp for grasp in self._grasps if grasp.is_valid()])
     
-    def filter_grasp_group(self, filter):
+    def filter_grasp_group(self, filter) -> HTSGraspGroup:
         return HTSGraspGroup([grasp for grasp in self._grasps if filter(grasp)])
 
     def visualise(self, cloud, origin_position=[0,0,0], description="HTS Grasp Group"):
@@ -172,6 +177,16 @@ class HTSGraspGroup():
         cloud.transform(trans_mat)
 
         o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name=description)
+
+class ValidityContext():
+    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request):
+        self.goal_handle = goal_handle
+        self.hts_grasp_group = grasp_group
+        self.pending_results = len(grasp_group)
+        self.folder = folder
+        self.cloud = cloud
+        self.request = request
+        self.response = None
 
 class AnyGraspNode(Node):
     def __init__(self):
@@ -495,7 +510,78 @@ class AnyGraspNode(Node):
         f.write(f"max pitch/roll filtering: [{self.MAX_GRASP_PITCH_ROLL_DEG}] degrees\r\n")
         f.write(f"grasp offsets: approach axis [{self.GRASP_AXIS_OFFSET}] vertical [{self.GRASP_Z_OFFSET}]\r\n")
 
-    async def grasp_callback_(self, goal_handle):
+    def _handle_validity_send_goal(self, context, idx):
+        self.get_logger().info(f"Candidate Grasp {idx + 1}/{len(context.hts_grasp_group)}")
+        grasp = context.hts_grasp_group._grasps[idx]
+        grasp.start_timer()
+        self.grasp_validity_client_.wait_for_server()
+        send_goal_future = self.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
+        send_goal_future.add_done_callback(lambda f: self._handle_validity_response(f, context, idx))
+
+    def _handle_validity_response(self, future, context: ValidityContext, idx):
+        goal_handle = future.result()
+        
+        if not goal_handle.accepted:
+            self.get_logger().warn("Goal Rejected")
+            return
+        
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(lambda f : self._handle_validity_result(f, context, idx))
+
+    def _handle_validity_result(self, future, context: ValidityContext, idx):
+        result = future.result().result
+        hts_grasp : HTSGrasp = context.hts_grasp_group._grasps[idx]
+        hts_grasp.process_result(result)
+        hts_grasp.end_timer()
+        context.pending_results -= 1
+
+        if self.SAVE_DATA:
+            hts_grasp.save_grasp_message(context.folder)
+            hts_grasp.save_grasp_validity(context.folder, idx == 0)
+        
+        if context.pending_results == 0:
+            self._handle_validity_finish(context)
+        else:
+            self._handle_validity_send_goal(context, idx + 1)
+
+    def _handle_validity_finish(self, context: ValidityContext):
+        request = context.goal_handle.request
+        feedback = RequestGrasp.Feedback()
+        response = RequestGrasp.Result()
+
+        hts_grasp_group = context.hts_grasp_group
+        folder = context.folder
+        cloud = context.cloud
+
+        feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
+        context.goal_handle.publish_feedback(feedback)
+
+        if self.SAVE_DATA:
+            hts_grasp_group.save_metrics(folder)
+
+        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+
+        if hts_grasp_group.num_valid():
+            self.get_logger().info("Found the best grasp")
+
+            best_grasp = hts_grasp_group.best_grasp()
+            AnyGraspNode.display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+
+            response.grasp_pose = best_grasp.get_pose()
+            self.get_logger().info("--> " + str(response.grasp_pose))
+            response.success = True
+            context.goal_handle.succeed()
+            context.response = response
+        else:
+            self.get_logger().info("No valid grasps found")
+            response.success = False
+            context.goal_handle.abort()
+            context.response = response
+
+    def grasp_callback_(self, goal_handle):
         request = goal_handle.request
         feedback = RequestGrasp.Feedback()
         response = RequestGrasp.Result()
@@ -515,6 +601,7 @@ class AnyGraspNode(Node):
             return response
 
         gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS, folder)
+
         if gg is None or len(gg) == 0:
             self.get_logger().error("Grasp Failed")
             response.success = False
@@ -527,116 +614,34 @@ class AnyGraspNode(Node):
 
         hts_grasp_group = HTSGraspGroup()
 
-        for ind, grasp in enumerate(gg):
-            self.get_logger().info(f"Candidate Grasp {ind + 1}/{len(gg)}")
-            
+        for ind, grasp in enumerate(gg):            
             hts_grasp = HTSGrasp()
             hts_grasp.set_grasp_object(grasp)
             hts_grasp.set_pose(self.map_grasp(grasp, flip_z=False))
 
-            goal = hts_grasp.validity_request_goal(request)
-
             if self.SAVE_DATA:
                 hts_grasp.save_grasp_info(folder)
 
-            hts_grasp.start_timer()
-
-            self.grasp_validity_client_.wait_for_server()
-            send_goal_future = self.grasp_validity_client_.send_goal_async(goal)
-
-            while not send_goal_future.done():
-                rclpy.spin_once(self)
-                time.sleep(0.01)
-
-            goal_handle_inner = send_goal_future.result()
-
-            if not goal_handle_inner.accepted:
-                self.get_logger().warn("Goal Rejected")
-                continue
-
-            result_future = goal_handle_inner.get_result_async()
-            rclpy.spin_until_future_complete(self, result_future)
-            result = result_future.result().result
-
-            hts_grasp.end_timer()
-
-            hts_grasp.process_result(result)
-
-            if self.SAVE_DATA:
-                hts_grasp.save_grasp_message(folder)
-                hts_grasp.save_grasp_validity(folder, ind == 0)
-
             hts_grasp_group.append(hts_grasp)
-            # AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
 
-        for ind, grasp in enumerate(gg):
-            self.get_logger().info(f"Candidate Grasp Flipped {ind + 1}/{len(gg)}")
-            
+        for ind, grasp in enumerate(gg):            
             hts_grasp = HTSGrasp()
             hts_grasp.set_grasp_object(grasp)
             hts_grasp.set_pose(self.map_grasp(grasp, flip_z=True))
 
-            goal = hts_grasp.validity_request_goal(request)
-
             if self.SAVE_DATA:
                 hts_grasp.save_grasp_info(folder)
 
-            hts_grasp.start_timer()
-
-            self.grasp_validity_client_.wait_for_server()
-            send_goal_future = self.grasp_validity_client_.send_goal_async(goal)
-
-            while not send_goal_future.done():
-                rclpy.spin_once(self)
-                time.sleep(0.01)
-
-            goal_handle_inner = send_goal_future.result()
-
-            if not goal_handle_inner.accepted:
-                self.get_logger().warn("Goal Rejected")
-                continue
-
-            result_future = goal_handle_inner.get_result_async()
-            rclpy.spin_until_future_complete(self, result_future)
-            result = result_future.result().result
-
-            hts_grasp.end_timer()
-
-            hts_grasp.process_result(result)
-
-            if self.SAVE_DATA:
-                hts_grasp.save_grasp_message(folder)
-                hts_grasp.save_grasp_validity(folder, False)
-
             hts_grasp_group.append(hts_grasp)
-            # AnyGraspNode.display_grasps(hts_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Individual Grasp")
 
-        feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
-        goal_handle.publish_feedback(feedback)
+        context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request)
+        self._handle_validity_send_goal(context, 0)
 
-        if self.SAVE_DATA:
-            hts_grasp_group.save_metrics(folder)
+        while context.response is None:
+            time.sleep(0.01)
+        time.sleep(10.0)
 
-        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
-
-        if hts_grasp_group.num_valid():
-            self.get_logger().info("Found the best grasp")
-
-            best_grasp = hts_grasp_group.best_grasp()
-            AnyGraspNode.display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
-
-            response.grasp_pose = best_grasp.get_pose()
-            self.get_logger().info("--> " + str(response.grasp_pose))
-            response.success = True        
-            goal_handle.succeed()
-        else:
-            self.get_logger().info("No valid grasps found")
-            response.success = False
-            goal_handle.abort()
-        return response
+        return context.response
     
     def map_grasp(self, grasp, flip_z=False):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)

@@ -21,6 +21,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
+LOG_LEVEL = 'info'
 
 moveit_config = (
     MoveItConfigsBuilder("hts")
@@ -147,7 +148,7 @@ def create_hts_node(context: LaunchContext, launch_configurations):
             moveit_config.robot_description_kinematics,
         ],
         arguments=[
-            '--ros-args', '--log-level', 'debug'
+            '--ros-args', '--log-level', LOG_LEVEL
         ]
     )
 
@@ -197,7 +198,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME},
         ],
         arguments=[
-            '--ros-args', '--log-level', 'debug'
+            '--ros-args', '--log-level', LOG_LEVEL
         ]
     )
 
