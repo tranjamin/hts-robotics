@@ -67,7 +67,7 @@ public:
       .allow_undeclared_parameters(true)
       .automatically_declare_parameters_from_overrides(true)
     )
-  ):Node("hts_node", "") {
+  ):Node("hts_node", "", options) {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
 
     // this->declare_parameter("stomp_moveit", "");
@@ -223,7 +223,7 @@ public:
     planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    load_target_objects();
+    // load_target_objects();
   }
 
   private:
@@ -556,16 +556,18 @@ public:
         move_group_interface_->constructMotionPlanRequest(motion_plan_request);
         motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = orig_goal_tolerance;
         motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = orig_goal_tolerance;      
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 3.142;      
         printMotionPlanRequestFull(motion_plan_request);
         planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
         RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL self pipeline...");
         ompl_status = planning_pipeline_ompl->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
 
-        moveit_msgs::msg::RobotTrajectory traj;
-        motion_plan_response.trajectory->getRobotTrajectoryMsg(traj);
-        plan.trajectory.joint_trajectory = traj.joint_trajectory;
-        plan.trajectory.multi_dof_joint_trajectory = traj.multi_dof_joint_trajectory;
-
+        if (ompl_status) {
+          moveit_msgs::msg::RobotTrajectory traj;
+          motion_plan_response.trajectory->getRobotTrajectoryMsg(traj);
+          plan.trajectory.joint_trajectory = traj.joint_trajectory;
+          plan.trajectory.multi_dof_joint_trajectory = traj.multi_dof_joint_trajectory;
+        }
         err_code = motion_plan_response.error_code;
         plan.planning_time = motion_plan_response.planning_time;
         plan.start_state = motion_plan_response.start_state;

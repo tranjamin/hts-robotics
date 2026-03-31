@@ -14,6 +14,7 @@ planning_time: 5.0
 
 longest_valid_segment_fraction: 0.01   # or smaller
 
+planning_plugin: ompl_interface/OMPLPlanner
 planning_plugins:
   - ompl_interface/OMPLPlanner
 request_adapters:
