@@ -67,7 +67,7 @@ public:
       .allow_undeclared_parameters(true)
       .automatically_declare_parameters_from_overrides(true)
     )
-  ):Node("hts_node", "", options) {
+  ):Node("hts_node", options) {
     RCLCPP_INFO(this->get_logger(), "Constructing HTS Robotics Node...");
 
     // this->declare_parameter("stomp_moveit", "");
@@ -188,7 +188,7 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(30.0);
+    move_group_interface_->setPlanningTime(5.0);
     move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     move_group_interface_->setMaxVelocityScalingFactor(0.5);
     move_group_interface_->setMaxAccelerationScalingFactor(0.3);
@@ -223,7 +223,7 @@ public:
     planning_scene_interface_->applyCollisionObject(co_ground);
     RCLCPP_INFO(get_logger(), "Applied collision object 'ground' to planning scene.");
 
-    // load_target_objects();
+    load_target_objects();
   }
 
   private:
@@ -294,7 +294,7 @@ public:
 
     void load_target_objects() {
       // Register the target objects as collision objects
-      this->declare_parameter("objects", std::vector<std::string>{});
+      // this->declare_parameter("objects", std::vector<std::string>{});
       std::vector<std::string> objects = this->get_parameter("objects").as_string_array();
 
       target_object_ids_ = std::vector<std::string>(objects.size(), "");
@@ -307,30 +307,30 @@ public:
         shape_msgs::msg::Mesh mesh_target;
         geometry_msgs::msg::Pose pose_target;
 
-        this->declare_parameter(obj_name + ".object_id", 0);
-        this->declare_parameter(obj_name + ".primitive_type", "");
+        // this->declare_parameter(obj_name + ".object_id", 0);
+        // this->declare_parameter(obj_name + ".primitive_type", "");
 
         int obj_id = this->get_parameter(obj_name + ".object_id").as_int();
         RCLCPP_DEBUG(get_logger(), "Found an Object with ID %d", obj_id);
 
-        this->declare_parameter(obj_name + ".x", 0.0);
-        this->declare_parameter(obj_name + ".y", 0.0);
-        this->declare_parameter(obj_name + ".z", 0.0);
+        // this->declare_parameter(obj_name + ".x", 0.0);
+        // this->declare_parameter(obj_name + ".y", 0.0);
+        // this->declare_parameter(obj_name + ".z", 0.0);
 
-        this->declare_parameter(obj_name + ".R", 0.0);
-        this->declare_parameter(obj_name + ".P", 0.0);
-        this->declare_parameter(obj_name + ".Y", 0.0);
+        // this->declare_parameter(obj_name + ".R", 0.0);
+        // this->declare_parameter(obj_name + ".P", 0.0);
+        // this->declare_parameter(obj_name + ".Y", 0.0);
 
         pose_target.position.x = this->get_parameter(obj_name + ".x").as_double();
         pose_target.position.y = this->get_parameter(obj_name + ".y").as_double();
         pose_target.position.z = this->get_parameter(obj_name + ".z").as_double();
 
-        double roll = this->get_parameter(obj_name + ".R").as_double();
-        double pitch = this->get_parameter(obj_name + ".P").as_double();
-        double yaw = this->get_parameter(obj_name + ".Y").as_double();
-        // double roll = 0.0;
-        // double pitch = 0.0;
-        // double yaw = 0.0;
+        // double roll = this->get_parameter(obj_name + ".R").as_double();
+        // double pitch = this->get_parameter(obj_name + ".P").as_double();
+        // double yaw = this->get_parameter(obj_name + ".Y").as_double();
+        double roll = 0.0;
+        double pitch = 0.0;
+        double yaw = 0.0;
 
         tf2::Quaternion q;
         q.setRPY(roll, pitch, yaw);
@@ -345,9 +345,9 @@ public:
 
         std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
         if (obj_type == "BOX") {
-          this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
 
           primitive_target.type = primitive_target.BOX;
           primitive_target.dimensions = {
@@ -359,7 +359,7 @@ public:
           co_target.primitives.push_back(primitive_target);
           co_target.primitive_poses.push_back(pose_target);
         } else if (obj_type == "SPHERE") {
-          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
 
           primitive_target.type = primitive_target.SPHERE;
           primitive_target.dimensions = {
@@ -370,8 +370,8 @@ public:
           co_target.primitive_poses.push_back(pose_target);
 
         } else if (obj_type == "CONE") {        
-          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
 
           primitive_target.type = primitive_target.CONE;
           primitive_target.dimensions = {
@@ -383,8 +383,8 @@ public:
           co_target.primitive_poses.push_back(pose_target);
 
         } else if (obj_type == "CYLINDER") {
-          this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-          this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+          // this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
 
           primitive_target.type = primitive_target.CYLINDER;
           primitive_target.dimensions = {
@@ -397,7 +397,7 @@ public:
 
         } 
         else if (obj_type == "MESH") {
-          this->declare_parameter(obj_name + ".primitive_dims.file", "");
+          // this->declare_parameter(obj_name + ".primitive_dims.file", "");
           shapes::Mesh* mesh = shapes::createMeshFromResource( this->get_parameter(obj_name + ".primitive_dims.file").as_string(), Eigen::Vector3d(0.001, 0.001, 0.001));
           shape_msgs::msg::Mesh mesh_msg;
           shapes::ShapeMsg mesh_tmp;
@@ -522,9 +522,9 @@ public:
       orientation_constraint.orientation = start_pose.orientation;
       orientation_constraint.absolute_x_axis_tolerance = 0.3;
       orientation_constraint.absolute_y_axis_tolerance = 0.3;
-      orientation_constraint.absolute_z_axis_tolerance = 3.142;
+      orientation_constraint.absolute_z_axis_tolerance = 3.042;
       orientation_constraint.weight = 1.0;
-      orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
+      orientation_constraint.parameterization = orientation_constraint.XYZ_EULER_ANGLES;
       
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
@@ -552,11 +552,10 @@ public:
         RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL built in pipeline...");
         ompl_status = (err_code = move_group_interface_->plan(plan)) == moveit::core::MoveItErrorCode::SUCCESS;
       } else {
-        move_group_interface_->setGoalOrientationTolerance(1.0);
         move_group_interface_->constructMotionPlanRequest(motion_plan_request);
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = orig_goal_tolerance;
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = orig_goal_tolerance;      
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 3.142;      
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = 3.142;      
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 3.142;     
         printMotionPlanRequestFull(motion_plan_request);
         planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
         RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL self pipeline...");
@@ -686,9 +685,9 @@ void printConstraints(const moveit_msgs::msg::Constraints& c)
                     pc.target_point_offset.y,
                     pc.target_point_offset.z);
         RCLCPP_INFO(this->get_logger(), "      tolerance: x=%f y=%f z=%f",
-                    pc.constraint_region.primitive_poses[0].position.x,
-                    pc.constraint_region.primitive_poses[0].position.y,
-                    pc.constraint_region.primitive_poses[0].position.z);
+                    pc.constraint_region.primitives[0].dimensions[0],
+                    pc.constraint_region.primitives[0].dimensions[0],
+                    pc.constraint_region.primitives[0].dimensions[0]);
     }
 
     // --- Orientation Constraints ---
@@ -769,7 +768,7 @@ void printMotionPlanRequestFull(const moveit_msgs::msg::MotionPlanRequest& reque
       auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
       moveit::core::MoveItErrorCode err_code;
 
-      planning_scene_monitor::LockedPlanningSceneRW planning_scene(planning_scene_monitor_);
+      planning_scene_monitor::LockedPlanningSceneRO planning_scene(planning_scene_monitor_);
 
       std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
       current_state->enforceBounds();
