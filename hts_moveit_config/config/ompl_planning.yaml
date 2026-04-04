@@ -70,28 +70,23 @@ planner_configs:
   RRTConnectkConfigDefault:
     type: geometric::RRTConnect
     range: 0.1    # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
-    longest_valid_segment_fraction: 0.01   # or smaller
-    # enforce_joint_state_space: true
-    path_tolerance: 0.005
-    resample_dt: 0.02
-    min_angle_change: 0.001
-
-    default_workspace_bounds: 2.0
-    start_state_max_bounds_error: 0.01
-    start_state_max_dt: 10.0
-    jiggle_fraction: 0.005
-    max_sampling_attempts: 500
-
-    goal_orientation_tolerance: 0.001
-    goal_position_tolerance: 0.005
-    planning_time: 5.0
+    # longest_valid_segment_fraction: 0.01   # or smaller
+    maximum_waypoint_distance: 0.005
+    # projection_evaluator: link(fr3_hand_tcp)
+    constraint_sampler: MyCustomSampler
+    enforce_joint_state_space: true
 
   RRTstarkConfigDefault:
     type: geometric::RRTstar
     range: 0.01  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     goal_bias: 0.05  # When close to goal select goal, with this probability? default: 0.05
     delay_collision_checking: 1  # Stop collision checking as soon as C-free parent found. default 1
-    enforce_joint_state_space: true
+    # enforce_joint_state_space: true
+    
+    constraint_samplers: "hts_plugins/HTSIKConstraintSamplerAllocator"
+    enforce_constrained_state_space: true
+    maximum_waypoint_distance: 0.005
+    projection_evaluator: link(fr3_hand_tcp)
   TRRTkConfigDefault:
     type: geometric::TRRT
     range: 0.0  # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
@@ -186,6 +181,7 @@ planner_configs:
     type: geometric::TrajOpt
 
 fr3_arm:
+  projection_evaluator: link(end_effector)
   planner_configs:
     - RRTstarkConfigDefault
     - RRTConnectkConfigDefault

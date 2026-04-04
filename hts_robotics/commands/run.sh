@@ -10,4 +10,8 @@ ros2 launch hts_robotics hts_bringup.launch.py | grep -vi -E \
 |\[moveit.moveit.ros.planning_scene_monitor\]: robot state update\
 |\[hts_node.moveit.ros.planning_scene_monitor\]: robot state update\
 |Received status for unknown goal.\
+|Unable to transform object from frame\
+|\[pcl::SACSegmentation::segment\]\
+|\[pcl::RandomSampleConsensus::computeModel\]\
+|Publishing transforms for moving joints\
 "
