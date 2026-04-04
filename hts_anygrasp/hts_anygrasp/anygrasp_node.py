@@ -108,8 +108,8 @@ class HTSGrasp():
             f.write(f"{pose.position.x} {pose.position.y} {pose.position.z} {pose.orientation.x} {pose.orientation.y} {pose.orientation.z} {pose.orientation.w}\r\n")
 
 class HTSGraspGroup():
-    def __init__(self, grasp_list=[]):
-        self._grasps: list[HTSGrasp] = grasp_list
+    def __init__(self, grasp_list=None):
+        self._grasps: list[HTSGrasp] = [] if grasp_list is None else grasp_list
     
     def append(self, hts_grasp: HTSGrasp):
         self._grasps.append(hts_grasp)
