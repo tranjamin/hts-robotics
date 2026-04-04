@@ -21,7 +21,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
-LOG_LEVEL = 'debug'
+LOG_LEVEL = 'info'
 
 moveit_config = (
     MoveItConfigsBuilder("hts")
@@ -195,10 +195,13 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             load_yaml("hts_moveit_config", "config/planning_parameters.yaml"),
             load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
             planning_scene_monitor_parameters,
-            {"use_sim_time": USE_SIM_TIME},
+            {
+                "use_sim_time": USE_SIM_TIME,
+                "constraint_samplers": "hts_plugins/HTSIKConstraintSamplerAllocator"
+            },
         ],
         arguments=[
-            '--ros-args', '--log-level', LOG_LEVEL
+            '--ros-args', '--log-level', 'error'
         ]
     )
 
@@ -252,7 +255,7 @@ def create_publisher_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME},
             ],
         arguments=[
-            '--ros-args', '--log-level', 'error'
+            '--ros-args', '--log-level', LOG_LEVEL
         ]
     )
 

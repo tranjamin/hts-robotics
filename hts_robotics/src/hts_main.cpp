@@ -42,6 +42,10 @@
 #include <geometric_shapes/shape_operations.h>
 #include <shape_msgs/msg/mesh.hpp>
 
+#include <pluginlib/class_loader.hpp>
+#include <hts_plugins/hts_constraint_sampler.hpp>
+#include <moveit/constraint_samplers/constraint_sampler_manager.hpp>
+
 // for using macros like s, ms, us
 using namespace std::chrono_literals;
 
@@ -165,6 +169,17 @@ public:
     planning_scene_monitor_->startStateMonitor();
     RCLCPP_DEBUG(this->get_logger(), "Started scene monitors.");
 
+    RCLCPP_INFO(this->get_logger(), "Making Sampler Allocator...");
+    const constraint_samplers::ConstraintSamplerAllocatorPtr sampler_allocator = std::make_shared<hts_plugins::HTSIKConstraintSamplerAllocator>();
+    // auto sampler = sampler_allocator->alloc(scene, "fr3_arm", constraints)
+    sampler_manager = std::make_shared<constraint_samplers::ConstraintSamplerManager>();
+    sampler_manager->registerSamplerAllocator(sampler_allocator);
+    RCLCPP_INFO(this->get_logger(), "Made Sampler Allocator...");
+
+    // moveit_msgs::msg::Constraints constraints;
+    // auto allocator = manager->getAllocator("fr3_arm", constraints);
+    // auto sampler = allocator->alloc(scene, "fr3_arm", constraints);
+
     planning_pipeline = std::make_shared<planning_pipeline::PlanningPipeline>(
       planning_scene_monitor_->getRobotModel(),
       shared_from_this(),
@@ -188,7 +203,7 @@ public:
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(5.0);
+    move_group_interface_->setPlanningTime(20.0);
     move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     move_group_interface_->setMaxVelocityScalingFactor(0.5);
     move_group_interface_->setMaxAccelerationScalingFactor(0.3);
@@ -256,6 +271,9 @@ public:
     rclcpp::CallbackGroup::SharedPtr action_callback_group_;
     rclcpp::CallbackGroup::SharedPtr sub_callback_group_;
     // rclcpp_action::ServerOptions action_options_;
+
+    // const constraint_samplers::ConstraintSamplerAllocatorPtr sampler_allocator;
+    std::shared_ptr<constraint_samplers::ConstraintSamplerManager>  sampler_manager;
 
     void log_planning_details() {
       std::vector<moveit_msgs::msg::PlannerInterfaceDescription> desc;
@@ -520,11 +538,11 @@ public:
       orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
       orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
       orientation_constraint.orientation = start_pose.orientation;
-      orientation_constraint.absolute_x_axis_tolerance = 0.3;
-      orientation_constraint.absolute_y_axis_tolerance = 0.3;
+      orientation_constraint.absolute_x_axis_tolerance = 0.1;
+      orientation_constraint.absolute_y_axis_tolerance = 0.1;
       orientation_constraint.absolute_z_axis_tolerance = 3.042;
       orientation_constraint.weight = 1.0;
-      orientation_constraint.parameterization = orientation_constraint.XYZ_EULER_ANGLES;
+      orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
       
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
@@ -553,10 +571,17 @@ public:
         ompl_status = (err_code = move_group_interface_->plan(plan)) == moveit::core::MoveItErrorCode::SUCCESS;
       } else {
         move_group_interface_->constructMotionPlanRequest(motion_plan_request);
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = 3.142;      
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 0.1;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = 0.1;      
         motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 3.142;     
         printMotionPlanRequestFull(motion_plan_request);
+
+        RCLCPP_INFO(this->get_logger(), "Trying to select the constraint sampler...");
+        auto scene = planning_scene_monitor_->getPlanningScene();
+        moveit_msgs::msg::Constraints constr = motion_plan_request.goal_constraints[0];
+        constraint_samplers::ConstraintSamplerPtr chosen_sampler = sampler_manager->selectSampler(scene, "fr3_arm", constr);
+        RCLCPP_INFO(this->get_logger(), "Selected the sampler %s.", chosen_sampler->getName().c_str());
+
         planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
         RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL self pipeline...");
         ompl_status = planning_pipeline_ompl->generatePlan(locked_scene, motion_plan_request, motion_plan_response);

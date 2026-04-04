@@ -15,6 +15,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 find_package(hts_msgs REQUIRED)
+find_package(hts_plugins REQUIRED)
 
 add_executable(hts_node src/hts_main.cpp)
 ament_target_dependencies(hts_node
@@ -25,6 +26,7 @@ ament_target_dependencies(hts_node
   moveit_ros_planning
   moveit_ros_planning_interface
   hts_msgs
+  hts_plugins
 )
 
 add_executable(hts_missions src/hts_missions.cpp)
