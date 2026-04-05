@@ -13,6 +13,8 @@ namespace hts_plugins {
             HTSIKConstraintSampler(
                 const std::shared_ptr<const planning_scene::PlanningScene> &scene, 
                 const std::string &group_name);
+
+            const std::string& getName();
     };
 
     class HTSIKConstraintSamplerAllocator : public constraint_samplers::ConstraintSamplerAllocator {
