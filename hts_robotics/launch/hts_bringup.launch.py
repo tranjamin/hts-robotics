@@ -197,7 +197,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             planning_scene_monitor_parameters,
             {
                 "use_sim_time": USE_SIM_TIME,
-                "constraint_samplers": "hts_plugins/HTSIKConstraintSamplerAllocator"
+                "constraint_samplers": "hts_plugins::HTSIKConstraintSamplerAllocator"
             },
         ],
         arguments=[

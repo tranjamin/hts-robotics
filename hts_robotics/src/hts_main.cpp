@@ -176,6 +176,16 @@ public:
     sampler_manager->registerSamplerAllocator(sampler_allocator);
     RCLCPP_INFO(this->get_logger(), "Made Sampler Allocator...");
 
+    pluginlib::ClassLoader<constraint_samplers::ConstraintSamplerAllocator> loader(
+        "moveit_core", 
+        "constraint_samplers::ConstraintSamplerAllocator"
+    );
+    std::vector<std::string> classes = loader.getDeclaredClasses();
+    for (const auto &c : classes)
+      RCLCPP_INFO(this->get_logger(), "Found a plugin class: %s", c.c_str());
+
+    RCLCPP_INFO(this->get_logger(), "Made Sampler Allocator...");
+
     // moveit_msgs::msg::Constraints constraints;
     // auto allocator = manager->getAllocator("fr3_arm", constraints);
     // auto sampler = allocator->alloc(scene, "fr3_arm", constraints);
