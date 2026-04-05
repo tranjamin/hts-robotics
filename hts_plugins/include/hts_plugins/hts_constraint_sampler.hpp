@@ -14,7 +14,7 @@ namespace hts_plugins {
                 const std::shared_ptr<const planning_scene::PlanningScene> &scene, 
                 const std::string &group_name);
 
-            const std::string& getName();
+            const std::string& getName() const override;
     };
 
     class HTSIKConstraintSamplerAllocator : public constraint_samplers::ConstraintSamplerAllocator {

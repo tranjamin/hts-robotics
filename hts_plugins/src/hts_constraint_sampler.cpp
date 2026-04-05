@@ -14,7 +14,7 @@ hts_plugins::HTSIKConstraintSampler::HTSIKConstraintSampler(
     RCLCPP_INFO(rclcpp::get_logger("hts_plugins"), "HTSIKConstraintSampler constructor called for group %s", group_name.c_str());
 }
 
-const std::string& hts_plugins::HTSIKConstraintSampler::getName() {
+const std::string& hts_plugins::HTSIKConstraintSampler::getName() const {
     static const std::string SAMPLER_NAME = "HTSIKConstraintSampler";
     return SAMPLER_NAME;
 }
