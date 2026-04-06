@@ -15,6 +15,11 @@ namespace hts_plugins {
                 const std::string &group_name);
 
             const std::string& getName() const override;
+            // bool project(moveit::core::RobotState &state, unsigned int max_attempts) override;
+            bool sample(moveit::core::RobotState &state, const moveit::core::RobotState &reference_state, unsigned int max_attempts) override;
+            bool configure(const moveit_msgs::msg::Constraints &constr) override;
+            bool samplePose(Eigen::Vector3d& pos, Eigen::Quaterniond& quat, const moveit::core::RobotState& ks, unsigned int max_attempts);
+            bool sampleHelper(moveit::core::RobotState& state, const moveit::core::RobotState& reference_state, unsigned int max_attempts);
     };
 
     class HTSIKConstraintSamplerAllocator : public constraint_samplers::ConstraintSamplerAllocator {
