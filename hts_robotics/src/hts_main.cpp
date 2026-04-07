@@ -499,6 +499,14 @@ public:
       move_group_interface_->clearPathConstraints();
       move_group_interface_->setPoseTarget(target_pose);
 
+      RCLCPP_INFO(this->get_logger(), "Calculating Axis Alignment...");
+      Eigen::Quaterniond q(current_pose.pose.orientation.w, current_pose.pose.orientation.x, current_pose.pose.orientation.y, current_pose.pose.orientation.z);
+      Eigen::Vector3d reference_axis(0, 0, 1);
+      Eigen::Vector3d translated_axis = q * Eigen::Vector3d(1, 0, 0);
+      double alignment = translated_axis.dot(reference_axis);
+      RCLCPP_INFO(this->get_logger(), "Axis Alignment is %f", alignment);
+
+
       RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
       moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
       RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
@@ -548,18 +556,15 @@ public:
       orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
       orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
       orientation_constraint.orientation = start_pose.orientation;
-      orientation_constraint.absolute_x_axis_tolerance = 0.1;
+      orientation_constraint.absolute_x_axis_tolerance = 3.142;
       orientation_constraint.absolute_y_axis_tolerance = 0.1;
-      orientation_constraint.absolute_z_axis_tolerance = 3.042;
+      orientation_constraint.absolute_z_axis_tolerance = 0.1;
       orientation_constraint.weight = 1.0;
       orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
       
       moveit_msgs::msg::Constraints all_constraints;
+      all_constraints.name = "Move Constraint";
       all_constraints.orientation_constraints.emplace_back(orientation_constraint);
-
-      move_group_interface_->clearPathConstraints();
-      move_group_interface_->setPathConstraints(all_constraints);
-      RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
 
       log_pose(start_pose, "Start Pose");
       log_pose(target_pose, "Target Pose");
@@ -567,6 +572,10 @@ public:
       // move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
       move_group_interface_->setPoseTarget(target_pose);
       double orig_goal_tolerance = move_group_interface_->getGoalOrientationTolerance();
+
+      move_group_interface_->clearPathConstraints();
+      move_group_interface_->setPathConstraints(all_constraints);
+      RCLCPP_INFO(get_logger(), "Applied orientation constraints to planning scene.");
 
       RCLCPP_INFO(this->get_logger(), "Displaying some info about the move...");
       planning_interface::MotionPlanResponse motion_plan_response;
@@ -581,20 +590,30 @@ public:
         ompl_status = (err_code = move_group_interface_->plan(plan)) == moveit::core::MoveItErrorCode::SUCCESS;
       } else {
         move_group_interface_->constructMotionPlanRequest(motion_plan_request);
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 0.1;
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = 0.1;      
-        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 3.142;     
+        motion_plan_request.goal_constraints[0].name = "Move Goal Constraint";
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = 0.1;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 0.1;
+        
+        motion_plan_request.path_constraints.name = "Move Path Constraint";
+        motion_plan_request.path_constraints.orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
+        motion_plan_request.path_constraints.orientation_constraints[0].absolute_y_axis_tolerance = 0.1;      
+        motion_plan_request.path_constraints.orientation_constraints[0].absolute_z_axis_tolerance = 0.1;     
+
         printMotionPlanRequestFull(motion_plan_request);
 
-        RCLCPP_INFO(this->get_logger(), "Trying to select the constraint sampler...");
+        RCLCPP_INFO(this->get_logger(), "======================= Testing Selecting HTS IK Constraint Sampler =======================");
         auto scene = planning_scene_monitor_->getPlanningScene();
         moveit_msgs::msg::Constraints constr = motion_plan_request.goal_constraints[0];
         constraint_samplers::ConstraintSamplerPtr chosen_sampler = sampler_manager->selectSampler(scene, "fr3_arm", constr);
         RCLCPP_INFO(this->get_logger(), "Selected the sampler %s.", chosen_sampler->getName().c_str());
+        RCLCPP_INFO(this->get_logger(), "============================================================================================");
 
         planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
-        RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL self pipeline...");
+
+        RCLCPP_INFO(this->get_logger(), "======================= Computing Path using OMPL self pipeline =======================");
         ompl_status = planning_pipeline_ompl->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
+        RCLCPP_INFO(this->get_logger(), "============================================================================================");
 
         if (ompl_status) {
           moveit_msgs::msg::RobotTrajectory traj;
@@ -707,92 +726,92 @@ public:
       }
     }
 
-void printConstraints(const moveit_msgs::msg::Constraints& c)
-{
-    // --- Position Constraints ---
-    for (size_t i = 0; i < c.position_constraints.size(); ++i)
-    {
-        const auto& pc = c.position_constraints[i];
-        RCLCPP_INFO(this->get_logger(), "    [PositionConstraint %zu] link: %s", i, pc.link_name.c_str());
-        RCLCPP_INFO(this->get_logger(), "      frame: %s", pc.header.frame_id.c_str());
-        RCLCPP_INFO(this->get_logger(), "      target point offset: (%f, %f, %f)",
-                    pc.target_point_offset.x,
-                    pc.target_point_offset.y,
-                    pc.target_point_offset.z);
-        RCLCPP_INFO(this->get_logger(), "      tolerance: x=%f y=%f z=%f",
-                    pc.constraint_region.primitives[0].dimensions[0],
-                    pc.constraint_region.primitives[0].dimensions[0],
-                    pc.constraint_region.primitives[0].dimensions[0]);
-    }
+  void printConstraints(const moveit_msgs::msg::Constraints& c)
+  {
+      // --- Position Constraints ---
+      for (size_t i = 0; i < c.position_constraints.size(); ++i)
+      {
+          const auto& pc = c.position_constraints[i];
+          RCLCPP_INFO(this->get_logger(), "    [PositionConstraint %zu] link: %s", i, pc.link_name.c_str());
+          RCLCPP_INFO(this->get_logger(), "      frame: %s", pc.header.frame_id.c_str());
+          RCLCPP_INFO(this->get_logger(), "      target point offset: (%f, %f, %f)",
+                      pc.target_point_offset.x,
+                      pc.target_point_offset.y,
+                      pc.target_point_offset.z);
+          RCLCPP_INFO(this->get_logger(), "      tolerance: x=%f y=%f z=%f",
+                      pc.constraint_region.primitives[0].dimensions[0],
+                      pc.constraint_region.primitives[0].dimensions[0],
+                      pc.constraint_region.primitives[0].dimensions[0]);
+      }
 
-    // --- Orientation Constraints ---
-    for (size_t i = 0; i < c.orientation_constraints.size(); ++i)
-    {
-        const auto& oc = c.orientation_constraints[i];
-        RCLCPP_INFO(this->get_logger(), "    [OrientationConstraint %zu] link: %s", i, oc.link_name.c_str());
-        RCLCPP_INFO(this->get_logger(), "      frame: %s", oc.header.frame_id.c_str());
-        RCLCPP_INFO(this->get_logger(), "      orientation: (%f, %f, %f, %f)",
-                    oc.orientation.x, oc.orientation.y, oc.orientation.z, oc.orientation.w);
-        RCLCPP_INFO(this->get_logger(), "      tolerances: x=%f y=%f z=%f, weight=%f",
-                    oc.absolute_x_axis_tolerance, oc.absolute_y_axis_tolerance,
-                    oc.absolute_z_axis_tolerance, oc.weight);
-    }
+      // --- Orientation Constraints ---
+      for (size_t i = 0; i < c.orientation_constraints.size(); ++i)
+      {
+          const auto& oc = c.orientation_constraints[i];
+          RCLCPP_INFO(this->get_logger(), "    [OrientationConstraint %zu] link: %s", i, oc.link_name.c_str());
+          RCLCPP_INFO(this->get_logger(), "      frame: %s", oc.header.frame_id.c_str());
+          RCLCPP_INFO(this->get_logger(), "      orientation: (%f, %f, %f, %f)",
+                      oc.orientation.x, oc.orientation.y, oc.orientation.z, oc.orientation.w);
+          RCLCPP_INFO(this->get_logger(), "      tolerances: x=%f y=%f z=%f, weight=%f",
+                      oc.absolute_x_axis_tolerance, oc.absolute_y_axis_tolerance,
+                      oc.absolute_z_axis_tolerance, oc.weight);
+      }
 
-    // --- Joint Constraints ---
-    for (size_t i = 0; i < c.joint_constraints.size(); ++i)
-    {
-        const auto& jc = c.joint_constraints[i];
-        RCLCPP_INFO(this->get_logger(), "    [JointConstraint %zu] joint: %s", i, jc.joint_name.c_str());
-        RCLCPP_INFO(this->get_logger(), "      position: %f, tolerance: %f, weight: %f",
-                    jc.position, jc.tolerance_above, jc.weight);
-    }
+      // --- Joint Constraints ---
+      for (size_t i = 0; i < c.joint_constraints.size(); ++i)
+      {
+          const auto& jc = c.joint_constraints[i];
+          RCLCPP_INFO(this->get_logger(), "    [JointConstraint %zu] joint: %s", i, jc.joint_name.c_str());
+          RCLCPP_INFO(this->get_logger(), "      position: %f, tolerance: %f, weight: %f",
+                      jc.position, jc.tolerance_above, jc.weight);
+      }
 
-    // --- Visibility Constraints ---
-    // for (size_t i = 0; i < c.visibility_constraints.size(); ++i)
-    // {
-    //     const auto& vc = c.visibility_constraints[i];
-    //     RCLCPP_INFO(node->get_logger(), "    [VisibilityConstraint %zu] sensor: %s, target: %s", i,
-    //                 vc.sensor_frame.c_str(), vc.target_frame.c_str());
-    //     RCLCPP_INFO(node->get_logger(), "      cone_angle: %f, max_range: %f, weight: %f",
-    //                 vc.cone_angle, vc.max_range, vc.weight);
-    // }
-}
+      // --- Visibility Constraints ---
+      // for (size_t i = 0; i < c.visibility_constraints.size(); ++i)
+      // {
+      //     const auto& vc = c.visibility_constraints[i];
+      //     RCLCPP_INFO(node->get_logger(), "    [VisibilityConstraint %zu] sensor: %s, target: %s", i,
+      //                 vc.sensor_frame.c_str(), vc.target_frame.c_str());
+      //     RCLCPP_INFO(node->get_logger(), "      cone_angle: %f, max_range: %f, weight: %f",
+      //                 vc.cone_angle, vc.max_range, vc.weight);
+      // }
+  }
 
-void printMotionPlanRequestFull(const moveit_msgs::msg::MotionPlanRequest& request)
-{
-    RCLCPP_INFO(this->get_logger(), "=== MotionPlanRequest ===");
+  void printMotionPlanRequestFull(const moveit_msgs::msg::MotionPlanRequest& request)
+  {
+      RCLCPP_INFO(this->get_logger(), "======================= MotionPlanRequest =======================");
 
-    // --- Goal Constraints ---
-    RCLCPP_INFO(this->get_logger(), "Goal Constraints (%zu):", request.goal_constraints.size());
-    for (size_t i = 0; i < request.goal_constraints.size(); ++i)
-    {
-        RCLCPP_INFO(this->get_logger(), "  Goal %zu:", i);
-        printConstraints(request.goal_constraints[i]);
-    }
+      // --- Goal Constraints ---
+      RCLCPP_INFO(this->get_logger(), "Goal Constraints (%zu):", request.goal_constraints.size());
+      for (size_t i = 0; i < request.goal_constraints.size(); ++i)
+      {
+          RCLCPP_INFO(this->get_logger(), "  Goal %zu:", i);
+          printConstraints(request.goal_constraints[i]);
+      }
 
-    // --- Path Constraints ---
-    RCLCPP_INFO(this->get_logger(), "Path Constraints:");
-    printConstraints(request.path_constraints);
+      // --- Path Constraints ---
+      RCLCPP_INFO(this->get_logger(), "Path Constraints:");
+      printConstraints(request.path_constraints);
 
-    // --- Trajectory Constraints ---
-    RCLCPP_INFO(this->get_logger(), "Trajectory Constraints (%zu):", request.trajectory_constraints.constraints.size());
-    for (size_t i = 0; i < request.trajectory_constraints.constraints.size(); ++i)
-    {
-        RCLCPP_INFO(this->get_logger(), "  Constraint %zu:", i);
-        printConstraints(request.trajectory_constraints.constraints[i]);
-    }
+      // --- Trajectory Constraints ---
+      RCLCPP_INFO(this->get_logger(), "Trajectory Constraints (%zu):", request.trajectory_constraints.constraints.size());
+      for (size_t i = 0; i < request.trajectory_constraints.constraints.size(); ++i)
+      {
+          RCLCPP_INFO(this->get_logger(), "  Constraint %zu:", i);
+          printConstraints(request.trajectory_constraints.constraints[i]);
+      }
 
-    // // --- Reference Trajectories ---
-    // RCLCPP_INFO(this->get_logger(), "Reference Trajectories (%zu):", request.reference_trajectories.size());
-    // for (size_t i = 0; i < request.reference_trajectories.size(); ++i)
-    // {
-    //     const auto& ref = request.reference_trajectories[i];
-    //     RCLCPP_INFO(this->get_logger(), "  Reference trajectory %zu:", i);
-    //     RCLCPP_INFO(this->get_logger(), "    Trajectory points: %zu", ref.trajectory.joint_trajectory.points.size());
-    // }
+      // // --- Reference Trajectories ---
+      // RCLCPP_INFO(this->get_logger(), "Reference Trajectories (%zu):", request.reference_trajectories.size());
+      // for (size_t i = 0; i < request.reference_trajectories.size(); ++i)
+      // {
+      //     const auto& ref = request.reference_trajectories[i];
+      //     RCLCPP_INFO(this->get_logger(), "  Reference trajectory %zu:", i);
+      //     RCLCPP_INFO(this->get_logger(), "    Trajectory points: %zu", ref.trajectory.joint_trajectory.points.size());
+      // }
 
-    RCLCPP_INFO(this->get_logger(), "=========================");
-}
+      RCLCPP_INFO(this->get_logger(), "============================================================================================");
+  }
 
     void handle_accepted_compute_grasp_validity_(
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle
