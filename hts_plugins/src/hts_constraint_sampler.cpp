@@ -157,12 +157,14 @@ bool hts_plugins::HTSIKConstraintSampler::sampleHelper(moveit::core::RobotState&
 bool hts_plugins::HTSIKConstraintSampler::configure(const moveit_msgs::msg::Constraints &constr) {
     RCLCPP_INFO(getLogger(), "Configuring HTSIKConstraintSampler...");
     bool ret = constraint_samplers::IKConstraintSampler::configure(constr);
-    constraint_samplers::IKConstraintSampler::setVerbose(true);
+    
+    if (!ret) RCLCPP_ERROR(getLogger(), "Configure failed.");
+
     return ret;
 }
 
 bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen::Quaterniond& quat, const moveit::core::RobotState& ks, unsigned int max_attempts) {
-    RCLCPP_INFO(getLogger(), "HTSIK Sampling Pose from HTSIKConstraintSampler...");
+    // RCLCPP_INFO(getLogger(), "HTSIK Sampling Pose from HTSIKConstraintSampler...");
 
     if (ks.dirtyLinkTransforms()) {
         // samplePose below requires accurate transforms
@@ -218,7 +220,7 @@ bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen
     // RCLCPP_INFO(getLogger(), "Original X Axis is: %.5f %.5f %.5f", reference_axis.x(), reference_axis.y(), reference_axis.z());
 
     double alignment = translated_x_axis.dot(reference_axis);
-    RCLCPP_INFO(getLogger(), "HTSIK Axis Alignment is %f", alignment);
+    RCLCPP_INFO(getLogger(), "HTSIK Axis Alignment is %f, angle errors are %f, %f, %f", alignment, angle_x, angle_y, angle_z);
     
     geometry_msgs::msg::Pose pose;
 
@@ -231,12 +233,12 @@ bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen
     pose.orientation.z = quat.z();
     pose.orientation.w = quat.w();
 
-    log_pose(pose, "HTSIK Received Sample");
-
     if (alignment < 0.95) {
         RCLCPP_INFO(getLogger(), "Alignment is not good... failing.");
         return false;
     }
+
+    log_pose(pose, "HTSIK Received Sample");
 
     return true;
 }
@@ -273,8 +275,24 @@ bool hts_plugins::HTSIKConstraintSamplerAllocator::canService(
     ) {
 
         RCLCPP_INFO(getLogger(), "HTSIKConstraintSampler compatible due to orientation constraint");
-        return false;
+        return true;
     }
+
+    if (
+        constr.orientation_constraints.size() == 2 && constr.position_constraints.size() && (
+            constr.orientation_constraints[0].absolute_x_axis_tolerance > 2.0 ||
+            constr.orientation_constraints[0].absolute_y_axis_tolerance > 2.0 ||
+            constr.orientation_constraints[0].absolute_z_axis_tolerance > 2.0 ||
+            constr.orientation_constraints[1].absolute_x_axis_tolerance > 2.0 ||
+            constr.orientation_constraints[1].absolute_y_axis_tolerance > 2.0 ||
+            constr.orientation_constraints[1].absolute_z_axis_tolerance > 2.0
+        )
+    ) {
+
+        RCLCPP_INFO(getLogger(), "HTSIKConstraintSampler compatible due to two orientation constraints plus position constraint");
+        return true;
+    }
+
 
 
     if (constr.name == "hts_constraint") {

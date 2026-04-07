@@ -21,7 +21,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
-LOG_LEVEL = 'info'
+LOG_LEVEL = 'debug'
 
 moveit_config = (
     MoveItConfigsBuilder("hts")
@@ -89,6 +89,7 @@ def load_yaml(package_name, file_path):
         with open(absolute_file_path, 'r') as file:
             return yaml.safe_load(file)
     except EnvironmentError:  # parent of IOError, OSError *and* Windows Error where available
+        print(f"Unable to locate {package_name}: {file_path}")
         return None
 
 def get_robot_semantics(context: LaunchContext, launch_configurations):
@@ -138,6 +139,8 @@ def create_hts_node(context: LaunchContext, launch_configurations):
             #  "planning_plugin": "ompl_interface/OMPLPlanner",
              "stomp_moveit": load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
              "ompl": load_yaml("hts_moveit_config", "config/ompl_planning.yaml"),
+            "constraint_samplers": "hts_plugins::HTSIKConstraintSamplerAllocator"
+
              },
             robot_description,
             robot_description_semantic,
@@ -148,7 +151,7 @@ def create_hts_node(context: LaunchContext, launch_configurations):
             moveit_config.robot_description_kinematics,
         ],
         arguments=[
-            '--ros-args', '--log-level', LOG_LEVEL
+            '--ros-args', '--log-level', "info"
         ]
     )
 
@@ -201,7 +204,7 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             },
         ],
         arguments=[
-            '--ros-args', '--log-level', 'error'
+            '--ros-args', '--log-level', LOG_LEVEL
         ]
     )
 
