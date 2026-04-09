@@ -913,20 +913,20 @@ public:
       goal_pose.orientation.z = actual_grasp_pose.orientation.z;
       goal_pose.orientation.w = actual_grasp_pose.orientation.w;
 
-      RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
-      moveit::core::RobotState computed_ik_move(planning_scene->getRobotModel());
-      if (!compute_IK_manually(goal_pose, computed_ik_move)) {
-        RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
-        result->success = true;
-        result->is_valid = false;
-        result->score = 0.0;
-        result->message = "Plan (move goal IK) is not valid";
-        result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
-        result->err_source = "move goal IK";
-        result->err_message = "";
-        goal_handle->succeed(result);
-        return;
-      }
+      // RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
+      // moveit::core::RobotState computed_ik_move(planning_scene->getRobotModel());
+      // if (!compute_IK_manually(goal_pose, computed_ik_move)) {
+      //   RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
+      //   result->success = true;
+      //   result->is_valid = false;
+      //   result->score = 0.0;
+      //   result->message = "Plan (move goal IK) is not valid";
+      //   result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
+      //   result->err_source = "move goal IK";
+      //   result->err_message = "";
+      //   goal_handle->succeed(result);
+      //   return;
+      // }
 
       // RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
       // planning_scene->checkCollision(collision_request, collision_response, computed_ik_move);
