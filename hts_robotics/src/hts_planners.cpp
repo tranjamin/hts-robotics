@@ -18,25 +18,22 @@
 #include <tf2_eigen/tf2_eigen.hpp>
 
 moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+    #define RUN_REFINEMENT_PICKUP true
+    
+    // set the start state of the plan
     move_group_interface_->getCurrentState(10.0);
     move_group_interface_->setStartState(start_state);
 
-    auto current_pose = move_group_interface_->getCurrentPose();
+    // clear constraints and set the target pose
     move_group_interface_->clearPathConstraints();
     move_group_interface_->setPoseTarget(target_pose);
 
-    RCLCPP_INFO(this->get_logger(), "Calculating Axis Alignment...");
-    Eigen::Quaterniond q(current_pose.pose.orientation.w, current_pose.pose.orientation.x, current_pose.pose.orientation.y, current_pose.pose.orientation.z);
-    Eigen::Vector3d reference_axis(0, 0, 1);
-    Eigen::Vector3d translated_axis = q * Eigen::Vector3d(1, 0, 0);
-    double alignment = translated_axis.dot(reference_axis);
-    RCLCPP_INFO(this->get_logger(), "Axis Alignment is %f", alignment);
-
-
+    // plan
     RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
     moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
     RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
 
+    // report the trajectory length
     if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
       float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
       RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
@@ -44,40 +41,47 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
       return ompl_status;
     }
 
+    // report the start state
     this->print_robot_state(plan.start_state);
-    // const auto& pt = plan.trajectory.joint_trajectory.points.front();
-    // for (size_t i = 0; i < pt.positions.size(); ++i) {
-    //   RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-    //     plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-    //     pt.positions[i]);
-    // }
 
-    RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+    if (RUN_REFINEMENT_PICKUP) {
+        RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+        moveit::core::MoveItErrorCode stomp_status = this->refine_path_with_stomp(plan);
 
-    moveit::core::MoveItErrorCode stomp_status = this->refine_path_with_stomp(plan);
+        // report the starting point of the trajectory before refinement
+        const auto& pt = plan.trajectory.joint_trajectory.points.front();
+        for (size_t i = 0; i < pt.positions.size(); ++i) {
+            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+                plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+                pt.positions[i]);
+        }
 
-    if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-      float trajectory_length_pickup = (float) this->compute_trajectory_length_(plan.trajectory.joint_trajectory);
-      RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
-    } else {
-      return ompl_status;
+        if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+            float trajectory_length_pickup = (float) this->compute_trajectory_length_(plan.trajectory.joint_trajectory);
+            RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+        } else {
+            return ompl_status;
+        }
+
+        // report the starting point of the trajectory after refinement
+	    const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
+	    for (size_t i = 0; i < pt2.positions.size(); ++i) {
+            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+            pt2.positions[i]);
+	    }
     }
-
-    // const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
-    //   for (size_t i = 0; i < pt2.positions.size(); ++i) {
-    //     RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-    //       plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-    //       pt2.positions[i]);
-    //   }
-
 
     return ompl_status;
 }
 
 moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
+    #define RUN_REFINEMENT_MOVE true
+    #define USE_SELF_PIPELINE false
+    
     move_group_interface_->setStartState(start_state);
       
-    // Apply orientation constraints
+    // define orientation constraints
     moveit_msgs::msg::OrientationConstraint orientation_constraint;
     orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
     orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
@@ -86,36 +90,32 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
     orientation_constraint.absolute_y_axis_tolerance = 0.6;
     orientation_constraint.absolute_z_axis_tolerance = 0.6;
     orientation_constraint.weight = 1.0;
-    // orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
-      
-    moveit_msgs::msg::Constraints all_constraints;
-    all_constraints.name = "Move Constraint";
-    all_constraints.orientation_constraints.emplace_back(orientation_constraint);
+    orientation_constraint.parameterization = orientation_constraint.XYZ_EULER_ANGLES;
 
-    this->log_pose(start_pose, "Start Pose");
-    this->log_pose(target_pose, "Target Pose");
-
-    // move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
+    // set the goal and temporarily change the orientation tolerance to infinite
     move_group_interface_->setPoseTarget(target_pose);
     double orig_goal_tolerance = move_group_interface_->getGoalOrientationTolerance();
     move_group_interface_->setGoalOrientationTolerance(3.142);
 
+    // apply orientation constraint
+    moveit_msgs::msg::Constraints all_constraints;
+    all_constraints.name = "Move Constraint";
+    all_constraints.orientation_constraints.emplace_back(orientation_constraint);
     move_group_interface_->clearPathConstraints();
     move_group_interface_->setPathConstraints(all_constraints);
     RCLCPP_INFO(this->get_logger(), "Applied orientation constraints to planning scene.");
 
-    RCLCPP_INFO(this->get_logger(), "Displaying some info about the move...");
-    planning_interface::MotionPlanResponse motion_plan_response;
-    planning_interface::MotionPlanRequest motion_plan_request;
     bool ompl_status;
     moveit::core::MoveItErrorCode err_code;
-
-    #define USE_SELF_PIPELINE false
 
     if (!USE_SELF_PIPELINE) {
         RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL built in pipeline...");
         ompl_status = (err_code = move_group_interface_->plan(plan)) == moveit::core::MoveItErrorCode::SUCCESS;
     } else {
+        RCLCPP_INFO(this->get_logger(), "Displaying some info about the move...");
+        planning_interface::MotionPlanResponse motion_plan_response;
+        planning_interface::MotionPlanRequest motion_plan_request;
+
         move_group_interface_->constructMotionPlanRequest(motion_plan_request);
         motion_plan_request.goal_constraints[0].name = "Move Goal Constraint";
         motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
@@ -153,9 +153,11 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
         plan.start_state = motion_plan_response.start_state;
     }
 
+    // clear path constraints and reset orientation tolerance
     move_group_interface_->clearPathConstraints();
     move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
 
+    // report the trajectory length
     if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) this->compute_trajectory_length_(plan.trajectory.joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
@@ -163,31 +165,33 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
         return ompl_status;
     }
 
-    const auto& pt = plan.trajectory.joint_trajectory.points.front();
-    for (size_t i = 0; i < pt.positions.size(); ++i) {
-        RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-    	    plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-        	pt.positions[i]);
+    if (RUN_REFINEMENT_MOVE) {
+        RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+        moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+
+        // report the starting point of the trajectory before refinement
+        const auto& pt = plan.trajectory.joint_trajectory.points.front();
+        for (size_t i = 0; i < pt.positions.size(); ++i) {
+            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+                plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+                pt.positions[i]);
+        }
+
+        if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+            float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+            RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+        } else {
+            return ompl_status;
+        }
+        	
+        // report the starting point of the trajectory after refinement
+	    const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
+	    for (size_t i = 0; i < pt2.positions.size(); ++i) {
+            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
+            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+            pt2.positions[i]);
+	    }
     }
-
-
-	// RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
-	// moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
-
-
-	// if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
-	//   float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
-	//   RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
-	// } else {
-	//   return ompl_status;
-	// }
-
-	// const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
-	//   for (size_t i = 0; i < pt2.positions.size(); ++i) {
-	//     RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-	//       plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-	//       pt2.positions[i]);
-	//   }
 
 	return ompl_status;
 }
@@ -220,11 +224,11 @@ moveit::core::MoveItErrorCode hts_node::refine_path_with_stomp(moveit::planning_
     bool stomp_status = planning_pipeline->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
 
     if (stomp_status) {
-    moveit_msgs::msg::RobotTrajectory stomp_traj;
-    motion_plan_response.trajectory->getRobotTrajectoryMsg(stomp_traj);
+        moveit_msgs::msg::RobotTrajectory stomp_traj;
+        motion_plan_response.trajectory->getRobotTrajectoryMsg(stomp_traj);
 
-    // plan.trajectory.joint_trajectory = stomp_traj.joint_trajectory;
-    // plan.trajectory.multi_dof_joint_trajectory = stomp_traj.multi_dof_joint_trajectory;
+        plan.trajectory.joint_trajectory = stomp_traj.joint_trajectory;
+        plan.trajectory.multi_dof_joint_trajectory = stomp_traj.multi_dof_joint_trajectory;
     }
 
     RCLCPP_INFO(this->get_logger(), "Finished Planning STOMP. Result success is %d with error code %d", stomp_status, motion_plan_response.error_code.val);
