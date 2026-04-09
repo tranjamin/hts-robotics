@@ -8,7 +8,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, ExecuteProcess, RegisterEventHandler
 from launch.event_handlers import OnProcessExit, OnProcessStart
 
-from launch.actions import IncludeLaunchDescription
+from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch import LaunchContext, LaunchDescription
 from launch.actions import IncludeLaunchDescription, TimerAction, LogInfo
@@ -17,9 +17,32 @@ from launch.substitutions import  LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
 from launch_ros.substitutions import FindPackageShare
+from moveit_configs_utils import MoveItConfigsBuilder
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
+LOG_LEVEL = 'debug'
+
+moveit_config = (
+    MoveItConfigsBuilder("hts")
+    .robot_description(
+        file_path="robot/fr3.urdf.xacro",
+        mappings={
+            "ros2_control_hardware_type": LaunchConfiguration(
+                "ros2_control_hardware_type"
+            )
+        },
+    )
+    .robot_description_semantic(file_path="robot/fr3.srdf")
+    .planning_scene_monitor(
+        publish_robot_description=True, publish_robot_description_semantic=True
+    )
+    .trajectory_execution(file_path="config/moveit_controllers.yaml")
+    .planning_pipelines(
+        pipelines=["stomp", "ompl", "chomp", "pilz_industrial_motion_planner"]
+    )
+    .to_moveit_configs()
+)
 
 def get_robot_description(context: LaunchContext, launch_configurations):
     subs = lambda x : context.perform_substitution(launch_configurations[x].get('launch_config'))
@@ -66,6 +89,7 @@ def load_yaml(package_name, file_path):
         with open(absolute_file_path, 'r') as file:
             return yaml.safe_load(file)
     except EnvironmentError:  # parent of IOError, OSError *and* Windows Error where available
+        print(f"Unable to locate {package_name}: {file_path}")
         return None
 
 def get_robot_semantics(context: LaunchContext, launch_configurations):
@@ -97,25 +121,6 @@ def get_rviz_config():
     rviz_full_config = os.path.join(rviz_base, 'moveit.rviz')
     return rviz_full_config
 
-def get_ompl_config():
-    ompl_planning_pipeline_config = {
-        'move_group': {
-            'planning_plugin': 'ompl_interface/OMPLPlanner',
-            'request_adapters': 'default_planner_request_adapters/AddTimeOptimalParameterization '
-                                'default_planner_request_adapters/ResolveConstraintFrames '
-                                'default_planner_request_adapters/FixWorkspaceBounds '
-                                'default_planner_request_adapters/FixStartStateBounds '
-                                'default_planner_request_adapters/FixStartStateCollision '
-                                'default_planner_request_adapters/FixStartStatePathConstraints',
-            'start_state_max_bounds_error': 0.1,
-        }
-    }
-    ompl_planning_yaml = load_yaml(
-        'hts_robotics', 'config/ompl_planning.yaml'
-    )
-    ompl_planning_pipeline_config['move_group'].update(ompl_planning_yaml)
-    return ompl_planning_pipeline_config
-
 def create_hts_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
@@ -130,12 +135,23 @@ def create_hts_node(context: LaunchContext, launch_configurations):
         namespace=namespace_str,
         parameters=[
             objects_yaml,
-            {"use_sim_time": USE_SIM_TIME},
+            {"use_sim_time": USE_SIM_TIME,
+            #  "planning_plugin": "ompl_interface/OMPLPlanner",
+             "stomp_moveit": load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
+             "ompl": load_yaml("hts_moveit_config", "config/ompl_planning.yaml"),
+            "constraint_samplers": "hts_plugins::HTSIKConstraintSamplerAllocator"
+
+             },
             robot_description,
             robot_description_semantic,
+            moveit_config.joint_limits,
+            moveit_config.planning_pipelines,
+            moveit_config.pilz_cartesian_limits,
+            moveit_config.trajectory_execution,
+            moveit_config.robot_description_kinematics,
         ],
         arguments=[
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', "debug"
         ]
     )
 
@@ -144,14 +160,11 @@ def create_hts_node(context: LaunchContext, launch_configurations):
 def create_moveit_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
-    robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
     namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
     moveit_simple_controllers_yaml = load_yaml('hts_robotics', 'config/simple_controllers.yaml')
-    sensors_yaml = load_yaml("hts_robotics", "config/sensors_kinect_pointcloud.yaml")
+    sensors_yaml = load_yaml("hts_moveit_config", "config/sensors_realsense_pointcloud.yaml")
     general_config = load_yaml("hts_robotics", "config/config.yaml")
-    ompl_planning_pipeline_config = get_ompl_config()
-    trajectory_config = load_yaml("hts_robotics", "config/trajectory_execution.yaml")
 
     moveit_controllers = {
         'moveit_simple_controller_manager': moveit_simple_controllers_yaml,
@@ -175,16 +188,23 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
             # sensors_yaml,
             robot_description,
             robot_description_semantic,
-            robot_kinematics_yaml,
-            ompl_planning_pipeline_config,
-            trajectory_config,
+
+            moveit_config.joint_limits,
+            moveit_config.planning_pipelines,
+            moveit_config.pilz_cartesian_limits,
+            moveit_config.trajectory_execution,
+            moveit_config.robot_description_kinematics,
             moveit_controllers,
+            load_yaml("hts_moveit_config", "config/planning_parameters.yaml"),
+            load_yaml("hts_moveit_config", "config/stomp_planning.yaml"),
             planning_scene_monitor_parameters,
-            trajectory_config,
-            {"use_sim_time": USE_SIM_TIME},
+            {
+                "use_sim_time": USE_SIM_TIME,
+                "constraint_samplers": "hts_plugins::HTSIKConstraintSamplerAllocator"
+            },
         ],
         arguments=[
-            '--ros-args', '--log-level', 'error'
+            '--ros-args', '--log-level', LOG_LEVEL
         ]
     )
 
@@ -193,10 +213,8 @@ def create_moveit_node(context: LaunchContext, launch_configurations):
 def create_rviz_node(context: LaunchContext, launch_configurations):
     robot_description = get_robot_description(context, launch_configurations)
     robot_description_semantic = get_robot_semantics(context, launch_configurations)
-    robot_kinematics_yaml = load_yaml('hts_robotics', 'config/kinematics.yaml')
     namespace_str = context.perform_substitution(launch_configurations['namespace'].get('launch_config'))
 
-    ompl_planning_pipeline_config = get_ompl_config()
     rviz_full_config = get_rviz_config()
 
     rviz_node = Node(
@@ -212,8 +230,12 @@ def create_rviz_node(context: LaunchContext, launch_configurations):
         parameters=[
             robot_description,
             robot_description_semantic,
-            ompl_planning_pipeline_config,
-            robot_kinematics_yaml,
+
+            moveit_config.joint_limits,
+            moveit_config.planning_pipelines,
+            moveit_config.pilz_cartesian_limits,
+            moveit_config.trajectory_execution,
+            moveit_config.robot_description_kinematics,
             {"use_sim_time": USE_SIM_TIME}
         ],
     )
@@ -236,7 +258,7 @@ def create_publisher_node(context: LaunchContext, launch_configurations):
             {"use_sim_time": USE_SIM_TIME},
             ],
         arguments=[
-            '--ros-args', '--log-level', 'error'
+            '--ros-args', '--log-level', LOG_LEVEL
         ]
     )
 
@@ -294,7 +316,14 @@ def generate_launch_description():
 
    # Gazebo Sim
     print("Defining Gazebo...")
-    os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
+    # os.environ['GZ_SIM_RESOURCE_PATH'] = os.path.dirname(get_package_share_directory('franka_description'))
+    os.environ['GZ_SIM_RESOURCE_PATH'] = os.pathsep.join([
+            os.environ.get('GZ_SIM_RESOURCE_PATH', ''),
+            os.path.dirname(get_package_share_directory('franka_description')),
+            os.path.dirname(get_package_share_directory('hts_robotics')),
+        ])
+    print(os.environ.get('GZ_SIM_RESOURCE_PATH'))
+
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     gazebo_empty_world = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -377,6 +406,19 @@ def generate_launch_description():
         args=[launch_params]
     )
 
+    hts_mission = Node(
+        package="hts_robotics",
+        executable='hts_missions',
+        name='hts_missions',
+        output='screen',
+        parameters=[
+            {"use_sim_time": USE_SIM_TIME},
+        ],
+        arguments=[
+            '--ros-args', '--log-level', 'info'
+        ]
+    )
+
     state_publisher_node = OpaqueFunction(
         function = create_publisher_node,
         args=[launch_params]
@@ -388,15 +430,15 @@ def generate_launch_description():
     )
 
     joint_publisher_node = Node(
-            package='joint_state_publisher',
-            executable='joint_state_publisher',
-            name='joint_state_publisher',
-            namespace='',
-            parameters=[
-                {'source_list': ['joint_states'], 'rate': 30},
-                {"use_sim_time": USE_SIM_TIME},
-                 ],
-        )
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        namespace='',
+        parameters=[
+            {'source_list': ['joint_states'], 'rate': 30},
+            {"use_sim_time": USE_SIM_TIME},
+        ],
+    )
 
     topic_bridges = Node(
         package="ros_gz_bridge",
@@ -411,11 +453,12 @@ def generate_launch_description():
             "/camera_sim/depth_image@sensor_msgs/msg/Image@gz.msgs.Image",
             "/camera_sim/image@sensor_msgs/msg/Image@gz.msgs.Image",
             "/camera_sim/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked",
+            '--ros-args', '--log-level', 'error',
         ],
         parameters = [
             {'use_sim_time': USE_SIM_TIME}
         ],
-        output="screen",
+        output="log",
     )
 
     realsense_node = IncludeLaunchDescription(
@@ -436,7 +479,55 @@ def generate_launch_description():
             load_yaml('hts_robotics', 'config/anygrasp_params.yaml')
         ]
     )
+
+    octomap_node = Node(
+        package='octomap_server',
+        executable='octomap_server_node',
+        name="octomap_sim",
+        output="log",
+        parameters=[{
+            'frame_id': 'world',
+            'base_frame_id': 'world',
+
+            'resolution': 0.002,
+            'use_sim_time': True,
+
+            # 'occupancy_min_z': 0.01,
+            'occupancy_max_z': 0.5,
+
+            'filter_ground_plane': True,
+            'filter_speckles': True,
+            # 'ground_filter.angle':
+            'ground_filter.distance': 0.01,
+            'ground_filter.plane_distance': 0.01,
+
+            'sensor_model.hit': 0.9,
+            'sensor_model.miss': 0.03,
+            'sensor_model.max_range': 1.0,
+        }],
+        remappings=[
+            ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
+        ],
+        arguments=[
+            '--ros-args', '--log-level', 'error',
+        ]
+    )
     
+    camera_transform = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        name="sim_camera_static_tf",
+        arguments=[
+        "--frame-id", "camera_depth_frame",
+        "--child-frame-id", "fr3/fr3_link7/custom_camera_rgbd",
+        '--ros-args', '--log-level', 'error',
+        ],
+        parameters=[
+            { 'use_sim_time': True}
+        ],
+        output="log"
+    )
+
     all_launch_arguments = [x.get('launch_argument') for (_, x) in launch_params.items()]
 
     return LaunchDescription(all_launch_arguments + [
@@ -444,50 +535,8 @@ def generate_launch_description():
         # gripper_launch,
         # realsense_node,
         anygrasp_node,
-
-        Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
-            name="sim_camera_static_tf",
-            arguments=[
-            "--frame-id", "camera_depth_frame",
-            "--child-frame-id", "fr3/fr3_link7/custom_camera_rgbd"
-            ],
-            parameters=[
-                { 'use_sim_time': True}
-            ],
-            # output="screen"
-        ),
-
-        Node(
-            package='octomap_server',
-            executable='octomap_server_node',
-            name="octomap_sim",
-            output="screen",
-            parameters=[{
-                'frame_id': 'world',
-                'base_frame_id': 'world',
-
-                'resolution': 0.005,
-                'use_sim_time': True,
-
-                # 'occupancy_min_z': 0.01,
-                'occupancy_max_z': 0.5,
-
-                'filter_ground_plane': True,
-                'filter_speckles': True,
-                # 'ground_filter.angle':
-                'ground_filter.distance': 0.01,
-                'ground_filter.plane_distance': 0.01,
-
-                'sensor_model.hit': 0.9,
-                'sensor_model.miss': 0.03,
-                'sensor_model.max_range': 1.0,
-            }],
-            remappings=[
-                ('/cloud_in', '/camera_sim/points')  # your canonical cloud topic
-            ]
-        ),
+        camera_transform,
+        octomap_node,
 
 
         TimerAction(
@@ -517,6 +566,6 @@ def generate_launch_description():
 
         TimerAction(
             period=30.0,
-            actions=[moveit_node, rviz_node, hts_node]
+            actions=[moveit_node, rviz_node, hts_node, hts_mission]
         ),
     ])

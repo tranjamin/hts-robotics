@@ -35,9 +35,10 @@ gripper_position_controller:
       - velocity
     joints:
       - fr3_finger_joint1
-      # - fr3_finger_joint2
+      - fr3_finger_joint2
     gains:
       fr3_finger_joint1: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_finger_joint2: { ff_velocity_scale: 1., p: 600., d: 30., i: 0., i_clamp: 1. }
 
 
 fr3_arm_controller:

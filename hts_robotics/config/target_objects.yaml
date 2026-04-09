@@ -1,43 +1,89 @@
 objects:
-  - object_0
-  - object_1
-  - object_2
+  - conic_flask
+  - volumetric_flask
+  - round_bottomed_flask
+  - measuring_cylinder_sml
+  - measuring_cylinder_lrg
+  - beaker_sml
+  - beaker_med
+  - beaker_lrg
 
-object_0:
+conic_flask:
   object_id: 0
-  geometry_file: "box.sdf"
-  x: 0.4
-  y: -0.2
-  z: 0.025
-  R: 0.0
-  P: 0.0
-  Y: 0.0
-  primitive_type: BOX # or SPHERE, CYLINDER, CONE
+  geometry_file: "conic_flask.sdf"
+  x: 0.3
+  y: -0.3
+  z: 0.03
+  primitive_type: MESH
   primitive_dims:
-    x: 0.05
-    y: 0.05
-    z: 0.05
+    file: "package://hts_robotics/objects/meshes/Conic_Flask_Measured_Low_Fidelity_mm.stl"
 
-object_1:
+volumetric_flask:
   object_id: 1
-  geometry_file: "cylinder.sdf"
-  x: 0.6
+  geometry_file: "volumetric_flask.sdf"
+  x: 0.3
   y: 0.0
-  z: 0.05
-  R: 0.0
-  P: 0.0
-  Y: 0.0
-  primitive_type: CYLINDER # or SPHERE, CYLINDER, CONE
+  z: 0.03
+  primitive_type: MESH
   primitive_dims:
-    radius: 0.03
-    height: 0.1
+    file: "package://hts_robotics/objects/meshes/Volumetric_Flask_Measured_Low_Fidelity_mm.stl"
 
-object_2:
+round_bottomed_flask:
   object_id: 2
-  geometry_file: "sphere.sdf"
-  x: 0.4
-  y: 0.2
-  z: 0.02
-  primitive_type: SPHERE
+  geometry_file: "round_bottomed_flask.sdf"
+  x: 0.3
+  y: 0.3
+  z: 0.03
+  primitive_type: MESH
   primitive_dims:
-    radius: 0.03
+    file: "package://hts_robotics/objects/meshes/Round_Flask_Measured_Low_Fidelity_mm.stl"
+
+beaker_sml:
+  object_id: 3
+  geometry_file: "beaker_small.sdf"
+  x: -0.3
+  y: -0.3
+  z: 0.03
+  primitive_type: MESH
+  primitive_dims:
+    file: "package://hts_robotics/objects/meshes/Beaker_Small_Low_Fidelity_mm.stl"
+
+beaker_med:
+  object_id: 4
+  geometry_file: "beaker_medium.sdf"
+  x: -0.3
+  y: 0.0
+  z: 0.03
+  primitive_type: MESH
+  primitive_dims:
+    file: "package://hts_robotics/objects/meshes/Beaker_Medium_Low_Fidelity_mm.stl"
+
+beaker_lrg:
+  object_id: 5
+  geometry_file: "beaker_large.sdf"
+  x: -0.3
+  y: 0.3
+  z: 0.03
+  primitive_type: MESH
+  primitive_dims:
+    file: "package://hts_robotics/objects/meshes/Beaker_Large_Low_Fidelity_mm.stl"
+  
+measuring_cylinder_sml:
+  object_id: 6
+  geometry_file: "measuring_cylinder_small.sdf"
+  x: 0.0
+  y: -0.3
+  z: 0.03
+  primitive_type: MESH
+  primitive_dims:
+    file: "package://hts_robotics/objects/meshes/Measuring_Cylinder_Small_Low_Fidelity_mm.stl"
+
+measuring_cylinder_lrg:
+  object_id: 7
+  geometry_file: "measuring_cylinder_large.sdf"
+  x: 0.0
+  y: 0.3
+  z: 0.03
+  primitive_type: MESH
+  primitive_dims:
+    file: "package://hts_robotics/objects/meshes/Measuring_Cylinder_Large_Low_Fidelity_mm.stl"

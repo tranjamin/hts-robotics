@@ -15,20 +15,34 @@ find_package(sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 find_package(hts_msgs REQUIRED)
+find_package(hts_plugins REQUIRED)
 
+add_executable(hts_node 
+  src/hts_main.cpp
+  src/hts_node.cpp
+  src/hts_handlers.cpp
+  src/hts_planners.cpp
+  src/hts_planning_scene.cpp
+  src/hts_utility.cpp
+  )
 
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/MoveTarget.action"
-  "action/PickUpTarget.action"
-  "action/GripperClose.action"
-  "action/GripperOpen.action"
-  "action/GraspObject.action"
-  DEPENDENCIES geometry_msgs
+ament_target_dependencies(hts_node
+  rclcpp
+  std_msgs
+  geometry_msgs
+  sensor_msgs
+  moveit_ros_planning
+  moveit_ros_planning_interface
+  hts_msgs
+  hts_plugins
 )
 
+target_include_directories(hts_node PUBLIC
+  include
+)
 
-add_executable(hts_node src/hts_main.cpp)
-ament_target_dependencies(hts_node
+add_executable(hts_missions src/hts_missions.cpp)
+ament_target_dependencies(hts_missions
   rclcpp
   std_msgs
   geometry_msgs
@@ -38,16 +52,13 @@ ament_target_dependencies(hts_node
   hts_msgs
 )
 
-rosidl_get_typesupport_target(cpp_typesupport_target
-  ${PROJECT_NAME} "rosidl_typesupport_cpp"
-)
-
-target_link_libraries(hts_node
-  ${cpp_typesupport_target}
+install(TARGETS 
+  hts_node
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 install(TARGETS 
-  hts_node
+  hts_missions
   DESTINATION lib/${PROJECT_NAME}
 )
 

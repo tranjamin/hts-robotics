@@ -168,7 +168,10 @@ RUN sudo -E python3 setup.py install --user
 # Build PointNet2
 WORKDIR /build/pointnet2
 COPY anygrasp_sdk/pointnet2 .
-RUN sudo python3 setup.py install
+RUN export SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL=True \
+    && export TORCH_CUDA_ARCH_LIST="8.6;8.0;7.5;7.0;6.1;6.0;5.2;5.0" \
+    && sudo python3 -m pip install ninja \
+    && sudo -E python3 setup.py install --user
 
 WORKDIR /
 RUN sudo rm -rf /build
@@ -193,6 +196,10 @@ RUN rm -rf /home/$USERNAME/.ros \
 
 COPY franka_entrypoint.sh /franka_entrypoint.sh
 RUN sudo chmod +x /franka_entrypoint.sh
+
+RUN echo "XDG_RUNTIME_DIR=/tmp/runtime-root" >> /home/$USERNAME/.bashrc \
+    && mkdir -p $XDG_RUNTIME_DIR \
+    && chmod 700 $XDG_RUNTIME_DIR
 
 # Set the default shell to bash and the workdir to the source directory
 SHELL [ "/bin/bash", "-c" ]
