@@ -277,3 +277,23 @@ mkdir -p $XDG_RUNTIME_DIR
 chmod 700 $XDG_RUNTIME_DIR
 export OPEN3D_CPU_RENDERING=true
 ```
+
+Instructions for how to override OMPL:
+
+```bash
+sudo apt-get remove ros-humble-ompl
+
+cd ompl
+git submodule update --init --recursive
+mkdir -p build/Release
+cd build/Release
+cmake ../..
+make -j <num_cores> # replace <num_cores> with the number of cores on your machine
+
+make install
+
+(cd src/ompl/build/Release && make -j 10 && sudo make install) # alternative option for rebuilding and reinstalling
+
+# now rebuild and check it links properly:
+ldd install/moveit_planners_ompl/lib/libmoveit_ompl_interface.so | grep ompl # make sure this points towards usr/local
+```

@@ -11,10 +11,6 @@ class HTSStateSampler : public ompl::base::ValidStateSampler {
             name_ = "HTS state sampler";
         }
 
-    // Generate a sample in the valid part of the R^3 state space
-    // Valid states satisfy the following constraints:
-    // -1<= x,y,z <=1
-    // if .25 <= z <= .5, then |x|>.8 and |y|>.8
     bool sample(ompl::base::State *state) override {
         double* val = static_cast<ompl::base::RealVectorStateSpace::StateType*>(state)->values;
         double z = rng_.uniformReal(-1,1);
@@ -48,5 +44,36 @@ protected:
 };
 
 ompl::base::ValidStateSamplerPtr allocHTSStateSampler(const ob::SpaceInformation *si) {
+    return std::make_shared<HTSStateSampler>(si);
+}
+
+
+class HTSConstrainedSampler : public ompl::base::ConstrainedSampler {
+    public:
+        HTSConstrainedSampler(const ModelBasedPlanningContext* pc, constraint_samplers::ConstraintSamplerPtr cs) : ConstrainedSampler(const ModelBasedPlanningContext* pc, constraint_samplers::ConstraintSamplerPtr cs) {
+            name_ = "HTS constrained state sampler";
+        }
+
+    bool sampleUniform(ompl::base::State *state) override {
+
+    }
+
+    // We don't need this in the example below.
+    bool sampleUniformNear(ompl::base::State* state, const ompl::base::State* near, const double distance) override {
+        throw ompl::Exception("HTSStateSampler::sampleNear", "not implemented");
+        return false;
+    }
+
+    // We don't need this in the example below.
+    bool sampleGaussian(ompl::base::State* state, const ompl::base::State* near, const double stdDev) override {
+        throw ompl::Exception("HTSStateSampler::sampleGaussian", "not implemented");
+        return false;
+    }
+
+protected:
+    ompl::RNG rng_;
+};
+
+ompl::base::StateSamplerPtr allocHTSConstrainedStateSampler(const ob::SpaceInformation *si) {
     return std::make_shared<HTSStateSampler>(si);
 }
