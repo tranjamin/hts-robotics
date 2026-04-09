@@ -1,0 +1,5 @@
+<library path="hts_plugins">
+  <class type="hts_plugins::HTSIKConstraintSamplerAllocator" base_class_type="constraint_samplers::ConstraintSamplerAllocator">
+    <description>IK Constraint Sampler for HTS Robotics.</description>
+  </class>
+</library>

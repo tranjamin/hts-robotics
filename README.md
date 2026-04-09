@@ -255,3 +255,45 @@ cmake --build .
 
 sudo apt install ros-humble-octomap-server
 ```
+
+Instructions to install stomp:
+```bash
+sudo apt remove -y ros-humble-moveit*
+git clone https://github.com/moveit/moveit2.git -b main
+for repo in moveit2/moveit2.repos $(f="moveit2/moveit2_$ROS_DISTRO.repos"; test -r $f && echo $f); do vcs import < "$repo"; done
+sudo apt update && rosdep update
+rosdep install -r --from-paths src/moveit_msgs src/moveit_resources src/moveit2 --ignore-src --rosdistro $ROS_DISTRO -y
+colcon build --symlink-install --packages-select moveit_msgs
+colcon build --symlink-install --packages-select moveit_resources moveit_resources_fanuc_description moveit_resources_panda_description moveit_resources_pr2_description moveit_resources_fanuc_moveit_config moveit_resources_panda_moveit_config
+colcon build --symlink-install --packages-select moveit_common moveit_core  --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release --executor sequential
+rm -rf install/moveit_ros_tests
+```
+
+```bash
+export XDG_RUNTIME_DIR=/tmp/runtime-root
+mkdir -p $XDG_RUNTIME_DIR
+chmod 700 $XDG_RUNTIME_DIR
+export OPEN3D_CPU_RENDERING=true
+```
+
+Instructions for how to override OMPL:
+
+```bash
+sudo apt-get remove ros-humble-ompl
+
+cd ompl
+git submodule update --init --recursive
+mkdir -p build/Release
+cd build/Release
+cmake ../..
+make -j <num_cores> # replace <num_cores> with the number of cores on your machine
+
+make install
+
+(cd src/ompl/build/Release && make -j 10 && sudo make install) # alternative option for rebuilding and reinstalling
+
+# now rebuild and check it links properly:
+ldd install/moveit_planners_ompl/lib/libmoveit_ompl_interface.so | grep ompl # make sure this points towards usr/local
+```

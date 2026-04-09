@@ -1,0 +1,39 @@
+path_tolerance: 0.005
+resample_dt: 0.02
+min_angle_change: 0.001
+
+default_workspace_bounds: 2.0
+start_state_max_bounds_error: 0.01
+start_state_max_dt: 0.1
+jiggle_fraction: 0.005
+max_sampling_attempts: 500
+
+goal_orientation_tolerance: 0.01
+goal_position_tolerance: 0.05
+planning_time: 5.0
+enforce_start_state: true
+
+planning_plugin: stomp_moveit/StompPlanner
+planning_plugins:
+  - stomp_moveit/StompPlanner
+# The order of the elements in the adapter corresponds to the order they are processed by the motion planning pipeline.
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  # - default_planning_request_adapters/CheckStartStateCollision
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+stomp_moveit:
+  enforce_start_state: true
+  num_timesteps: 80
+  num_iterations: 100
+  num_iterations_after_valid: 10
+  num_rollouts: 50
+  max_rollouts: 50
+  exponentiated_cost_sensitivity: 0.5
+  control_cost_weight: 0.1
+  delta_t: 0.05
