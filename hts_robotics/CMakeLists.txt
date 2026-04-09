@@ -17,7 +17,15 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(hts_msgs REQUIRED)
 find_package(hts_plugins REQUIRED)
 
-add_executable(hts_node src/hts_main.cpp)
+add_executable(hts_node 
+  src/hts_main.cpp
+  src/hts_node.cpp
+  src/hts_handlers.cpp
+  src/hts_planners.cpp
+  src/hts_planning_scene.cpp
+  src/hts_utility.cpp
+  )
+
 ament_target_dependencies(hts_node
   rclcpp
   std_msgs
@@ -27,6 +35,10 @@ ament_target_dependencies(hts_node
   moveit_ros_planning_interface
   hts_msgs
   hts_plugins
+)
+
+target_include_directories(hts_node PUBLIC
+  include
 )
 
 add_executable(hts_missions src/hts_missions.cpp)
