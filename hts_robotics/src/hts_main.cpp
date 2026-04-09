@@ -557,10 +557,10 @@ public:
       orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
       orientation_constraint.orientation = start_pose.orientation;
       orientation_constraint.absolute_x_axis_tolerance = 3.142;
-      orientation_constraint.absolute_y_axis_tolerance = 0.1;
-      orientation_constraint.absolute_z_axis_tolerance = 0.1;
+      orientation_constraint.absolute_y_axis_tolerance = 0.6;
+      orientation_constraint.absolute_z_axis_tolerance = 0.6;
       orientation_constraint.weight = 1.0;
-      orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
+      // orientation_constraint.parameterization = orientation_constraint.ROTATION_VECTOR;
       
       moveit_msgs::msg::Constraints all_constraints;
       all_constraints.name = "Move Constraint";
@@ -572,6 +572,7 @@ public:
       // move_group_interface_->setPositionTarget(target_pose.position.x, target_pose.position.y, target_pose.position.z);
       move_group_interface_->setPoseTarget(target_pose);
       double orig_goal_tolerance = move_group_interface_->getGoalOrientationTolerance();
+      move_group_interface_->setGoalOrientationTolerance(3.142);
 
       move_group_interface_->clearPathConstraints();
       move_group_interface_->setPathConstraints(all_constraints);
@@ -583,7 +584,7 @@ public:
       bool ompl_status;
       moveit::core::MoveItErrorCode err_code;
 
-      #define USE_SELF_PIPELINE true
+      #define USE_SELF_PIPELINE false
 
       if (!USE_SELF_PIPELINE) {
         RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL built in pipeline...");
@@ -626,6 +627,9 @@ public:
         plan.start_state = motion_plan_response.start_state;
       }
 
+      move_group_interface_->clearPathConstraints();
+      move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
+
       if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
@@ -640,8 +644,6 @@ public:
           pt.positions[i]);
       }
 
-      move_group_interface_->clearPathConstraints();
-      move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
 
       // RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
       // moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
