@@ -20,9 +20,9 @@ void hts_node::get_object_position(const std::shared_ptr<hts_msgs::srv::GetObjec
 
     auto map = planning_scene_interface_->getObjectPoses({object_name});
     if (map.empty()) {
-    RCLCPP_ERROR(this->get_logger(), "Could not find object in planning scene");
-    response->success = false;
-    return;
+        RCLCPP_ERROR(this->get_logger(), "Could not find object in planning scene");
+        response->success = false;
+        return;
     }
     geometry_msgs::msg::Pose target_moveit = map.at(object_name);
 
@@ -36,59 +36,82 @@ void hts_node::get_object_position(const std::shared_ptr<hts_msgs::srv::GetObjec
 
 void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle) {
     std::thread([this, goal_handle] {
-    
+
+        // flags to enable or disable steps
+        #define RUN_IK_PICKUP true
+        #define RUN_IK_MOVE false
+        #define RUN_COLLISIONS_PICKUP false
+        #define RUN_COLLISIONS_MOVE false
+
+        // lock planning scene
+        planning_scene_monitor::LockedPlanningSceneRO planning_scene(planning_scene_monitor_);
+
+        // retrieve object id
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
+
+        // result and error code objects
         auto result = std::make_shared<CustomActionComputeGraspValidity::Result>();
         moveit::core::MoveItErrorCode err_code;
 
-        planning_scene_monitor::LockedPlanningSceneRO planning_scene(planning_scene_monitor_);
-
+        // get the current state within bounds
         std::shared_ptr<moveit::core::RobotState> current_state = move_group_interface_->getCurrentState(10.0);
         current_state->enforceBounds();
+        
+        // remove all path constraints
         move_group_interface_->clearPathConstraints();
         
+        // retrieve the pose of the grasp
         geometry_msgs::msg::Pose grasp_pose = goal_handle->get_goal()->grasp_pose;
 
-        RCLCPP_INFO(this->get_logger(), "Computing IK (Pickup)...");
-        moveit::core::RobotState computed_ik_pickup(planning_scene->getRobotModel());
-        if (!this->compute_IK_manually(grasp_pose, computed_ik_pickup)) {
-            RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (pickup).");
-            result->success = true;
-            result->is_valid = false;
-            result->score = 0.0;
-            result->message = "Plan (pickup IK) is not valid";
-            result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
-            result->err_source = "pickup IK";
-            result->err_message = "";
-            goal_handle->succeed(result);
-            return;
+        // objects for collision detection
+        collision_detection::CollisionRequest collision_request;
+        collision_detection::CollisionResult collision_response;
+        collision_request.contacts = true;
+        collision_request.verbose = true;
+        collision_request.distance = true;
+        collision_request.detailed_distance = true;
+
+        // ---------------- try to do IK for the current grasp pose --------------- //
+        if (RUN_IK_PICKUP) {
+            RCLCPP_INFO(this->get_logger(), "Computing IK (Pickup)...");
+            moveit::core::RobotState computed_ik_pickup(planning_scene->getRobotModel());
+            if (!this->compute_IK_manually(grasp_pose, computed_ik_pickup)) {
+                RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (pickup).");
+                result->success = true;
+                result->is_valid = false;
+                result->score = 0.0;
+                result->message = "Plan (pickup IK) is not valid";
+                result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+                result->err_source = "pickup IK";
+                result->err_message = "";
+                goal_handle->succeed(result);
+                return;
+            }
+
+            // ---------------- try to do collision detection for the current grasp pose --------------- //
+            if (RUN_COLLISIONS_PICKUP) {
+                RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
+                planning_scene->checkCollision(collision_request, collision_response, computed_ik_pickup);
+
+                if (collision_response.collision) {
+                    RCLCPP_ERROR(this->get_logger(), "Goal Collision Failed...");
+                    printCollisionContacts(collision_response, get_logger());
+                    result->success = true;
+                    result->is_valid = false;
+                    result->score = 0.0;
+                    result->message = "Plan (pickup goal collisions) is not valid";
+                    result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
+                    result->err_source = "pickup goal collisions";
+                    result->err_message = "";
+                    goal_handle->succeed(result);
+                    return;
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "Goal Collision Succeeded. Closest distance is %f", collision_response.distance);
+                }
+            }
         }
 
-        // RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
-        // collision_detection::CollisionRequest collision_request;
-        // collision_detection::CollisionResult collision_response;
-        // collision_request.contacts = true;
-        // collision_request.verbose = true;
-        // collision_request.distance = true;
-        // collision_request.detailed_distance = true;
-        // planning_scene->checkCollision(collision_request, collision_response, computed_ik_pickup);
-
-        // if (collision_response.collision) {
-        //   RCLCPP_ERROR(this->get_logger(), "Goal Collision Failed...");
-        //   printCollisionContacts(collision_response, get_logger());
-        //   result->success = true;
-        //   result->is_valid = false;
-        //   result->score = 0.0;
-        //   result->message = "Plan (pickup goal collisions) is not valid";
-        //   result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
-        //   result->err_source = "pickup goal collisions";
-        //   result->err_message = "";
-        //   goal_handle->succeed(result);
-        //   return;
-        // } else {
-        //   RCLCPP_INFO(this->get_logger(), "Goal Collision Succeeded. Closest distance is %f", collision_response.distance);
-        // }
-
+        // ---------------- run trajectory generation for the pickup plan --------------- //
         moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
         err_code = this->plan_pickup(*current_state, grasp_pose, pickup_plan);
 
@@ -107,20 +130,23 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
 
         RCLCPP_INFO(this->get_logger(), "Planning (pickup) succeeded");
 
+        // compute trajectory length
         trajectory_msgs::msg::JointTrajectory pickup_joint_trajectory = pickup_plan.trajectory.joint_trajectory;
         float trajectory_length_pickup = (float) compute_trajectory_length_(pickup_joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Trajectory length (pickup) is %.5f", trajectory_length_pickup);
-        RCLCPP_INFO(this->get_logger(), "\n---\n");
         
+        // set start state for move operation
         moveit::core::RobotState move_start_state(*current_state);
         const moveit::core::JointModelGroup* joint_model_group = move_start_state.getJointModelGroup(move_group_interface_->getName());
         move_start_state.setJointGroupPositions(joint_model_group, pickup_joint_trajectory.points.back().positions);
         move_start_state.update();
         
+        // check to make sure that the start state is equal to the grasp pose
         geometry_msgs::msg::Pose actual_grasp_pose = tf2::toMsg(move_start_state.getGlobalLinkTransform(move_group_interface_->getEndEffectorLink()));
-        log_pose(actual_grasp_pose, "Check: Path is grasping at this pose");
-        log_pose(grasp_pose, "It is meant to grasp at this pose");
+        this->log_pose(actual_grasp_pose, "Check: Path is grasping at this pose");
+        this->log_pose(grasp_pose, "It is meant to grasp at this pose");
 
+        // create the goal state for the move operation
         geometry_msgs::msg::Pose goal_pose;
         goal_pose.position.x = goal_handle->get_goal()->goal_x;
         goal_pose.position.y = goal_handle->get_goal()->goal_y;
@@ -130,50 +156,59 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         goal_pose.orientation.z = actual_grasp_pose.orientation.z;
         goal_pose.orientation.w = actual_grasp_pose.orientation.w;
 
-        // RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
-        // moveit::core::RobotState computed_ik_move(planning_scene->getRobotModel());
-        // if (!compute_IK_manually(goal_pose, computed_ik_move)) {
-        //   RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
-        //   result->success = true;
-        //   result->is_valid = false;
-        //   result->score = 0.0;
-        //   result->message = "Plan (move goal IK) is not valid";
-        //   result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
-        //   result->err_source = "move goal IK";
-        //   result->err_message = "";
-        //   goal_handle->succeed(result);
-        //   return;
-        // }
+        // ---------------- try to do IK for the goal pose --------------- //
+        if (RUN_IK_MOVE) {
+            RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
+            moveit::core::RobotState computed_ik_move(planning_scene->getRobotModel());
+            if (!compute_IK_manually(goal_pose, computed_ik_move)) {
+                RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
+                result->success = true;
+                result->is_valid = false;
+                result->score = 0.0;
+                result->message = "Plan (move goal IK) is not valid";
+                result->err_code = moveit::core::MoveItErrorCode::GOAL_IN_COLLISION;
+                result->err_source = "move goal IK";
+                result->err_message = "";
+                goal_handle->succeed(result);
+                return;
+            }
 
-        // RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
-        // planning_scene->checkCollision(collision_request, collision_response, computed_ik_move);
+            // ---------------- try to do collision detection for the goal pose --------------- //
+            if (RUN_COLLISIONS_MOVE) {
+                RCLCPP_INFO(this->get_logger(), "Computing Goal Collision (Pickup)...");
+                planning_scene->checkCollision(collision_request, collision_response, computed_ik_move);
 
-        // if (collision_response.collision) {
-        //   RCLCPP_ERROR(this->get_logger(), "Goal Collision Failed...");
-        //   result->success = true;
-        //   result->is_valid = false;
-        //   result->score = 0.0;
-        //   result->message = "Plan (move collisions) is not valid";
-        //   result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
-        //   result->err_source = "move collisions";
-        //   result->err_message = "";
-        //   goal_handle->succeed(result);
-        //   return;
-        // } else {
-        //   RCLCPP_INFO(this->get_logger(), "Goal Collision Succeeded. Closest distance is %f", collision_response.distance);
-        // }
-
+                if (collision_response.collision) {
+                    RCLCPP_ERROR(this->get_logger(), "Goal Collision Failed...");
+                    result->success = true;
+                    result->is_valid = false;
+                    result->score = 0.0;
+                    result->message = "Plan (move collisions) is not valid";
+                    result->err_code = moveit::core::MoveItErrorCode::NO_IK_SOLUTION;
+                    result->err_source = "move collisions";
+                    result->err_message = "";
+                    goal_handle->succeed(result);
+                    return;
+                } else {
+                    RCLCPP_INFO(this->get_logger(), "Goal Collision Succeeded. Closest distance is %f", collision_response.distance);
+                }
+            }
+        }
+        
+        // attach target object to gripper in preparation for move
         if (goal_handle->get_goal()->target_id >= 0) {
-            // register_grasped_object(object_name);
+            // register_grasped_object(object_name); // we don't need to do this because we don't actually close the gripper
             gripper_interface_->attachObject(object_name);
         }
 
+        // ---------------- run trajectory generation for the move operation --------------- //
         moveit::planning_interface::MoveGroupInterface::Plan move_plan;
         err_code = this->plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
 
+        // detach target object
         if (goal_handle->get_goal()->target_id >= 0) {
-        gripper_interface_->detachObject(object_name);
-        // deregister_grasped_object(object_name);
+            gripper_interface_->detachObject(object_name);
+            // deregister_grasped_object(object_name); // we don't need to do this because we don't actually close the gripper
         }
 
         if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
@@ -190,18 +225,18 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         } 
 
         RCLCPP_INFO(this->get_logger(), "Planning (move) succeeded");
+
+        // compute trajectory length
         trajectory_msgs::msg::JointTrajectory move_joint_trajectory = move_plan.trajectory.joint_trajectory;
         float trajectory_length_move = (float) compute_trajectory_length_(move_joint_trajectory);
         RCLCPP_INFO(this->get_logger(), "Trajectory length (move) is %.5f", trajectory_length_move);
 
+        // if both are valid:
         result->success = true;
         result->is_valid = true;
         result->score = trajectory_length_pickup + trajectory_length_move;
         result->message = "Plan is valid";
         goal_handle->succeed(result);
-
-        RCLCPP_INFO(this->get_logger(), "\n---BREAK---\n");
-
     }).detach();
 
 }

@@ -16,8 +16,10 @@
 #include <tf2_msgs/msg/tf_message.hpp>
 
 void hts_node::load_target_objects() {
+    #define MAN_DECLARE_PARAMS false
+
     // Register the target objects as collision objects
-    // this->declare_parameter("objects", std::vector<std::string>{});
+    if (MAN_DECLARE_PARAMS) this->declare_parameter("objects", std::vector<std::string>{});
     std::vector<std::string> objects = this->get_parameter("objects").as_string_array();
 
     target_object_ids_ = std::vector<std::string>(objects.size(), "");
@@ -30,30 +32,31 @@ void hts_node::load_target_objects() {
     shape_msgs::msg::Mesh mesh_target;
     geometry_msgs::msg::Pose pose_target;
 
-    // this->declare_parameter(obj_name + ".object_id", 0);
-    // this->declare_parameter(obj_name + ".primitive_type", "");
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".object_id", 0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_type", "");
 
     int obj_id = this->get_parameter(obj_name + ".object_id").as_int();
     RCLCPP_DEBUG(this->get_logger(), "Found an Object with ID %d", obj_id);
 
-    // this->declare_parameter(obj_name + ".x", 0.0);
-    // this->declare_parameter(obj_name + ".y", 0.0);
-    // this->declare_parameter(obj_name + ".z", 0.0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".x", 0.0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".y", 0.0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".z", 0.0);
 
-    // this->declare_parameter(obj_name + ".R", 0.0);
-    // this->declare_parameter(obj_name + ".P", 0.0);
-    // this->declare_parameter(obj_name + ".Y", 0.0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".R", 0.0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".P", 0.0);
+    if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".Y", 0.0);
 
     pose_target.position.x = this->get_parameter(obj_name + ".x").as_double();
     pose_target.position.y = this->get_parameter(obj_name + ".y").as_double();
     pose_target.position.z = this->get_parameter(obj_name + ".z").as_double();
 
-    // double roll = this->get_parameter(obj_name + ".R").as_double();
-    // double pitch = this->get_parameter(obj_name + ".P").as_double();
-    // double yaw = this->get_parameter(obj_name + ".Y").as_double();
     double roll = 0.0;
     double pitch = 0.0;
     double yaw = 0.0;
+
+    if (MAN_DECLARE_PARAMS) double roll = this->get_parameter(obj_name + ".R").as_double();
+    if (MAN_DECLARE_PARAMS) double pitch = this->get_parameter(obj_name + ".P").as_double();
+    if (MAN_DECLARE_PARAMS) double yaw = this->get_parameter(obj_name + ".Y").as_double();
 
     tf2::Quaternion q;
     q.setRPY(roll, pitch, yaw);
@@ -68,21 +71,21 @@ void hts_node::load_target_objects() {
 
     std::string obj_type = this->get_parameter(obj_name + ".primitive_type").as_string();
     if (obj_type == "BOX") {
-        // this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
-        // this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
-        // this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.x", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.y", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.z", 1.0);
 
         primitive_target.type = primitive_target.BOX;
         primitive_target.dimensions = {
-        this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
-        this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
-        this->get_parameter(obj_name + ".primitive_dims.z").as_double()
+            this->get_parameter(obj_name + ".primitive_dims.x").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.y").as_double(),
+            this->get_parameter(obj_name + ".primitive_dims.z").as_double()
         };
 
         co_target.primitives.push_back(primitive_target);
         co_target.primitive_poses.push_back(pose_target);
     } else if (obj_type == "SPHERE") {
-        // this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
 
         primitive_target.type = primitive_target.SPHERE;
         primitive_target.dimensions = {
@@ -93,8 +96,8 @@ void hts_node::load_target_objects() {
         co_target.primitive_poses.push_back(pose_target);
 
     } else if (obj_type == "CONE") {        
-        // this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-        // this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
 
         primitive_target.type = primitive_target.CONE;
         primitive_target.dimensions = {
@@ -106,8 +109,8 @@ void hts_node::load_target_objects() {
         co_target.primitive_poses.push_back(pose_target);
 
     } else if (obj_type == "CYLINDER") {
-        // this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
-        // this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.height", 1.0);
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.radius", 1.0);
 
         primitive_target.type = primitive_target.CYLINDER;
         primitive_target.dimensions = {
@@ -120,7 +123,7 @@ void hts_node::load_target_objects() {
 
     } 
     else if (obj_type == "MESH") {
-        // this->declare_parameter(obj_name + ".primitive_dims.file", "");
+        if (MAN_DECLARE_PARAMS) this->declare_parameter(obj_name + ".primitive_dims.file", "");
         shapes::Mesh* mesh = shapes::createMeshFromResource( this->get_parameter(obj_name + ".primitive_dims.file").as_string(), Eigen::Vector3d(0.001, 0.001, 0.001));
         shape_msgs::msg::Mesh mesh_msg;
         shapes::ShapeMsg mesh_tmp;
