@@ -9,6 +9,7 @@ import numpy as np
 import open3d as o3d
 import time
 import typing
+import copy
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -182,33 +183,58 @@ class HTSGraspGroup():
         o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name=description)
 
 class SymmetryGroup():
-    def __init__(self, points: np.array, grasps: HTSGraspGroup):
-        self._points: np.array = points
-        self._grasps: HTSGraspGroup = grasps
+    def __init__(self, cloud: o3d.cuda.pybind.geometry.PointCloud, gg, logger):
+        self._cloud: o3d.cuda.pybind.geometry.PointCloud = cloud
+        self._gg = gg
+        self._logger = logger
     
-    def get_centre(self) -> tuple[float, float]:
-        self._points = np.mean(self._points)
+    def get_logger(self):
+        return self._logger
     
-    def rotate_about_centre(self, centre: np.ndarray, rotation_angle: float) -> SymmetryGroup:
-        rotation_matrix = Rotation.from_euler('z', rotation_angle, degrees=True)
-        transformed_points = rotation_matrix.apply(self._points - centre) + centre
-        transformed_grasps = []
-        for grasp in self.grasps()._grasps:
-            pose = grasp.get_pose()
-            grasp_position = rotation_matrix.apply(pose.position - centre) + centre
-            grasp_orientation = rotation_matrix * pose.orientation
-            transformed_grasps.append(Grasp(grasp_position, grasp_orientation))
+    def get_centre(self) -> np.ndarray:
+        return self._cloud.get_center()
+    
+    def rotate_about_centre(self, rotation_angle: float) -> SymmetryGroup:
+        rotation_matrix_o3d = self._cloud.get_rotation_matrix_from_xyz((0, 0, rotation_angle * np.pi / 180))
+
+        centre = self.get_centre()
+        initial_translation = np.block([
+            [np.eye(3), -centre.reshape(3,1)],
+            [np.zeros((1,3)), 1]
+        ])
+        homog_rotation = np.block([
+            [rotation_matrix_o3d, np.zeros((3,1))],
+            [np.zeros((1,3)), 1]
+        ])
+        final_translation = np.block([
+            [np.eye(3), centre.reshape(3,1)],
+            [np.zeros((1,3)), 1]
+        ])
+
+        transformation_matrix = final_translation @ (homog_rotation @ initial_translation)
+
+        transformed_cloud = copy.deepcopy(self._cloud)
+        transformed_cloud.rotate(rotation_matrix_o3d)
+
+        transformed_gg = GraspGroup()
+
+        for grasp in self.grasps():
+            transformed_grasp = copy.deepcopy(grasp)
+            transformed_grasp.transform(transformation_matrix)
+
+            transformed_gg.add(transformed_grasp)
         
-        return SymmetryGroup(transformed_points, HTSGraspGroup(transformed_grasps))
+        return SymmetryGroup(transformed_cloud, transformed_gg, self._logger)
     
-    def clouds_are_similar(group1: SymmetryGroup, group2: SymmetryGroup) -> bool:
-        points1 = group1._points
-        points2 = group2._points
+    def clouds_are_similar(self, group2: SymmetryGroup, thresh: float) -> bool:
+        chamfer_distance = self._cloud.compute_point_cloud_distance(group2._cloud)
+        mean_distance = np.array(chamfer_distance).mean()
+        self.get_logger().info(f"Point Cloud Distance is: {mean_distance}")
         
-        return True
+        return mean_distance < thresh
     
     def grasps(self):
-        return self._grasps
+        return self._gg
     
     
         
@@ -255,6 +281,9 @@ class AnyGraspNode(Node):
         self.declare_parameter('grasp_z_offset', 0.00)
         self.declare_parameter('grasp_axis_offset', 0.14)
         self.declare_parameter('save_data', False)
+        self.declare_parameter('symmetry_layer_height', 0.03)
+        self.declare_parameter('symmetry_rotation_step', 45)
+        self.declare_parameter('symmetry_similarity_threshold', 0.01)
 
         self.Z_COORDS_MIN = self.get_parameter('z_coords_min').value
         self.Z_COORDS_MAX = self.get_parameter('z_coords_max').value
@@ -283,6 +312,9 @@ class AnyGraspNode(Node):
         self.GRASP_Z_OFFSET = self.get_parameter('grasp_z_offset').value
         self.GRASP_AXIS_OFFSET = self.get_parameter('grasp_axis_offset').value
         self.SAVE_DATA = self.get_parameter('save_data').value
+        self.SYMMETRY_LAYER_HEIGHT = self.get_parameter('symmetry_layer_height').value
+        self.SYMMETRY_ROTATION_STEP = self.get_parameter('symmetry_rotation_step').value
+        self.SYMMETRY_SIMILARITY_THRESHOLD = self.get_parameter('symmetry_similarity_threshold').value
 
         self.depth_pointcloud_: PointCloud2 = None
 
@@ -469,6 +501,10 @@ class AnyGraspNode(Node):
             )
         t1 = time.time()
 
+        self.get_logger().info("Creating Symmetry Grasps...")
+        self.create_symmetry_grasps(gg, cloud)
+        self.get_logger().info("Created Symmetry Grasps.")
+
         # replace cloud with rainbow point cloud
         cloud = o3d.geometry.PointCloud()
         cloud.points = o3d.utility.Vector3dVector(cropped_points)
@@ -485,12 +521,13 @@ class AnyGraspNode(Node):
             with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
                 f.write(f"Total num grasps: {len(gg)}\r\n")
         
-        if self.VISUALISE:
-            unfiltered_gg = gg.nms(
-                translation_thresh = self.NMS_TRANSLATION_THRESH,
-                rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
-            )
-            AnyGraspNode.display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="All Grasps")
+        unfiltered_gg = gg.nms(
+            translation_thresh = self.NMS_TRANSLATION_THRESH,
+            rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
+        )
+
+        # if self.VISUALISE:
+            # AnyGraspNode.display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="All Grasps")
 
         if self.SAVE_DATA:
             with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
@@ -511,9 +548,6 @@ class AnyGraspNode(Node):
             if abs(roll) > self.MAX_GRASP_PITCH_ROLL_DEG and abs(roll - 180) > self.MAX_GRASP_PITCH_ROLL_DEG:
                 exclude_grasps.append(ind)
                 continue
-
-            # if abs(yaw) > 90:
-            #     exclude_grasps.append(ind)
 
         gg.remove(exclude_grasps)
 
@@ -717,28 +751,38 @@ class AnyGraspNode(Node):
 
         return pose
 
-    def create_symmetry_grasps(self, grasps: HTSGraspGroup, cloud):
-        # params
-        LAYER_HEIGHT = 0.03
-        
+    def create_symmetry_grasps(self, gg, cloud):
         # batch grasps in horizontal layers
-        layer_base_height = self.X_GRASP_MIN
-        while (layer_base_height < self.X_GRASP_MAX):
+        layer_base_height = max(self.Z_COORDS_MIN, self.Z_GRASP_MIN)
+        while (layer_base_height < min(self.Z_COORDS_MAX, self.Z_GRASP_MAX)):
+            self.get_logger().info(f"Slicing layer at height {layer_base_height}")
             # filter cloud and grasps by height
-            layer_cloud = cloud[lambda x: x[2] >= layer_base_height and x[2] < layer_base_height + LAYER_HEIGHT]
-            layer_grasps = grasps.filter_by_z(layer_base_height, layer_base_height + LAYER_HEIGHT)
+            bb = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=[-math.inf, -math.inf, layer_base_height],
+                max_bound=[math.inf, math.inf, layer_base_height + self.SYMMETRY_LAYER_HEIGHT]
+            )
+            layer_cloud = cloud.crop(bb)
+            layer_grasps = [grasp for grasp in gg if grasp.translation[2] >= layer_base_height and grasp.translation[2] < layer_base_height + self.SYMMETRY_LAYER_HEIGHT]
             
-            group = SymmetryGroup(layer_cloud, layer_grasps)
-            
-            # calculate the geometric centre of the cloud layer
-            layer_centre: tuple[float, float] = group.get_centre()
+            if layer_cloud.is_empty() or len(layer_grasps) == 0:
+                self.get_logger().info(f"Skipping... {layer_cloud} {len(layer_grasps)}")
+
+                layer_base_height += self.SYMMETRY_LAYER_HEIGHT
+                continue
+
+            group = SymmetryGroup(layer_cloud, layer_grasps, self.get_logger())
             
             # perform rotations around the centre
-            ROTATION_STEP = 30
-            for i in range(ROTATION_STEP, 360, ROTATION_STEP):
-                new_group = group.rotate_about_centre(layer_centre, i)
-                if SymmetryGroup.clouds_are_similar(group, new_group):
-                    grasps.concat(new_group.grasps())
+            for i in range(self.SYMMETRY_ROTATION_STEP, 360, self.SYMMETRY_ROTATION_STEP):
+                self.get_logger().info(f"Performing rotation {i} degrees")
+                new_group = group.rotate_about_centre(i)
+                if new_group.clouds_are_similar(group, self.SYMMETRY_SIMILARITY_THRESHOLD):
+                    self.get_logger().info(f"Adding {len(new_group.grasps())} grasps")
+                    gg.add(new_group.grasps())
+                else:
+                    self.get_logger().info("Clouds are not similar")
+
+            layer_base_height += self.SYMMETRY_LAYER_HEIGHT
 
 def main():
     rclpy.init(args=None)
