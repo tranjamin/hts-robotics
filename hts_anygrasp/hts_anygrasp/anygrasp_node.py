@@ -114,6 +114,9 @@ class HTSGraspGroup():
     def append(self, hts_grasp: HTSGrasp):
         self._grasps.append(hts_grasp)
         
+    def concat(self, hts_grasp_group: HTSGraspGroup):
+        self._grasps.append(hts_grasp_group._grasps)
+        
     def __len__(self):
         return len(self._grasps)
     
@@ -177,6 +180,38 @@ class HTSGraspGroup():
         cloud.transform(trans_mat)
 
         o3d.visualization.draw_geometries([*grippers, cloud, origin_frame], window_name=description)
+
+class SymmetryGroup():
+    def __init__(self, points: np.array, grasps: HTSGraspGroup):
+        self._points: np.array = points
+        self._grasps: HTSGraspGroup = grasps
+    
+    def get_centre(self) -> tuple[float, float]:
+        self._points = np.mean(self._points)
+    
+    def rotate_about_centre(self, centre: np.ndarray, rotation_angle: float) -> SymmetryGroup:
+        rotation_matrix = Rotation.from_euler('z', rotation_angle, degrees=True)
+        transformed_points = rotation_matrix.apply(self._points - centre) + centre
+        transformed_grasps = []
+        for grasp in self.grasps()._grasps:
+            pose = grasp.get_pose()
+            grasp_position = rotation_matrix.apply(pose.position - centre) + centre
+            grasp_orientation = rotation_matrix * pose.orientation
+            transformed_grasps.append(Grasp(grasp_position, grasp_orientation))
+        
+        return SymmetryGroup(transformed_points, HTSGraspGroup(transformed_grasps))
+    
+    def clouds_are_similar(group1: SymmetryGroup, group2: SymmetryGroup) -> bool:
+        points1 = group1._points
+        points2 = group2._points
+        
+        return True
+    
+    def grasps(self):
+        return self._grasps
+    
+    
+        
 
 class ValidityContext():
     def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request):
@@ -681,6 +716,29 @@ class AnyGraspNode(Node):
         pose.orientation.w = final_quaternion[3]
 
         return pose
+
+    def create_symmetry_grasps(self, grasps: HTSGraspGroup, cloud):
+        # params
+        LAYER_HEIGHT = 0.03
+        
+        # batch grasps in horizontal layers
+        layer_base_height = self.X_GRASP_MIN
+        while (layer_base_height < self.X_GRASP_MAX):
+            # filter cloud and grasps by height
+            layer_cloud = cloud[lambda x: x[2] >= layer_base_height and x[2] < layer_base_height + LAYER_HEIGHT]
+            layer_grasps = grasps.filter_by_z(layer_base_height, layer_base_height + LAYER_HEIGHT)
+            
+            group = SymmetryGroup(layer_cloud, layer_grasps)
+            
+            # calculate the geometric centre of the cloud layer
+            layer_centre: tuple[float, float] = group.get_centre()
+            
+            # perform rotations around the centre
+            ROTATION_STEP = 30
+            for i in range(ROTATION_STEP, 360, ROTATION_STEP):
+                new_group = group.rotate_about_centre(layer_centre, i)
+                if SymmetryGroup.clouds_are_similar(group, new_group):
+                    grasps.concat(new_group.grasps())
 
 def main():
     rclpy.init(args=None)
