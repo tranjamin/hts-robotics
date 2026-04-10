@@ -160,7 +160,7 @@ void hts_node::init() {
     move_group_interface_->setGoalPositionTolerance(0.002);
     move_group_interface_->setGoalOrientationTolerance(0.01);
     move_group_interface_->setGoalJointTolerance(0.01);
-    move_group_interface_->setPlanningTime(20.0);
+    move_group_interface_->setPlanningTime(5.0);
     move_group_interface_->setWorkspace(-2.0, -2.0, 0.0, 2.0, 2.0, 2.0);
     move_group_interface_->setMaxVelocityScalingFactor(0.5);
     move_group_interface_->setMaxAccelerationScalingFactor(0.3);
