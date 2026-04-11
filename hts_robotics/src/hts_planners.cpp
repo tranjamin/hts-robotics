@@ -13,7 +13,8 @@
 #include <moveit/robot_model/joint_model_group.hpp>
 
 #include "geometry_msgs/msg/pose.hpp"
-// #include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
+#include "moveit/trajectory_processing/trajectory_tools.hpp"
 
 #include <tf2_eigen/tf2_eigen.hpp>
 
@@ -47,29 +48,15 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
     if (RUN_REFINEMENT_PICKUP) {
         RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
         moveit::core::MoveItErrorCode stomp_status = this->refine_path_with_stomp(plan);
-
-        // report the starting point of the trajectory before refinement
-        const auto& pt = plan.trajectory.joint_trajectory.points.front();
-        for (size_t i = 0; i < pt.positions.size(); ++i) {
-            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-                plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-                pt.positions[i]);
-        }
+        RCLCPP_INFO(this->get_logger(), "Refined with STOMP");
 
         if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
             float trajectory_length_pickup = (float) this->compute_trajectory_length_(plan.trajectory.joint_trajectory);
             RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
         } else {
+            RCLCPP_WARN(this->get_logger(), "Refinement failed");
             return ompl_status;
         }
-
-        // report the starting point of the trajectory after refinement
-	    const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
-	    for (size_t i = 0; i < pt2.positions.size(); ++i) {
-            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-            pt2.positions[i]);
-	    }
     }
 
     return ompl_status;
@@ -169,28 +156,13 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
         RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
         moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
 
-        // report the starting point of the trajectory before refinement
-        const auto& pt = plan.trajectory.joint_trajectory.points.front();
-        for (size_t i = 0; i < pt.positions.size(); ++i) {
-            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-                plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-                pt.positions[i]);
-        }
-
         if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
             float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
             RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
         } else {
+            RCLCPP_WARN(this->get_logger(), "Refinement failed");
             return ompl_status;
         }
-        	
-        // report the starting point of the trajectory after refinement
-	    const auto& pt2 = plan.trajectory.joint_trajectory.points.front();
-	    for (size_t i = 0; i < pt2.positions.size(); ++i) {
-            RCLCPP_INFO(this->get_logger(), "traj start %s: %f",
-            plan.trajectory.joint_trajectory.joint_names[i].c_str(),
-            pt2.positions[i]);
-	    }
     }
 
 	return ompl_status;
@@ -204,8 +176,6 @@ bool hts_node::compute_IK_manually(const geometry_msgs::msg::Pose& target_pose, 
 }
 
 moveit::core::MoveItErrorCode hts_node::refine_path_with_stomp(moveit::planning_interface::MoveGroupInterface::Plan &plan) {
-    return moveit::core::MoveItErrorCode::SUCCESS;
-
     planning_interface::MotionPlanResponse motion_plan_response;
     planning_interface::MotionPlanRequest motion_plan_request;
     move_group_interface_->constructMotionPlanRequest(motion_plan_request);
@@ -222,13 +192,52 @@ moveit::core::MoveItErrorCode hts_node::refine_path_with_stomp(moveit::planning_
     planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
 
     bool stomp_status = planning_pipeline->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
-
+    
     if (stomp_status) {
         moveit_msgs::msg::RobotTrajectory stomp_traj;
         motion_plan_response.trajectory->getRobotTrajectoryMsg(stomp_traj);
 
+        if (trajectory_processing::isTrajectoryEmpty(stomp_traj) || stomp_traj.joint_trajectory.points.size() == 0 ) {
+            RCLCPP_WARN(this->get_logger(), "Trajectory is Empty... returning false");
+            return motion_plan_response.error_code;
+        }
+
+        auto& initial_starting_point = plan.trajectory.joint_trajectory.points.front();
+        // auto dur1 = rclcpp::Duration(initial_starting_point.time_from_start);
+        // RCLCPP_INFO(this->get_logger(), "traj start before refinement ptr: %p", &initial_starting_point);
+        // RCLCPP_INFO(this->get_logger(), "traj start before refinement time: %f %ld", dur1.seconds(), dur1.nanoseconds());
+        // for (size_t i = 0; i < initial_starting_point.positions.size(); ++i) {
+        //     RCLCPP_INFO(this->get_logger(), "traj start before refinement %s: %f",
+        //         plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+        //         initial_starting_point.positions[i]);
+        // }
+
+        // RCLCPP_WARN(this->get_logger(), "manually setting initial point");
+        // RCLCPP_WARN(this->get_logger(), "Size: ompl %ld versus stomp %ld", 
+        //     plan.trajectory.joint_trajectory.points.size(),
+        //     stomp_traj.joint_trajectory.points.size()
+        // );
+
+        // manually set initial point
+        for (size_t i = 0; i < initial_starting_point.positions.size(); ++i) {
+            stomp_traj.joint_trajectory.points[0].positions[i] = initial_starting_point.positions[i];
+        }
+
+        RCLCPP_DEBUG(this->get_logger(), "setting plan trajectory to initial trajectory");
         plan.trajectory.joint_trajectory = stomp_traj.joint_trajectory;
         plan.trajectory.multi_dof_joint_trajectory = stomp_traj.multi_dof_joint_trajectory;
+
+	    // auto& refined_starting_point = plan.trajectory.joint_trajectory.points.front();
+        // auto dur2 = rclcpp::Duration(initial_starting_point.time_from_start);
+        // RCLCPP_INFO(this->get_logger(), "traj start after refinement ptr: %p", &refined_starting_point);
+        // RCLCPP_INFO(this->get_logger(), "traj start after refinement time: %f %ld", dur2.seconds(), dur2.nanoseconds());
+	    // for (size_t i = 0; i < refined_starting_point.positions.size(); ++i) {
+        //     RCLCPP_INFO(this->get_logger(), "traj start after refinement %s: %f",
+        //     plan.trajectory.joint_trajectory.joint_names[i].c_str(),
+        //     refined_starting_point.positions[i]);
+	    // }
+    } else {
+        RCLCPP_WARN(this->get_logger(), "STOMP failed or returned an empty trajectory");
     }
 
     RCLCPP_INFO(this->get_logger(), "Finished Planning STOMP. Result success is %d with error code %d", stomp_status, motion_plan_response.error_code.val);
