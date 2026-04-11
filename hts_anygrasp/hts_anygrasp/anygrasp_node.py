@@ -281,6 +281,7 @@ class AnyGraspNode(Node):
         self.declare_parameter('grasp_z_offset', 0.00)
         self.declare_parameter('grasp_axis_offset', 0.14)
         self.declare_parameter('save_data', False)
+        self.declare_parameter('symmetry_enable', True)
         self.declare_parameter('symmetry_layer_height', 0.03)
         self.declare_parameter('symmetry_rotation_step', 45)
         self.declare_parameter('symmetry_similarity_threshold', 0.01)
@@ -312,6 +313,7 @@ class AnyGraspNode(Node):
         self.GRASP_Z_OFFSET = self.get_parameter('grasp_z_offset').value
         self.GRASP_AXIS_OFFSET = self.get_parameter('grasp_axis_offset').value
         self.SAVE_DATA = self.get_parameter('save_data').value
+        self.SYMMETRY_ENABLE = self.get_parameter('symmetry_enable').value
         self.SYMMETRY_LAYER_HEIGHT = self.get_parameter('symmetry_layer_height').value
         self.SYMMETRY_ROTATION_STEP = self.get_parameter('symmetry_rotation_step').value
         self.SYMMETRY_SIMILARITY_THRESHOLD = self.get_parameter('symmetry_similarity_threshold').value
@@ -501,13 +503,9 @@ class AnyGraspNode(Node):
             )
         t1 = time.time()
 
-        self.get_logger().info("Creating Symmetry Grasps...")
-        self.create_symmetry_grasps(gg, cloud)
-        self.get_logger().info("Created Symmetry Grasps.")
-
-        # replace cloud with rainbow point cloud
-        cloud = o3d.geometry.PointCloud()
-        cloud.points = o3d.utility.Vector3dVector(cropped_points)
+        # replace cloud with rainbow point clouds
+        rainbow_cloud = o3d.geometry.PointCloud()
+        rainbow_cloud.points = o3d.utility.Vector3dVector(cropped_points)
         
         if self.SAVE_DATA:
             with open(f"{save_folder}/grasp_metrics.txt", "w") as f:
@@ -517,21 +515,35 @@ class AnyGraspNode(Node):
             self.get_logger().error('No Grasp detected after collision detection!')
             return None
         
-        if self.SAVE_DATA:
-            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                f.write(f"Total num grasps: {len(gg)}\r\n")
-        
         unfiltered_gg = gg.nms(
             translation_thresh = self.NMS_TRANSLATION_THRESH,
             rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
         )
 
-        # if self.VISUALISE:
-            # AnyGraspNode.display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="All Grasps")
-
         if self.SAVE_DATA:
             with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                f.write(f"Total num grasps after nms: {len(unfiltered_gg)}\r\n")        
+                f.write(f"Total num grasps: {len(gg)}\r\n")
+                f.write(f"Total num grasps after nms: {len(unfiltered_gg)}\r\n")
+        if self.VISUALISE:
+            AnyGraspNode.display_grasps(unfiltered_gg, rainbow_cloud, origin_position=[x,y,z], description="All Grasps")
+
+        # compute symmetries
+        if self.SYMMETRY_ENABLE: 
+            self.get_logger().info("Creating Symmetry Grasps...")
+            self.create_symmetry_grasps(gg, cloud)
+            self.get_logger().info("Created Symmetry Grasps.")
+
+            unfiltered_gg = gg.nms(
+                translation_thresh = self.NMS_TRANSLATION_THRESH,
+                rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
+            )
+
+            if self.SAVE_DATA:
+                with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                    f.write(f"Total num grasps (post-symmetry): {len(gg)}\r\n")
+                    f.write(f"Total num grasps after nms (post-symmetry): {len(unfiltered_gg)}\r\n")
+            if self.VISUALISE:
+                AnyGraspNode.display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="Post-Symmetry Grasps")
 
         exclude_grasps = []
         for ind, grasp in enumerate(gg):
