@@ -47,6 +47,66 @@ ompl::base::ValidStateSamplerPtr allocHTSStateSampler(const ob::SpaceInformation
     return std::make_shared<HTSStateSampler>(si);
 }
 
+class HTSDefaultStateSampler : public ompl::base::StateSampler
+  {
+  public:
+    HTSDefaultStateSampler(const ompl::base::StateSpace* space, const moveit::core::JointModelGroup* group,
+                        const moveit::core::JointBoundsVector* joint_bounds)
+      : ompl::base::StateSampler(space), joint_model_group_(group), joint_bounds_(joint_bounds)
+    {
+    }
+
+    void sampleUniform(ompl::base::State* state) override
+    {   
+      static bool print_once = false;
+      if (!print_once) RCLCPP_INFO(getLogger(), "calling uniform DefaultStateSampler");
+      print_once = true;
+
+      auto* moveit_state = state->as<StateType>();
+
+      // get a random position, so state->values now has data
+      joint_model_group_->getVariableRandomPositions(moveit_rng_, moveit_state->values, *joint_bounds_);
+
+      // update internal moveit state
+      moveit_state->setJointGroupPositions(
+        joint_model_group_,
+        moveit_state->values
+      );
+
+      // convert it to an EE pose
+      Eigen::Isometry3d& ee_tf = moveit_state->getGlobalLinkTransform("ee_link");
+
+      // 
+
+
+      state->as<StateType>()->clearKnownInformation();
+    }
+
+    void sampleUniformNear(ompl::base::State* state, const ompl::base::State* near, const double distance) override
+    {   
+      static bool print_once = false;
+      if (!print_once) RCLCPP_INFO(getLogger(), "calling uniform near DefaultStateSampler");
+      print_once = true;
+
+      joint_model_group_->getVariableRandomPositionsNearBy(moveit_rng_, state->as<StateType>()->values, *joint_bounds_,
+                                                           near->as<StateType>()->values, distance);
+      state->as<StateType>()->clearKnownInformation();
+    }
+
+    void sampleGaussian(ompl::base::State* state, const ompl::base::State* mean, const double stdDev) override
+    {   
+      static bool print_once = false;
+      if (!print_once) RCLCPP_INFO(getLogger(), "calling gaussian DefaultStateSampler");
+      print_once = true;
+
+      sampleUniformNear(state, mean, rng_.gaussian(0.0, stdDev));
+    }
+
+  protected:
+    random_numbers::RandomNumberGenerator moveit_rng_;
+    const moveit::core::JointModelGroup* joint_model_group_;
+    const moveit::core::JointBoundsVector* joint_bounds_;
+  };
 
 class HTSConstrainedSampler : public ompl::base::ConstrainedSampler {
     public:
@@ -55,7 +115,25 @@ class HTSConstrainedSampler : public ompl::base::ConstrainedSampler {
         }
 
     bool sampleUniform(ompl::base::State *state) override {
+        static bool print_once = false;
+        if (!print_once) RCLCPP_INFO(getLogger(), "calling uniform DefaultStateSampler");
+        print_once = true;
 
+        auto* moveit_state = state->as<StateType>();
+
+        // get a random position, so state->values now has data
+        joint_model_group_->getVariableRandomPositions(moveit_rng_, moveit_state->values, *joint_bounds_);
+
+        // update internal moveit state
+        moveit_state->setJointGroupPositions(
+        joint_model_group_,
+        moveit_state->values
+        );
+
+        // convert it to an EE pose
+        Eigen::Isometry3d& ee_tf = moveit_state->getGlobalLinkTransform("ee_link");
+
+        // 
     }
 
     // We don't need this in the example below.
@@ -71,7 +149,13 @@ class HTSConstrainedSampler : public ompl::base::ConstrainedSampler {
     }
 
 protected:
-    ompl::RNG rng_;
+    const ModelBasedPlanningContext* planning_context_;
+    ompl::base::StateSamplerPtr default_;
+    constraint_samplers::ConstraintSamplerPtr constraint_sampler_;
+    moveit::core::RobotState work_state_;
+    unsigned int constrained_success_;
+    unsigned int constrained_failure_;
+    double inv_dim_;
 };
 
 ompl::base::StateSamplerPtr allocHTSConstrainedStateSampler(const ob::SpaceInformation *si) {

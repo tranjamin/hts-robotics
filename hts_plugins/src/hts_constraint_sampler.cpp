@@ -220,7 +220,7 @@ bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen
     // RCLCPP_INFO(getLogger(), "Original X Axis is: %.5f %.5f %.5f", reference_axis.x(), reference_axis.y(), reference_axis.z());
 
     double alignment = translated_x_axis.dot(reference_axis);
-    RCLCPP_INFO(getLogger(), "HTSIK Axis Alignment is %f, angle errors are %f, %f, %f", alignment, angle_x, angle_y, angle_z);
+    // RCLCPP_DEBUG(getLogger(), "HTSIK Axis Alignment is %f, angle errors are %f, %f, %f", alignment, angle_x, angle_y, angle_z);
     
     geometry_msgs::msg::Pose pose;
 
@@ -234,7 +234,7 @@ bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen
     pose.orientation.w = quat.w();
 
     if (alignment < 0.95) {
-        RCLCPP_INFO(getLogger(), "Alignment is not good... failing.");
+        // RCLCPP_INFO(getLogger(), "Alignment is not good... failing.");
         return false;
     }
 

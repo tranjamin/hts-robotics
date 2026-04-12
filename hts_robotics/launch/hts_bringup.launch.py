@@ -21,7 +21,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 
 # SET TO FALSE FOR PERCEPTION PIPELINE, OR MAKE REALSENSE_CAMERA ALSO USE SIM TIME
 USE_SIM_TIME = True
-LOG_LEVEL = 'info'
+LOG_LEVEL = 'debug'
 
 moveit_config = (
     MoveItConfigsBuilder("hts")

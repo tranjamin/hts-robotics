@@ -294,6 +294,8 @@ make install
 
 (cd src/ompl/build/Release && make -j 10 && sudo make install) # alternative option for rebuilding and reinstalling
 
+export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
 # now rebuild and check it links properly:
 ldd install/moveit_planners_ompl/lib/libmoveit_ompl_interface.so | grep ompl # make sure this points towards usr/local
 ```
