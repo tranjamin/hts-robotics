@@ -27,7 +27,9 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
 
     // clear constraints and set the target pose
     move_group_interface_->clearPathConstraints();
-    move_group_interface_->setPoseTarget(target_pose);
+    move_group_interface_->setPoseTarget(target_pose);    
+    
+    move_group_interface_->setGoalOrientationTolerance(0.01);
 
     // plan
     RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
@@ -140,10 +142,6 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
         plan.start_state = motion_plan_response.start_state;
     }
 
-    // clear path constraints and reset orientation tolerance
-    move_group_interface_->clearPathConstraints();
-    move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
-
     // report the trajectory length
     if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
         float trajectory_length_pickup = (float) this->compute_trajectory_length_(plan.trajectory.joint_trajectory);
@@ -153,6 +151,19 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
     }
 
     if (RUN_REFINEMENT_MOVE) {
+        // tighten orientation constraints
+        orientation_constraint.absolute_x_axis_tolerance = 3.142;
+        orientation_constraint.absolute_y_axis_tolerance = 0.001;
+        orientation_constraint.absolute_z_axis_tolerance = 0.001;
+
+        // apply tightened orientation constraint
+        moveit_msgs::msg::Constraints all_constraints_tightened;
+        all_constraints_tightened.name = "Move Constraint Tightened";
+        all_constraints_tightened.orientation_constraints.emplace_back(orientation_constraint);
+        move_group_interface_->clearPathConstraints();
+        move_group_interface_->setPathConstraints(all_constraints_tightened);
+        RCLCPP_INFO(this->get_logger(), "Tightened orientation constraints on planning scene.");
+
         RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
         moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
 
@@ -164,6 +175,10 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
             return ompl_status;
         }
     }
+
+    // clear path constraints and reset orientation goal tolerance
+    move_group_interface_->clearPathConstraints();
+    move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
 
 	return ompl_status;
 }
