@@ -19,7 +19,7 @@
 #include <tf2_eigen/tf2_eigen.hpp>
 
 moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
-    #define RUN_REFINEMENT_PICKUP true
+    #define RUN_REFINEMENT_PICKUP false
     
     // set the start state of the plan
     move_group_interface_->getCurrentState(10.0);
@@ -30,6 +30,7 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
     move_group_interface_->setPoseTarget(target_pose);    
     
     move_group_interface_->setGoalOrientationTolerance(0.01);
+    move_group_interface_->setGoalPositionTolerance(0.001);
 
     // plan
     RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
@@ -194,6 +195,9 @@ moveit::core::MoveItErrorCode hts_node::refine_path_with_stomp(moveit::planning_
     planning_interface::MotionPlanResponse motion_plan_response;
     planning_interface::MotionPlanRequest motion_plan_request;
     move_group_interface_->constructMotionPlanRequest(motion_plan_request);
+
+    RCLCPP_INFO(this->get_logger(), "STOMP Motion Plan Request");
+    hts_node::printMotionPlanRequestFull(motion_plan_request);
 
     motion_plan_request.start_state = plan.start_state;
     motion_plan_request.start_state.is_diff = false;
