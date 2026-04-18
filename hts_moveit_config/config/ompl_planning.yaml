@@ -12,6 +12,7 @@ goal_orientation_tolerance: 0.001
 goal_position_tolerance: 0.005
 planning_time: 5.0
 
+use_ompl_constrained_planning: true
 longest_valid_segment_fraction: 0.01   # or smaller
 
 planning_plugin: ompl_interface/OMPLPlanner
@@ -33,7 +34,8 @@ planner_configs:
     range: 0.1    # Max motion added to tree. ==> maxDistance_ default: 0.0, if 0.0, set on setup()
     # longest_valid_segment_fraction: 0.01   # or smaller
     maximum_waypoint_distance: 0.005
-    enforce_joint_state_space: true
+    # enforce_joint_state_space: true
+    # use_ompl_constrained_planning: true
     # enforce_constrained_state_space: true
     # projection_evaluator: link(fr3_hand_tcp)
 
@@ -46,6 +48,8 @@ planner_configs:
 
 fr3_arm:
   enforce_constrained_state_space: true
+  # enforce_joint_state_space: true
+  use_ompl_constrained_planning: true
   projection_evaluator: link(fr3_hand_tcp)
   planner_configs:
     - RRTstarkConfigDefault

@@ -16,6 +16,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 find_package(hts_msgs REQUIRED)
 find_package(hts_plugins REQUIRED)
+find_package(ompl REQUIRED)
 
 add_executable(hts_node 
   src/hts_main.cpp

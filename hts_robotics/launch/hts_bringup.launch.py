@@ -415,7 +415,7 @@ def generate_launch_description():
             {"use_sim_time": USE_SIM_TIME},
         ],
         arguments=[
-            '--ros-args', '--log-level', 'info'
+            '--ros-args', '--log-level', 'debug'
         ]
     )
 

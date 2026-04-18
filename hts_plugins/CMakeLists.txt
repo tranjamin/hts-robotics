@@ -6,9 +6,11 @@ find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_ros REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(moveit_core REQUIRED)
+find_package(ompl REQUIRED)
 
 add_library(hts_plugins
   src/hts_constraint_sampler.cpp
+  src/hts_state_sampler.cpp
 )
 
 # target_compile_features(hts_plugins PUBLIC c_std_99 cxx_std_17)
@@ -18,10 +20,14 @@ target_include_directories(hts_plugins PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-ament_target_dependencies(
-  hts_plugins
+ament_target_dependencies(hts_plugins PUBLIC
   pluginlib
   moveit_core
+  ompl
+)
+
+target_link_libraries(hts_plugins PUBLIC
+  ompl::ompl
 )
 
 pluginlib_export_plugin_description_file(moveit_core

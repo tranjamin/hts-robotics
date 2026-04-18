@@ -164,7 +164,7 @@ bool hts_plugins::HTSIKConstraintSampler::configure(const moveit_msgs::msg::Cons
 }
 
 bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen::Quaterniond& quat, const moveit::core::RobotState& ks, unsigned int max_attempts) {
-    // RCLCPP_INFO(getLogger(), "HTSIK Sampling Pose from HTSIKConstraintSampler...");
+    RCLCPP_INFO(getLogger(), "HTSIK Sampling Pose from HTSIKConstraintSampler...");
 
     if (ks.dirtyLinkTransforms()) {
         // samplePose below requires accurate transforms
@@ -240,6 +240,7 @@ bool hts_plugins::HTSIKConstraintSampler::samplePose(Eigen::Vector3d& pos, Eigen
 
     log_pose(pose, "HTSIK Received Sample");
 
+    RCLCPP_INFO(getLogger(), "HTSIK Sampled Pose from HTSIKConstraintSampler.");
     return true;
 }
 

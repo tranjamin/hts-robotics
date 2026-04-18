@@ -64,7 +64,7 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
 
 moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
     #define RUN_REFINEMENT_MOVE true
-    #define USE_SELF_PIPELINE false
+    #define USE_SELF_PIPELINE true
     
     move_group_interface_->setStartState(start_state);
       
@@ -74,8 +74,8 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
     orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
     orientation_constraint.orientation = start_pose.orientation;
     orientation_constraint.absolute_x_axis_tolerance = 3.142;
-    orientation_constraint.absolute_y_axis_tolerance = 0.6;
-    orientation_constraint.absolute_z_axis_tolerance = 0.6;
+    orientation_constraint.absolute_y_axis_tolerance = 0.2;
+    orientation_constraint.absolute_z_axis_tolerance = 0.2;
     orientation_constraint.weight = 1.0;
     orientation_constraint.parameterization = orientation_constraint.XYZ_EULER_ANGLES;
 
