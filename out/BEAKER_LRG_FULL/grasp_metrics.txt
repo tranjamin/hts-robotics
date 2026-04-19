@@ -1,0 +1,14 @@
+Grasp algorithm time: 0.3389275074005127
+Total num grasps: 589
+Total num grasps after nms: 367
+Total num grasps (post-symmetry): 2356
+Total num grasps after nms (post-symmetry): 1468
+Filtered num grasps: 496
+Filtered num grasps after nms: 256
+Total Grasps: 512
+Valid Grasps: 253
+Percent Valid Grasps: 0.494140625
+Total Planning Time: 2618.8024139404297
+Average Planning Time: 5.114848464727402
+Average Planning Distance: 13.596542326357996
+Shortest Planning Distance: 6.865598678588867
