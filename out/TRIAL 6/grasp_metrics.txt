@@ -1,7 +1,0 @@
-Grasp algorithm time: 0.3353543281555176
-Total num grasps: 1240
-Total num grasps after nms: 756
-Total num grasps (post-symmetry): 4942
-Total num grasps after nms (post-symmetry): 3017
-Filtered num grasps: 872
-Filtered num grasps after nms: 504

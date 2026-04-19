@@ -65,7 +65,9 @@ class HTSGrasp():
         goal.grasp_pose = self.get_pose()
         goal.goal_x = request.goal_x
         goal.goal_y = request.goal_y
-        goal.goal_z = request.goal_z
+
+        # out goal z is expressed as an offset
+        goal.goal_z = request.goal_z + goal.grasp_pose.position.z
         goal.target_id = request.id
 
         return goal
@@ -399,6 +401,9 @@ class AnyGraspNode(Node):
 
         # Open3D visualization
         AnyGraspNode.display_pointcloud(points, colors)
+
+        if self.SAVE_DATA:
+            np.savez(f"src/pointclouds/displayed_cloud_{time.time()}.npz", points=points, colors=colors)
 
         return response
 
