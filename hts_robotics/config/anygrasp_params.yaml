@@ -35,5 +35,5 @@ pointcloud_topic: "/octomap_point_cloud_centers"
 visualise: True
 save_data: True
 
-pointcloud_from_file: True
+pointcloud_from_file: False
 pointcloud_file: "/ros2_ws/src/measured_flasks.npz"
