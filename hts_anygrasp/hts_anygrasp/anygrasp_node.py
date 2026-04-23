@@ -10,6 +10,9 @@ import open3d as o3d
 import time
 import typing
 import copy
+import scipy.stats
+import functools
+import random
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -238,8 +241,216 @@ class SymmetryGroup():
     def grasps(self):
         return self._gg
     
+# construct a problem space
+class ProblemSpace():
+    lambda1: float = 0.5
+    lambda2: float = 50.0
     
+    weibull_k: float = 2.0
+    weibull_gamma: float = 0.25
+    sigma_theta: float = 0.1
+    sigma_z: float = 0.1
+    
+    select_greedy_eps: float = 0.7
+    
+    total_max_time = 100.0
+    
+    def __init__(self, node: AnyGraspNode, hts_gg: HTSGraspGroup):
+        self.grasps: HTSGraspGroup = hts_gg # all grasps
+        self.node: AnyGraspNode = node # node
         
+        self.points: list[ProblemPoints] = [ProblemPoints(g) for g in hts_gg._grasps] # points
+        self.t0 = 0.0
+    
+    def start_timer(self):
+        self.t0 = time.time()
+    
+    def select_next(self):
+        # highest uncertainty
+        uncertanties = [1 - x.get_certainty() for x in self.points]
+        weighted_cost = [(1 - x.get_certainty())*x.cost() for x in self.points]
+        
+        if random.random() < self.select_greedy_eps:
+            idx = random.choices(range(len(self.points)), weights=weighted_cost)[0]
+            return idx, self.points[idx]
+        else:
+            idx = random.choices(range(len(self.points)), weights=uncertanties)[0]
+            return idx, self.points[idx]
+        
+    def choose_best(self) -> ProblemPoints:
+        cost = [x.cost() for x in self.points]
+        max_cost = max(cost)
+        cost = [(1 if x == max_cost else 0) for x in cost]
+        return random.choices(self.points, weights=cost)[0]
+        
+    def update_map(self):
+        for p in self.points:
+            p.update_certainty_by_kde(self.points)
+            p.update_prediction_by_kde(self.points)
+        
+    @staticmethod
+    def validity_failure_model(t: float):
+        # calculates the probability that the failure was real
+        return float(scipy.stats.weibull_min.cdf(t, ProblemSpace.weibull_k, scale=ProblemSpace.weibull_gamma))
+            
+    def _handle_validity_send_goal(self, context):
+        idx, point = self.select_next()
+        grasp = point.grasp
+        
+        self.node.get_logger().info(f"Candidate Grasp {idx + 1}/{len(self.points)}")
+        grasp.start_timer()
+        
+        self.node.grasp_validity_client_.wait_for_server()
+        send_goal_future = self.node.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
+        send_goal_future.add_done_callback(lambda f: self.node._handle_validity_response(f, context, idx))
+        context.pending_results += 1
+            
+    def _handle_validity_response(self, future, context: ValidityContext, idx):
+        goal_handle = future.result()
+        
+        if not goal_handle.accepted:
+            self.node.get_logger().warn("Goal Rejected")
+            context.pending_results -= 1
+            return
+        
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(lambda f : self._handle_validity_result(f, context, idx))
+
+    def _handle_validity_result(self, future, context: ValidityContext, idx):
+        result = future.result().result
+        hts_grasp : HTSGrasp = self.grasps._grasps[idx]
+        hts_grasp.process_result(result)
+        hts_grasp.end_timer()
+        context.pending_results -= 1
+        
+        point = self.points[idx]
+        point.handle_evaluation_result(result)
+        self.update_map()
+
+        if self.node.SAVE_DATA:
+            hts_grasp.save_grasp_message(context.folder)
+            hts_grasp.save_grasp_validity(context.folder, idx == 0)
+        
+        if context.pending_results == 0 and (time.time() - self.t0) > self.total_max_time:
+            self._handle_validity_finish(context)
+        else:
+            self._handle_validity_send_goal(context)
+
+    def _handle_validity_finish(self, context: ValidityContext):
+        request = context.goal_handle.request
+        feedback = RequestGrasp.Feedback()
+        response = RequestGrasp.Result()
+
+        hts_grasp_group = context.hts_grasp_group
+        folder = context.folder
+        cloud = context.cloud
+
+        feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
+        context.goal_handle.publish_feedback(feedback)
+
+        if self.node.SAVE_DATA:
+            hts_grasp_group.save_metrics(folder)
+
+        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+
+        if hts_grasp_group.num_valid():
+            self.node.get_logger().info("Found the best grasp")
+
+            # best_grasp = hts_grasp_group.best_grasp()
+            best_grasp = self.choose_best().grasp
+            AnyGraspNode.display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+
+            response.grasp_pose = best_grasp.get_pose()
+            self.node.get_logger().info("--> " + str(response.grasp_pose))
+            response.success = True
+            context.goal_handle.succeed()
+            context.response = response
+        else:
+            self.node.get_logger().info("No valid grasps found")
+            response.success = False
+            context.goal_handle.abort()
+            context.response = response
+            
+class ProblemPoints():
+    INITIAL_PLANNING_TIME = 0.03
+    
+    def __init__(self, grasp: HTSGrasp):      
+        self.certainty: float = 0 # how certain we are of the path score
+        self.grasp: HTSGrasp = grasp # grasp oject
+        
+        self.theta: float = grasp.get_pose().orientation.z
+        self.z: float = grasp.get_pose().position.z
+        
+        self.is_reflected: bool # whether we are dealing in the reflected space or not
+        self.grasp_score: float = grasp.get_grasp_object().score # the score output from anygrasp
+        
+        self.path_score: float = 0.0 # the computed or predicted path length
+        self.max_planning_time: float = ProblemPoints.INITIAL_PLANNING_TIME # how long we give for planning
+        self.max_planning_time_move: float = 0.03 # how long we give for planning
+        
+        self.valid: bool = False
+        self.evaluated: bool = False
+    
+    def get_certainty(self):
+        return self.certainty
+    
+    def update_certainty_upon_eval(self):
+        if self.valid:
+            self.certainty = 1.0
+        else:
+            self.certainty = ProblemSpace.validity_failure_model(self.max_planning_time)
+            self.max_planning_time *= 2 # double the planning time next time
+    
+    def get_margin(self):
+        return self.certainty*(1 if self.valid else -1)
+    
+    def cost(self):
+        return -ProblemSpace.lambda1*1/self.path_score + ProblemSpace.lambda2*self.grasp_score
+ 
+    @functools.cache
+    @staticmethod
+    def _certainty_scaler_at_offset(z_offset: float, theta_offset: float):
+        # we multiply our certainty with a scaled gaussian
+        z_scaler = 2*scipy.stats.norm.sf(z_offset, scale=ProblemSpace.sigma_z)
+        theta_scaler = 2*scipy.stats.norm.sf(theta_offset, scale=ProblemSpace.sigma_theta)        
+        return float(z_scaler * theta_scaler)
+    
+    @functools.cache
+    @staticmethod
+    def _distance(z_offset: float, theta_offset: float):
+        return math.sqrt(z_offset**2 + theta_offset**2)
+    
+    def update_certainty_by_kde(self, points: list[ProblemPoints]):
+        all_contributions = 0.0
+        all_weights = 0.0
+        for p in points:
+            if not p.evaluated:
+                continue
+            dtheta = abs(p.theta - self.theta) % (2*math.pi)
+            dtheta = min(dtheta, 2*math.pi - dtheta)
+            k = ProblemPoints._certainty_scaler_at_offset(abs(p.z - self.z), dtheta)
+            all_weights += k
+            all_contributions += k*p.get_certainty()
+        self.certainty = all_contributions/all_weights if all_weights != 0.0 else 0.0
+    
+    def update_prediction_by_kde(self, points: list[ProblemPoints]):
+        all_contributions = 0.0
+        all_weights = 0.0
+        for p in points:
+            if not p.evaluated:
+                continue
+            k = ProblemPoints._distance(p.z - self.z, p.theta - self.theta)
+            all_weights += k
+            all_contributions += k*p.path_score
+        self.path_score = all_contributions/all_weights if all_weights != 0.0 else 0.0
+    
+    def handle_evaluation_result(self, result: ComputeGraspValidity.Result):
+        self.update_certainty_upon_eval()
+        self.evaluated = True
+        self.path_score = result.score if result.is_valid else math.inf
 
 class ValidityContext():
     def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request):
@@ -676,9 +887,9 @@ class AnyGraspNode(Node):
         request = goal_handle.request
         feedback = RequestGrasp.Feedback()
         response = RequestGrasp.Result()
-
+            
+        folder = f"/ros2_ws/src/out/{time.time()}"
         if self.SAVE_DATA:
-            folder = f"/ros2_ws/src/out/{time.time()}"
             os.makedirs(folder)
             with open(f"{folder}/info.txt", "a") as f:
                 f.write(f"Request: Object ID {request.id} | Centred At ({request.x}, {request.y}, {request.z}) | Target ({request.goal_x},{request.goal_y},{request.goal_z})\r\n")
@@ -704,6 +915,7 @@ class AnyGraspNode(Node):
         goal_handle.publish_feedback(feedback)
 
         hts_grasp_group = HTSGraspGroup()
+        hts_grasp_group_mirrored = HTSGraspGroup()
 
         for ind, grasp in enumerate(gg):            
             hts_grasp = HTSGrasp()
@@ -723,10 +935,12 @@ class AnyGraspNode(Node):
             if self.SAVE_DATA:
                 hts_grasp.save_grasp_info(folder)
 
-            hts_grasp_group.append(hts_grasp)
+            hts_grasp_group_mirrored.append(hts_grasp)
 
         context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request)
-        self._handle_validity_send_goal(context, 0)
+        problem = ProblemSpace(self, hts_grasp_group)
+        problem._handle_validity_send_goal(context)
+        # self._handle_validity_send_goal(context, 0)
 
         while context.response is None:
             time.sleep(0.01)
