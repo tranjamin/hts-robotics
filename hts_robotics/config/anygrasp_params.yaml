@@ -13,10 +13,10 @@ dense_grasp: True
 top_down_grasp: False
 
 min_grasp_width: 0.0
-max_grasp_pitch_roll_deg: 10.0
+max_grasp_pitch_roll_deg: 5.0
 
-nms_translation_thresh: 0.005
-nms_angle_thresh_deg: 2.0
+nms_translation_thresh: 0.01
+nms_angle_thresh_deg: 5.0
 
 grasp_z_offset: 0.0
 grasp_axis_offset: 0.001
@@ -27,7 +27,7 @@ mask_radius: 0.08
 
 symmetry_enable: True
 symmetry_layer_height: 0.03
-symmetry_rotation_step: 90
+symmetry_rotation_step: 45
 symmetry_similarity_threshold: 0.01
 
 no_rgb: True
@@ -36,4 +36,4 @@ visualise: True
 save_data: True
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/measured_flasks.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/beaker_lrg.npz"

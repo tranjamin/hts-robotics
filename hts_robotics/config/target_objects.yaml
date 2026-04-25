@@ -1,18 +1,31 @@
 objects:
-  - conic_flask
-  - volumetric_flask
-  - round_bottomed_flask
-  - measuring_cylinder_sml
-  - measuring_cylinder_lrg
-  - beaker_sml
-  - beaker_med
+  # - conic_flask
+  # - volumetric_flask
+  # - round_bottomed_flask
+  # - measuring_cylinder_sml
+  # - measuring_cylinder_lrg
+  # - beaker_sml
+  # - beaker_med
   - beaker_lrg
+  # - table
+
+table:
+  object_id: 99
+  geometry_file: "table.sdf"
+  x: 0.0
+  y: 0.3
+  z: 0.1
+  primitive_type: BOX
+  primitive_dims:
+    x: 0.3
+    y: 0.3 
+    z: 0.2
 
 conic_flask:
   object_id: 0
   geometry_file: "conic_flask.sdf"
   x: 0.3
-  y: -0.3
+  y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -32,7 +45,7 @@ round_bottomed_flask:
   object_id: 2
   geometry_file: "round_bottomed_flask.sdf"
   x: 0.3
-  y: 0.3
+  y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -41,8 +54,8 @@ round_bottomed_flask:
 beaker_sml:
   object_id: 3
   geometry_file: "beaker_small.sdf"
-  x: -0.3
-  y: -0.3
+  x: 0.3
+  y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -51,7 +64,7 @@ beaker_sml:
 beaker_med:
   object_id: 4
   geometry_file: "beaker_medium.sdf"
-  x: -0.3
+  x: 0.3
   y: 0.0
   z: 0.03
   primitive_type: MESH
@@ -61,8 +74,8 @@ beaker_med:
 beaker_lrg:
   object_id: 5
   geometry_file: "beaker_large.sdf"
-  x: -0.3
-  y: 0.3
+  x: 0.3
+  y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -71,8 +84,8 @@ beaker_lrg:
 measuring_cylinder_sml:
   object_id: 6
   geometry_file: "measuring_cylinder_small.sdf"
-  x: 0.0
-  y: -0.3
+  x: 0.3
+  y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:
@@ -81,8 +94,8 @@ measuring_cylinder_sml:
 measuring_cylinder_lrg:
   object_id: 7
   geometry_file: "measuring_cylinder_large.sdf"
-  x: 0.0
-  y: 0.3
+  x: 0.3
+  y: 0.0
   z: 0.03
   primitive_type: MESH
   primitive_dims:

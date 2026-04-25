@@ -65,7 +65,9 @@ class HTSGrasp():
         goal.grasp_pose = self.get_pose()
         goal.goal_x = request.goal_x
         goal.goal_y = request.goal_y
-        goal.goal_z = request.goal_z
+
+        # out goal z is expressed as an offset
+        goal.goal_z = request.goal_z + goal.grasp_pose.position.z
         goal.target_id = request.id
 
         return goal
@@ -75,6 +77,7 @@ class HTSGrasp():
         self.result_err_code = result.err_code
         self.result_err_source = result.err_source
         self.result_err_message = result.err_message
+        self.result_timings = [result.pickup_ik_time, result.pickup_plan_time, result.pickup_refine_time, result.move_ik_time, result.move_plan_time, result.move_refine_time]
         self._is_valid = result.is_valid
         self.path_score = result.score if result.is_valid else math.inf
     
@@ -100,8 +103,8 @@ class HTSGrasp():
     def save_grasp_validity(self, folder: str, include_header: bool=False):
         with open(f"{folder}/grasp_validities.txt", "a") as f:
             if include_header:
-                f.write(f"planning_time,planing_score,grasp_score\r\n") 
-            f.write(f"{self.time},{self.path_score},{self.grasp_score}\r\n")
+                f.write(f"planning_time,planing_score,grasp_score,pickup_ik_t,pickup_plan_t,pickup_refine_t,move_ik_t,move_plan_t,move_refine_t\r\n") 
+            f.write(f"{self.time},{self.path_score},{self.grasp_score},{str(self.result_timings)[1:-1]}\r\n")
     
     def save_grasp_info(self, folder: str):
         pose = self.get_pose()
@@ -399,6 +402,9 @@ class AnyGraspNode(Node):
 
         # Open3D visualization
         AnyGraspNode.display_pointcloud(points, colors)
+
+        if self.SAVE_DATA:
+            np.savez(f"src/pointclouds/displayed_cloud_{time.time()}.npz", points=points, colors=colors)
 
         return response
 
