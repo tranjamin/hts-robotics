@@ -11,5 +11,11 @@ int64 err_code
 string message
 string err_source
 string err_message
+float32 pickup_plan_time
+float32 pickup_ik_time
+float32 pickup_refine_time
+float32 move_plan_time
+float32 move_ik_time
+float32 move_refine_time
 ---
 string progress

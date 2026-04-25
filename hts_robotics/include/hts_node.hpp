@@ -151,6 +151,12 @@ class hts_node : public rclcpp::Node {
             const geometry_msgs::msg::Pose& target_pose,
              moveit::planning_interface::MoveGroupInterface::Plan &plan
         );
+        moveit::core::MoveItErrorCode plan_move_no_refine(
+            const moveit::core::RobotState& start_state, 
+            const geometry_msgs::msg::Pose& start_pose, 
+            const geometry_msgs::msg::Pose& target_pose,
+             moveit::planning_interface::MoveGroupInterface::Plan &plan
+        );
         moveit::core::MoveItErrorCode plan_pickup(
             const moveit::core::RobotState& start_state, 
             const geometry_msgs::msg::Pose& target_pose, 
