@@ -13,6 +13,7 @@ import copy
 import scipy.stats
 import functools
 import random
+import matplotlib.pyplot as plt
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -44,6 +45,16 @@ class HTSGrasp():
         self.grasp_object: GraspNetGrasp = None
         self.pose: Pose = None
         self._t0 = 0.0
+
+        self.result_message = ""
+        self.result_err_code = 0
+        self.result_err_source = ""
+        self.result_err_message = ""
+        self.result_timings = []
+        self._is_valid = False
+        self.path_score = 0.0
+        self._evaluated = False
+        self.time = 0.0
     
     def set_pose(self, pose: Pose):
         self.pose = pose
@@ -83,6 +94,7 @@ class HTSGrasp():
         self.result_timings = [result.pickup_ik_time, result.pickup_plan_time, result.pickup_refine_time, result.move_ik_time, result.move_plan_time, result.move_refine_time]
         self._is_valid = result.is_valid
         self.path_score = result.score if result.is_valid else math.inf
+        self._evaluated = True
     
     def is_valid(self) -> bool:
         return self._is_valid
@@ -92,6 +104,9 @@ class HTSGrasp():
 
     def move_failed(self) -> bool:
         return self.result_err_source == "move"
+    
+    def evaluated(self) -> bool:
+        return self._evaluated
 
     def save_grasp_message(self, folder: str):
         with open(f"{folder}/grasp_messages.txt", "a") as f:
@@ -244,17 +259,23 @@ class SymmetryGroup():
     
 # construct a problem space
 class ProblemSpace():
-    lambda1: float = 0.5
-    lambda2: float = 50.0
+    lambda1: float = 1.0
+    lambda2: float = 30.0
     
-    weibull_k: float = 2.0
-    weibull_gamma: float = 0.25
-    sigma_theta: float = 0.1
-    sigma_z: float = 0.1
+    weibull_k: float = 0.7
+    weibull_gamma: float = 0.5
+    weibull_base: float = 1.3
+
+    sigma_theta: float = 0.4
+    sigma_z: float = 0.05
     
     select_greedy_eps: float = 0.7
+
+    certainty_scaler_range: float = 1e-3
+    prediction_z_range: float = 0.05
+    prediction_th_range: float = math.pi/4
     
-    total_max_time = 100.0
+    total_max_time = 30.0
     
     def __init__(self, node: AnyGraspNode, hts_gg: HTSGraspGroup):
         self.grasps: HTSGraspGroup = hts_gg # all grasps
@@ -262,49 +283,157 @@ class ProblemSpace():
         
         self.points: list[ProblemPoints] = [ProblemPoints(g) for g in hts_gg._grasps] # points
         self.t0 = 0.0
+
+        self.max_path_score = 0.0
+
+        zs = np.array([p.z for p in self.points])
+        thetas = np.array([p.theta for p in self.points])
+        np.save("/ros2_ws/src/z", zs)
+        np.save("/ros2_ws/src/th", thetas)
+
+        self.plot_grasps()
     
     def start_timer(self):
         self.t0 = time.time()
     
     def select_next(self):
+        self.node.get_logger().info("Select Next")
         # highest uncertainty
         uncertanties = [1 - x.get_certainty() for x in self.points]
-        weighted_cost = [(1 - x.get_certainty())*x.cost() for x in self.points]
         
-        if random.random() < self.select_greedy_eps:
-            idx = random.choices(range(len(self.points)), weights=weighted_cost)[0]
-            return idx, self.points[idx]
+        costs = [x.cost(self.max_path_score) for x in self.points]
+        if min(costs) < 0:
+            costs = [x - min(costs) for x in costs]
+        weighted_cost = [costs[i]*uncertanties[i] for i in range(len(costs))]
+
+        # if everything is uncertain, then select greedily
+        if sum(weighted_cost) != 0.0 and (min(uncertanties) == 1.0 or random.random() < self.select_greedy_eps):
+            if random.random() < 0.5:
+                # print(f"Trying to sample greedily")
+                idx = random.choices(range(len(self.points)), weights=weighted_cost)[0]
+                self.node.get_logger().info(f"Selecting probabilistic greedily {idx}")
+                return idx, self.points[idx]
+            else:
+                # print(f"Trying to sample greedily")
+                idx = weighted_cost.index(max(weighted_cost))
+                self.node.get_logger().info(f"Selecting greedily {idx}")
+                return idx, self.points[idx]
+        elif sum(uncertanties) != 0.0:
+            if random.random() < 0.5:
+                # print(f"Trying to sample uncertainty")
+                idx = random.choices(range(len(self.points)), weights=uncertanties)[0]
+                self.node.get_logger().info(f"Selecting greedily based on uncertainty {idx}")
+                return idx, self.points[idx]
+            else:
+                # print(f"Trying to sample greedily")
+                idx = uncertanties.index(max(uncertanties))
+                self.node.get_logger().info(f"Selecting based on uncertainty {idx}")
+                return idx, self.points[idx]
         else:
-            idx = random.choices(range(len(self.points)), weights=uncertanties)[0]
-            return idx, self.points[idx]
+            self.node.get_logger().info("Everything is 100%% certain now")
+            return 0, None
+        
+    def plot_grasps(self, folder=None):
+        zs = np.array([p.z for p in self.points])
+        thetas = np.array([p.theta for p in self.points])
+
+        x = zs*np.cos(thetas)
+        y = zs*np.sin(thetas)
+
+        path_scores = [min(self.max_path_score, x.path_score) for x in self.points]
+        grasp_scores = [x.grasp_score for x in self.points]
+        
+        uncertanties = [1 - x.get_certainty() for x in self.points]
+        costs = [x.cost(self.max_path_score) for x in self.points]
+        if min(costs) < 0:
+            costs = [x - min(costs) for x in costs]
+        weighted_cost = [costs[i]*uncertanties[i] for i in range(len(costs))]
+
+        evaluated = [x.evaluated for x in self.points]
+        distance = [ProblemPoints._distance_scaler(p.z, p.theta) for p in self.points]
+
+        fig, axs = plt.subplots(2, 3, figsize=(24,12))
+        splt1 = axs[0, 0].scatter(x, y, c=uncertanties, vmin=0.0, vmax=1.0)
+        splt2 = axs[0, 1].scatter(x, y, c=costs, vmin=0.0)
+        splt3 = axs[0, 2].scatter(x, y, c=path_scores, vmin=0.0)
+        splt4 = axs[1, 0].scatter(x, y, c=grasp_scores, vmin=0.0)
+        splt5 = axs[1, 1].scatter(x, y, c=weighted_cost)
+        splt6 = axs[1, 2].scatter(x, y, c=evaluated)
+
+        axs[0, 0].set_title("Uncertainties")
+        axs[0, 1].set_title("Costs")
+        axs[0, 2].set_title("Path Scores")
+        axs[1, 0].set_title("Grasp Scores")
+        axs[1, 1].set_title("Weighted Cost")
+        axs[1, 2].set_title("Evaluated")
+
+        fig.colorbar(splt1, ax=axs[0,0])
+        fig.colorbar(splt2, ax=axs[0,1])
+        fig.colorbar(splt3, ax=axs[0,2])
+        fig.colorbar(splt4, ax=axs[1,0])
+        fig.colorbar(splt5, ax=axs[1,1])
+        fig.colorbar(splt6, ax=axs[1,2])
+
+        if folder:
+            plt.savefig(f"{folder}/plts/{time.time()}_plt.png")
         
     def choose_best(self) -> ProblemPoints:
-        cost = [x.cost() for x in self.points]
+        # self.node.get_logger().info("Choose Best")
+        cost = [x.cost(self.max_path_score) for x in self.points]
         max_cost = max(cost)
         cost = [(1 if x == max_cost else 0) for x in cost]
         return random.choices(self.points, weights=cost)[0]
         
     def update_map(self):
-        for p in self.points:
-            p.update_certainty_by_kde(self.points)
-            p.update_prediction_by_kde(self.points)
+        # self.node.get_logger().info("Update Map")
+        for idx, p in enumerate(self.points):
+            orig_certainty = p.certainty
+            orig_prediction = p.path_score
+            p.update_certainty_by_kde(self.points, logger=self.node.get_logger())
+            p.update_prediction_by_kde(self.points, self.max_path_score, logger=self.node.get_logger())
+            # self.node.get_logger().info(f"idx {idx}: Updated uncertainty from {orig_certainty} to {p.certainty}")
+            # self.node.get_logger().info(f"idx {idx}: Updated path score from {orig_prediction} to {p.path_score}")
         
+    def update_max_path_score(self, newest_score):
+        # never update on an invalid score
+        if math.isinf(newest_score) or newest_score == 0:
+            return
+
+        # if we haven't found a valid path yet:
+        if self.max_path_score == 0:
+            self.max_path_score = 2*newest_score
+        elif 2*newest_score > self.max_path_score:
+            self.max_path_score = 2*newest_score
+
     @staticmethod
     def validity_failure_model(t: float):
         # calculates the probability that the failure was real
-        return float(scipy.stats.weibull_min.cdf(t, ProblemSpace.weibull_k, scale=ProblemSpace.weibull_gamma))
+        return float(scipy.stats.weibull_min.cdf(ProblemSpace.weibull_base**t - 1, ProblemSpace.weibull_k, scale=ProblemSpace.weibull_gamma))
             
-    def _handle_validity_send_goal(self, context):
+    def _handle_validity_send_goal(self, context):        
+        self.node.get_logger().info("Sending Goal")
         idx, point = self.select_next()
+
+        if point is None:
+            context.all_points_certain = True
+            if context.pending_results == 0:
+                self._handle_validity_finish(context)
+            return
+
         grasp = point.grasp
         
-        self.node.get_logger().info(f"Candidate Grasp {idx + 1}/{len(self.points)}")
-        grasp.start_timer()
-        
+        if point.evaluated:
+            self.node.get_logger().info(f"Candidate Grasp (Re-eval) {idx + 1}/{len(self.points)}")
+        else:
+            self.node.get_logger().info(f"Candidate Grasp {idx + 1}/{len(self.points)}")
+                
         self.node.grasp_validity_client_.wait_for_server()
-        send_goal_future = self.node.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
-        send_goal_future.add_done_callback(lambda f: self.node._handle_validity_response(f, context, idx))
         context.pending_results += 1
+
+        grasp.start_timer()
+
+        send_goal_future = self.node.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
+        send_goal_future.add_done_callback(lambda f: self._handle_validity_response(f, context, idx))
             
     def _handle_validity_response(self, future, context: ValidityContext, idx):
         goal_handle = future.result()
@@ -326,16 +455,31 @@ class ProblemSpace():
         
         point = self.points[idx]
         point.handle_evaluation_result(result)
+        self.node.get_logger().info(f"------- Evaluated idx {idx} ----------")
+        cost = point.cost(math.inf)
+        self.node.get_logger().info(f"Certainty is now {point.certainty}, Path Score is now {point.path_score}, Cost {cost}")
+
+        self.update_max_path_score(point.path_score)
+
         self.update_map()
 
         if self.node.SAVE_DATA:
             hts_grasp.save_grasp_message(context.folder)
             hts_grasp.save_grasp_validity(context.folder, idx == 0)
+
+            # show the updated map
+            self.plot_grasps(context.folder)
         
-        if context.pending_results == 0 and (time.time() - self.t0) > self.total_max_time:
+        t1 = time.time()
+        self.node.get_logger().info(f"start time is {self.t0} now is {t1} max time is {self.total_max_time} pending {context.pending_results}")
+        if context.pending_results == 0 and ((t1 - self.t0) > self.total_max_time or context.all_points_certain):
+            self.node.get_logger().info("Finishing Context")
             self._handle_validity_finish(context)
-        else:
+        elif not ((t1 - self.t0) > self.total_max_time) and not (context.all_points_certain):
+            self.node.get_logger().info("Timed Out...")
             self._handle_validity_send_goal(context)
+        else:
+            self.node.get_logger().info("Waiting for others to finish...")
 
     def _handle_validity_finish(self, context: ValidityContext):
         request = context.goal_handle.request
@@ -353,6 +497,7 @@ class ProblemSpace():
             hts_grasp_group.save_metrics(folder)
 
         hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+        hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
         hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
         hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
         hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
@@ -378,17 +523,25 @@ class ProblemSpace():
 class ProblemPoints():
     INITIAL_PLANNING_TIME = 0.03
     
-    def __init__(self, grasp: HTSGrasp):      
+    def __init__(self, grasp: HTSGrasp):              
+        self.known_certainty: float = 0 # the known certainty of the path score
         self.certainty: float = 0 # how certain we are of the path score
         self.grasp: HTSGrasp = grasp # grasp oject
         
-        self.theta: float = grasp.get_pose().orientation.z
+        roll, pitch, yaw = Rotation.from_quat([
+            grasp.get_pose().orientation.x,
+            grasp.get_pose().orientation.y,
+            grasp.get_pose().orientation.z,
+            grasp.get_pose().orientation.w            
+        ]).as_euler('xyz', degrees=False)
+        self.theta: float = yaw
+
         self.z: float = grasp.get_pose().position.z
         
         self.is_reflected: bool # whether we are dealing in the reflected space or not
         self.grasp_score: float = grasp.get_grasp_object().score # the score output from anygrasp
         
-        self.path_score: float = 0.0 # the computed or predicted path length
+        self.path_score: float = math.inf # the computed or predicted path length
         self.max_planning_time: float = ProblemPoints.INITIAL_PLANNING_TIME # how long we give for planning
         self.max_planning_time_move: float = 0.03 # how long we give for planning
         
@@ -401,15 +554,15 @@ class ProblemPoints():
     def update_certainty_upon_eval(self):
         if self.valid:
             self.certainty = 1.0
+            self.known_certainty = 1.0
         else:
-            self.certainty = ProblemSpace.validity_failure_model(self.max_planning_time)
+            self.known_certainty = ProblemSpace.validity_failure_model(self.max_planning_time)
+            self.certainty = self.known_certainty
             self.max_planning_time *= 2 # double the planning time next time
     
-    def get_margin(self):
-        return self.certainty*(1 if self.valid else -1)
-    
-    def cost(self):
-        return -ProblemSpace.lambda1*1/self.path_score + ProblemSpace.lambda2*self.grasp_score
+    def cost(self, max_path_score):
+        # if we are invalid, we say that the cost is twice is longest path cost
+        return -ProblemSpace.lambda1*min(self.path_score, max_path_score) + ProblemSpace.lambda2*self.grasp_score
  
     @functools.cache
     @staticmethod
@@ -421,47 +574,110 @@ class ProblemPoints():
     
     @functools.cache
     @staticmethod
-    def _distance(z_offset: float, theta_offset: float):
-        return math.sqrt(z_offset**2 + theta_offset**2)
+    def _distance_scaler(z_offset: float, theta_offset: float):
+        z_scale = max(1 - abs(z_offset)/ProblemSpace.prediction_z_range, 0)
+        th_scale = max(1 - abs(theta_offset)/ProblemSpace.prediction_th_range, 0)
+        # return math.sqrt(z_scale**2 + th_scale**2)
+        if z_scale*th_scale == 0.0:
+            return 0.0
+        
+        return float(z_scale*th_scale/2 + 0.5)
     
-    def update_certainty_by_kde(self, points: list[ProblemPoints]):
-        all_contributions = 0.0
-        all_weights = 0.0
-        for p in points:
-            if not p.evaluated:
+    def update_certainty_by_kde(self, points: list[ProblemPoints], logger=None):
+        if self.evaluated and self.valid:
+            # if we have already evaluated this positively, then do not update
+            return
+        
+        # if we have already evaluated this negatively, then we update normally
+        if self.evaluated and not self.valid:
+            pass
+
+        # if we know nothing about this point, then we use KDE
+        # of if we have tried and failed
+        positive_contributions = 0.0
+        positive_weights = 0.0
+        negative_contributions = 0.0
+        negative_weights = 0.0
+        for i, p in enumerate(points):
+            # if p == self:
+                # we seed it with the current estimate of certainty
+                # all_contributions += 1.0 * self.certainty
+                # all_weights += 1.0
+                # continue
+            if not p.evaluated and p != self:
                 continue
             dtheta = abs(p.theta - self.theta) % (2*math.pi)
             dtheta = min(dtheta, 2*math.pi - dtheta)
+            
+            # this is how much an evaluated point is related to our point
             k = ProblemPoints._certainty_scaler_at_offset(abs(p.z - self.z), dtheta)
-            all_weights += k
-            all_contributions += k*p.get_certainty()
-        self.certainty = all_contributions/all_weights if all_weights != 0.0 else 0.0
+
+            # # don't add a contribution if it's too far away
+            # if (k < ProblemSpace.certainty_scaler_range):
+            #     continue
+
+            # we store the positive and the negative contributions separately
+            if p.valid:
+                positive_weights += k
+                positive_contributions += k*p.known_certainty
+            else:
+                negative_weights += k
+                if p.evaluated:
+                    negative_contributions += k*p.known_certainty
+                else:
+                    negative_contributions += k*p.certainty
+
+        total_weights = (positive_weights + negative_weights)
+        total_contributions = abs(positive_contributions - negative_contributions)
+            
+        self.certainty = total_contributions/total_weights if total_weights != 0.0 else 0.0
     
-    def update_prediction_by_kde(self, points: list[ProblemPoints]):
+    def update_prediction_by_kde(self, points: list[ProblemPoints], path_max, logger=None):
+        if self.evaluated and self.valid:
+            # if we have already evaluated this positively, then do not update
+            return
+        
+        # if we have already evaluated this negatively, then we update normally
+        if self.evaluated and not self.valid:
+            pass
+
+        # we start by seeding it with the current prediction
         all_contributions = 0.0
         all_weights = 0.0
-        for p in points:
-            if not p.evaluated:
+        for i, p in enumerate(points):
+            if not p.evaluated and p != self:
                 continue
-            k = ProblemPoints._distance(p.z - self.z, p.theta - self.theta)
-            all_weights += k
-            all_contributions += k*p.path_score
-        self.path_score = all_contributions/all_weights if all_weights != 0.0 else 0.0
+            k = ProblemPoints._distance_scaler(p.z - self.z, p.theta - self.theta)
+            
+            # scale all weights by by the certainty of the point
+            if p.evaluated:
+                all_weights += k*p.known_certainty
+                all_contributions += k*min(p.path_score, path_max)*p.known_certainty
+
+            # print(f"Adding contribution from {i}: distance scaler {k}")
+        self.path_score = all_contributions/all_weights if all_weights != 0.0 else path_max*2
+        if self.path_score == 0:
+            self.path_score = 2*path_max
+
+        # scale in the existing knowledge
+        self.path_score = self.path_score*(1 - self.known_certainty) + self.known_certainty*2*path_max
     
     def handle_evaluation_result(self, result: ComputeGraspValidity.Result):
-        self.update_certainty_upon_eval()
         self.evaluated = True
+        self.valid = result.is_valid
+        self.update_certainty_upon_eval()
         self.path_score = result.score if result.is_valid else math.inf
 
 class ValidityContext():
     def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request):
         self.goal_handle = goal_handle
         self.hts_grasp_group = grasp_group
-        self.pending_results = len(grasp_group)
+        self.pending_results = 0
         self.folder = folder
         self.cloud = cloud
         self.request = request
         self.response = None
+        self.all_points_certain = False
 
 class AnyGraspNode(Node):
     def __init__(self):
@@ -813,76 +1029,76 @@ class AnyGraspNode(Node):
         f.write(f"max pitch/roll filtering: [{self.MAX_GRASP_PITCH_ROLL_DEG}] degrees\r\n")
         f.write(f"grasp offsets: approach axis [{self.GRASP_AXIS_OFFSET}] vertical [{self.GRASP_Z_OFFSET}]\r\n")
 
-    def _handle_validity_send_goal(self, context, idx):
-        self.get_logger().info(f"Candidate Grasp {idx + 1}/{len(context.hts_grasp_group)}")
-        grasp = context.hts_grasp_group._grasps[idx]
-        grasp.start_timer()
-        self.grasp_validity_client_.wait_for_server()
-        send_goal_future = self.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
-        send_goal_future.add_done_callback(lambda f: self._handle_validity_response(f, context, idx))
+    # def _handle_validity_send_goal(self, context, idx):
+    #     self.get_logger().info(f"Candidate Grasp {idx + 1}/{len(context.hts_grasp_group)}")
+    #     grasp = context.hts_grasp_group._grasps[idx]
+    #     grasp.start_timer()
+    #     self.grasp_validity_client_.wait_for_server()
+    #     send_goal_future = self.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
+    #     send_goal_future.add_done_callback(lambda f: self._handle_validity_response(f, context, idx))
 
-    def _handle_validity_response(self, future, context: ValidityContext, idx):
-        goal_handle = future.result()
+    # def _handle_validity_response(self, future, context: ValidityContext, idx):
+    #     goal_handle = future.result()
         
-        if not goal_handle.accepted:
-            self.get_logger().warn("Goal Rejected")
-            return
+    #     if not goal_handle.accepted:
+    #         self.get_logger().warn("Goal Rejected")
+    #         return
         
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(lambda f : self._handle_validity_result(f, context, idx))
+    #     result_future = goal_handle.get_result_async()
+    #     result_future.add_done_callback(lambda f : self._handle_validity_result(f, context, idx))
 
-    def _handle_validity_result(self, future, context: ValidityContext, idx):
-        result = future.result().result
-        hts_grasp : HTSGrasp = context.hts_grasp_group._grasps[idx]
-        hts_grasp.process_result(result)
-        hts_grasp.end_timer()
-        context.pending_results -= 1
+    # def _handle_validity_result(self, future, context: ValidityContext, idx):
+    #     result = future.result().result
+    #     hts_grasp : HTSGrasp = context.hts_grasp_group._grasps[idx]
+    #     hts_grasp.process_result(result)
+    #     hts_grasp.end_timer()
+    #     context.pending_results -= 1
 
-        if self.SAVE_DATA:
-            hts_grasp.save_grasp_message(context.folder)
-            hts_grasp.save_grasp_validity(context.folder, idx == 0)
+    #     if self.SAVE_DATA:
+    #         hts_grasp.save_grasp_message(context.folder)
+    #         hts_grasp.save_grasp_validity(context.folder, idx == 0)
         
-        if context.pending_results == 0:
-            self._handle_validity_finish(context)
-        else:
-            self._handle_validity_send_goal(context, idx + 1)
+    #     if context.pending_results == 0:
+    #         self._handle_validity_finish(context)
+    #     else:
+    #         self._handle_validity_send_goal(context, idx + 1)
 
-    def _handle_validity_finish(self, context: ValidityContext):
-        request = context.goal_handle.request
-        feedback = RequestGrasp.Feedback()
-        response = RequestGrasp.Result()
+    # def _handle_validity_finish(self, context: ValidityContext):
+    #     request = context.goal_handle.request
+    #     feedback = RequestGrasp.Feedback()
+    #     response = RequestGrasp.Result()
 
-        hts_grasp_group = context.hts_grasp_group
-        folder = context.folder
-        cloud = context.cloud
+    #     hts_grasp_group = context.hts_grasp_group
+    #     folder = context.folder
+    #     cloud = context.cloud
 
-        feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
-        context.goal_handle.publish_feedback(feedback)
+    #     feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
+    #     context.goal_handle.publish_feedback(feedback)
 
-        if self.SAVE_DATA:
-            hts_grasp_group.save_metrics(folder)
+    #     if self.SAVE_DATA:
+    #         hts_grasp_group.save_metrics(folder)
 
-        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+    #     hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+    #     hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+    #     hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+    #     hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
 
-        if hts_grasp_group.num_valid():
-            self.get_logger().info("Found the best grasp")
+    #     if hts_grasp_group.num_valid():
+    #         self.get_logger().info("Found the best grasp")
 
-            best_grasp = hts_grasp_group.best_grasp()
-            AnyGraspNode.display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+    #         best_grasp = hts_grasp_group.best_grasp()
+    #         AnyGraspNode.display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
-            response.grasp_pose = best_grasp.get_pose()
-            self.get_logger().info("--> " + str(response.grasp_pose))
-            response.success = True
-            context.goal_handle.succeed()
-            context.response = response
-        else:
-            self.get_logger().info("No valid grasps found")
-            response.success = False
-            context.goal_handle.abort()
-            context.response = response
+    #         response.grasp_pose = best_grasp.get_pose()
+    #         self.get_logger().info("--> " + str(response.grasp_pose))
+    #         response.success = True
+    #         context.goal_handle.succeed()
+    #         context.response = response
+    #     else:
+    #         self.get_logger().info("No valid grasps found")
+    #         response.success = False
+    #         context.goal_handle.abort()
+    #         context.response = response
 
     def grasp_callback_(self, goal_handle):
         request = goal_handle.request
@@ -891,7 +1107,8 @@ class AnyGraspNode(Node):
             
         folder = f"/ros2_ws/src/out/{time.time()}"
         if self.SAVE_DATA:
-            os.makedirs(folder)
+            os.makedirs(folder)            
+            os.makedirs(f"{folder}/plts")
             with open(f"{folder}/info.txt", "a") as f:
                 f.write(f"Request: Object ID {request.id} | Centred At ({request.x}, {request.y}, {request.z}) | Target ({request.goal_x},{request.goal_y},{request.goal_z})\r\n")
                 self.log_anygrasp_data(f)
@@ -940,6 +1157,7 @@ class AnyGraspNode(Node):
 
         context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request)
         problem = ProblemSpace(self, hts_grasp_group)
+        problem.start_timer()
         problem._handle_validity_send_goal(context)
         # self._handle_validity_send_goal(context, 0)
 
