@@ -20,6 +20,9 @@
 
 moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
     #define RUN_REFINEMENT_PICKUP false
+    #define PICKUP_TIMEOUT 0.3
+
+    move_group_interface_->setPlanningTime(PICKUP_TIMEOUT);
     
     // set the start state of the plan
     move_group_interface_->getCurrentState(10.0);
@@ -65,10 +68,130 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
     return ompl_status;
 }
 
+
+moveit::core::MoveItErrorCode hts_node::plan_move_no_refine(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {  
+    move_group_interface_->setStartState(start_state);
+      
+    // define orientation constraints
+    moveit_msgs::msg::OrientationConstraint orientation_constraint;
+    orientation_constraint.header.frame_id = move_group_interface_->getPoseReferenceFrame();
+    orientation_constraint.link_name = move_group_interface_->getEndEffectorLink();
+    orientation_constraint.orientation = start_pose.orientation;
+    orientation_constraint.absolute_x_axis_tolerance = 3.142;
+    orientation_constraint.absolute_y_axis_tolerance = 0.6;
+    orientation_constraint.absolute_z_axis_tolerance = 0.6;
+    orientation_constraint.weight = 1.0;
+    orientation_constraint.parameterization = orientation_constraint.XYZ_EULER_ANGLES;
+
+    // set the goal and temporarily change the orientation tolerance to infinite
+    move_group_interface_->setPoseTarget(target_pose);
+    double orig_goal_tolerance = move_group_interface_->getGoalOrientationTolerance();
+    move_group_interface_->setGoalOrientationTolerance(3.142);
+
+    // apply orientation constraint
+    moveit_msgs::msg::Constraints all_constraints;
+    all_constraints.name = "Move Constraint";
+    all_constraints.orientation_constraints.emplace_back(orientation_constraint);
+    move_group_interface_->clearPathConstraints();
+    move_group_interface_->setPathConstraints(all_constraints);
+    RCLCPP_INFO(this->get_logger(), "Applied orientation constraints to planning scene.");
+
+    bool ompl_status;
+    moveit::core::MoveItErrorCode err_code;
+
+    if (true) {
+        RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL built in pipeline...");
+        ompl_status = (err_code = move_group_interface_->plan(plan)) == moveit::core::MoveItErrorCode::SUCCESS;
+    } else {
+        RCLCPP_INFO(this->get_logger(), "Displaying some info about the move...");
+        planning_interface::MotionPlanResponse motion_plan_response;
+        planning_interface::MotionPlanRequest motion_plan_request;
+
+        move_group_interface_->constructMotionPlanRequest(motion_plan_request);
+        motion_plan_request.goal_constraints[0].name = "Move Goal Constraint";
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_y_axis_tolerance = 0.1;
+        motion_plan_request.goal_constraints[0].orientation_constraints[0].absolute_z_axis_tolerance = 0.1;
+        
+        motion_plan_request.path_constraints.name = "Move Path Constraint";
+        motion_plan_request.path_constraints.orientation_constraints[0].absolute_x_axis_tolerance = 3.142;
+        motion_plan_request.path_constraints.orientation_constraints[0].absolute_y_axis_tolerance = 0.1;      
+        motion_plan_request.path_constraints.orientation_constraints[0].absolute_z_axis_tolerance = 0.1;     
+
+        this->printMotionPlanRequestFull(motion_plan_request);
+
+        RCLCPP_INFO(this->get_logger(), "======================= Testing Selecting HTS IK Constraint Sampler =======================");
+        auto scene = planning_scene_monitor_->getPlanningScene();
+        moveit_msgs::msg::Constraints constr = motion_plan_request.goal_constraints[0];
+        constraint_samplers::ConstraintSamplerPtr chosen_sampler = sampler_manager->selectSampler(scene, "fr3_arm", constr);
+        RCLCPP_INFO(this->get_logger(), "Selected the sampler %s.", chosen_sampler->getName().c_str());
+        RCLCPP_INFO(this->get_logger(), "============================================================================================");
+
+        planning_scene_monitor::LockedPlanningSceneRO locked_scene(planning_scene_monitor_);
+
+        RCLCPP_INFO(this->get_logger(), "======================= Computing Path using OMPL self pipeline =======================");
+        ompl_status = planning_pipeline_ompl->generatePlan(locked_scene, motion_plan_request, motion_plan_response);
+        RCLCPP_INFO(this->get_logger(), "============================================================================================");
+
+        if (ompl_status) {
+          	moveit_msgs::msg::RobotTrajectory traj;
+          	motion_plan_response.trajectory->getRobotTrajectoryMsg(traj);
+          	plan.trajectory.joint_trajectory = traj.joint_trajectory;
+          	plan.trajectory.multi_dof_joint_trajectory = traj.multi_dof_joint_trajectory;
+        }
+        err_code = motion_plan_response.error_code;
+        plan.planning_time = motion_plan_response.planning_time;
+        plan.start_state = motion_plan_response.start_state;
+    }
+
+    // report the trajectory length
+    if (ompl_status == moveit::core::MoveItErrorCode::SUCCESS) {
+        float trajectory_length_pickup = (float) this->compute_trajectory_length_(plan.trajectory.joint_trajectory);
+        RCLCPP_INFO(this->get_logger(), "Unrefined length is %.5f", trajectory_length_pickup);
+    } else {
+        return ompl_status;
+    }
+
+    if (false) {
+        // tighten orientation constraints
+        orientation_constraint.absolute_x_axis_tolerance = 3.142;
+        orientation_constraint.absolute_y_axis_tolerance = 0.001;
+        orientation_constraint.absolute_z_axis_tolerance = 0.001;
+
+        // apply tightened orientation constraint
+        moveit_msgs::msg::Constraints all_constraints_tightened;
+        all_constraints_tightened.name = "Move Constraint Tightened";
+        all_constraints_tightened.orientation_constraints.emplace_back(orientation_constraint);
+        move_group_interface_->clearPathConstraints();
+        move_group_interface_->setPathConstraints(all_constraints_tightened);
+        RCLCPP_INFO(this->get_logger(), "Tightened orientation constraints on planning scene.");
+
+        RCLCPP_INFO(this->get_logger(), "Planned from OMPL. Now refining with STOMP");
+        moveit::core::MoveItErrorCode stomp_status = refine_path_with_stomp(plan);
+
+        if (stomp_status == moveit::core::MoveItErrorCode::SUCCESS) {
+            float trajectory_length_pickup = (float) compute_trajectory_length_(plan.trajectory.joint_trajectory);
+            RCLCPP_INFO(this->get_logger(), "Refined length is %.5f", trajectory_length_pickup);
+        } else {
+            RCLCPP_WARN(this->get_logger(), "Refinement failed");
+            return ompl_status;
+        }
+    }
+
+    // clear path constraints and reset orientation goal tolerance
+    move_group_interface_->clearPathConstraints();
+    move_group_interface_->setGoalOrientationTolerance(orig_goal_tolerance);
+
+	return ompl_status;
+}
+
 moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
     #define RUN_REFINEMENT_MOVE true
     #define USE_SELF_PIPELINE false
-    
+    #define MOVE_TIMEOUT 3.0
+        
+    move_group_interface_->setPlanningTime(MOVE_TIMEOUT);
+
     move_group_interface_->setStartState(start_state);
       
     // define orientation constraints
@@ -154,8 +277,8 @@ moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState
     if (RUN_REFINEMENT_MOVE) {
         // tighten orientation constraints
         orientation_constraint.absolute_x_axis_tolerance = 3.142;
-        orientation_constraint.absolute_y_axis_tolerance = 0.001;
-        orientation_constraint.absolute_z_axis_tolerance = 0.001;
+        orientation_constraint.absolute_y_axis_tolerance = 0.01;
+        orientation_constraint.absolute_z_axis_tolerance = 0.01;
 
         // apply tightened orientation constraint
         moveit_msgs::msg::Constraints all_constraints_tightened;

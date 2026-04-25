@@ -12,6 +12,7 @@
 
 #include <geometry_msgs/msg/pose.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
+#include <chrono>
 
 void hts_node::get_object_position(const std::shared_ptr<hts_msgs::srv::GetObjectPosition::Request> request, std::shared_ptr<hts_msgs::srv::GetObjectPosition::Response> response) {
     RCLCPP_INFO(this->get_logger(), "Get Object Position Started");
@@ -71,11 +72,17 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         collision_request.distance = true;
         collision_request.detailed_distance = true;
 
+        auto t0 = std::chrono::high_resolution_clock::now();
+        auto t1 = std::chrono::high_resolution_clock::now();
+
         // ---------------- try to do IK for the current grasp pose --------------- //
         if (RUN_IK_PICKUP) {
             RCLCPP_INFO(this->get_logger(), "Computing IK (Pickup)...");
             moveit::core::RobotState computed_ik_pickup(planning_scene->getRobotModel());
+            t0 = std::chrono::high_resolution_clock::now();
             if (!this->compute_IK_manually(grasp_pose, computed_ik_pickup)) {
+                t1 = std::chrono::high_resolution_clock::now();
+                result->pickup_ik_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
                 RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (pickup).");
                 result->success = true;
                 result->is_valid = false;
@@ -87,6 +94,8 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
                 goal_handle->succeed(result);
                 return;
             }
+            t1 = std::chrono::high_resolution_clock::now();
+            result->pickup_ik_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
 
             // ---------------- try to do collision detection for the current grasp pose --------------- //
             if (RUN_COLLISIONS_PICKUP) {
@@ -113,7 +122,10 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
 
         // ---------------- run trajectory generation for the pickup plan --------------- //
         moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
+        t0 = std::chrono::high_resolution_clock::now();
         err_code = this->plan_pickup(*current_state, grasp_pose, pickup_plan);
+        t1 = std::chrono::high_resolution_clock::now();
+        result->pickup_plan_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
 
         if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
             RCLCPP_INFO(this->get_logger(), "Planning (pickup) failed");
@@ -160,7 +172,10 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         if (RUN_IK_MOVE) {
             RCLCPP_INFO(this->get_logger(), "Computing IK (Move)...");
             moveit::core::RobotState computed_ik_move(planning_scene->getRobotModel());
+            t0 = std::chrono::high_resolution_clock::now();
             if (!compute_IK_manually(goal_pose, computed_ik_move)) {
+                t1 = std::chrono::high_resolution_clock::now();
+                result->move_ik_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
                 RCLCPP_ERROR(this->get_logger(), "No IK Solution Found (move).");
                 result->success = true;
                 result->is_valid = false;
@@ -172,6 +187,8 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
                 goal_handle->succeed(result);
                 return;
             }
+            t1 = std::chrono::high_resolution_clock::now();
+            result->move_ik_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
 
             // ---------------- try to do collision detection for the goal pose --------------- //
             if (RUN_COLLISIONS_MOVE) {
@@ -201,9 +218,17 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
             gripper_interface_->attachObject(object_name);
         }
 
-        // ---------------- run trajectory generation for the move operation --------------- //
+        // ---------------- run trajectory generation for the move operation --------------- //        
         moveit::planning_interface::MoveGroupInterface::Plan move_plan;
+        t0 = std::chrono::high_resolution_clock::now();
+        err_code = this->plan_move_no_refine(move_start_state, grasp_pose, goal_pose, move_plan);
+        t1 = std::chrono::high_resolution_clock::now();
+        result->move_plan_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
+
+        t0 = std::chrono::high_resolution_clock::now();
         err_code = this->plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
+        t1 = std::chrono::high_resolution_clock::now();
+        result->move_refine_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000 - result->move_refine_time;
 
         // detach target object
         if (goal_handle->get_goal()->target_id >= 0) {

@@ -153,7 +153,7 @@ class hts_missions : public rclcpp::Node {
 
         auto close_send_goal_options = rclcpp_action::Client<CustomActionClose>::SendGoalOptions();
         close_send_goal_options.result_callback =
-          [this, move_send_goal_options, goal_handle, result, feedback, grasp_pose](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
+          [this, move_send_goal_options, goal_handle, result, feedback, &grasp_pose](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
             if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
               RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)r.code);
               result->success = false;
@@ -167,6 +167,7 @@ class hts_missions : public rclcpp::Node {
               move_goal.x = goal_handle->get_goal()->x;
               move_goal.y = goal_handle->get_goal()->y;
               move_goal.z = goal_handle->get_goal()->z + grasp_pose.position.z;
+              RCLCPP_INFO(this->get_logger(), "Gripper %f %f %f", move_goal.z, goal_handle->get_goal()->z, grasp_pose.position.z);
 
               move_client_->async_send_goal(move_goal, move_send_goal_options);
             }
