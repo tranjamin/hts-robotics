@@ -74,14 +74,17 @@ class HTSGrasp():
         temp_grasp_group.add(self.get_grasp_object())
         return temp_grasp_group
         
-    def validity_request_goal(self, request: ComputeGraspValidity.Request) -> ComputeGraspValidity.Goal:
+    def validity_request_goal(self, request: ComputeGraspValidity.Request, planning_time: float) -> ComputeGraspValidity.Goal:
         goal = ComputeGraspValidity.Goal()
         goal.grasp_pose = self.get_pose()
         goal.goal_x = request.goal_x
         goal.goal_y = request.goal_y
 
-        # out goal z is expressed as an offset
+        # our goal z is expressed as an offset
         goal.goal_z = request.goal_z + goal.grasp_pose.position.z
+
+        goal.planning_time = planning_time
+
         goal.target_id = request.id
 
         return goal
@@ -275,7 +278,7 @@ class ProblemSpace():
     prediction_z_range: float = 0.05
     prediction_th_range: float = math.pi/4
     
-    total_max_time = 30.0
+    total_max_time = 200.0
     
     def __init__(self, node: AnyGraspNode, hts_gg: HTSGraspGroup):
         self.grasps: HTSGraspGroup = hts_gg # all grasps
@@ -350,7 +353,6 @@ class ProblemSpace():
         weighted_cost = [costs[i]*uncertanties[i] for i in range(len(costs))]
 
         evaluated = [x.evaluated for x in self.points]
-        distance = [ProblemPoints._distance_scaler(p.z, p.theta) for p in self.points]
 
         fig, axs = plt.subplots(2, 3, figsize=(24,12))
         splt1 = axs[0, 0].scatter(x, y, c=uncertanties, vmin=0.0, vmax=1.0)
@@ -432,7 +434,7 @@ class ProblemSpace():
 
         grasp.start_timer()
 
-        send_goal_future = self.node.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request))
+        send_goal_future = self.node.grasp_validity_client_.send_goal_async(grasp.validity_request_goal(context.request, point.max_planning_time))
         send_goal_future.add_done_callback(lambda f: self._handle_validity_response(f, context, idx))
             
     def _handle_validity_response(self, future, context: ValidityContext, idx):

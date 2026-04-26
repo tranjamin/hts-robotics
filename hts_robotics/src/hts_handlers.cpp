@@ -14,6 +14,15 @@
 #include <tf2_eigen/tf2_eigen.hpp>
 #include <chrono>
 
+// flags to enable or disable steps
+#define RUN_IK_PICKUP true
+#define RUN_IK_MOVE false
+#define RUN_COLLISIONS_PICKUP false
+#define RUN_COLLISIONS_MOVE false
+
+#define DEFAULT_PICKUP_TIME 10.0
+#define DEFAULT_MOVE_TIME 10.0
+
 void hts_node::get_object_position(const std::shared_ptr<hts_msgs::srv::GetObjectPosition::Request> request, std::shared_ptr<hts_msgs::srv::GetObjectPosition::Response> response) {
     RCLCPP_INFO(this->get_logger(), "Get Object Position Started");
     int object_id = request->object_id;
@@ -36,13 +45,14 @@ void hts_node::get_object_position(const std::shared_ptr<hts_msgs::srv::GetObjec
 }
 
 void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionComputeGraspValidity>> goal_handle) {
-    std::thread([this, goal_handle] {
+    std::thread([this, goal_handle] {            
+        RCLCPP_INFO(this->get_logger(), "Planning with planning time %f", goal_handle->get_goal()->planning_time);
 
-        // flags to enable or disable steps
-        #define RUN_IK_PICKUP true
-        #define RUN_IK_MOVE false
-        #define RUN_COLLISIONS_PICKUP false
-        #define RUN_COLLISIONS_MOVE false
+        double base_planning_time = goal_handle->get_goal()->planning_time;
+        if (base_planning_time == 0.0) base_planning_time = 0.3;
+
+        double pickup_planning_time = base_planning_time;
+        double move_planning_time = max(1, base_planning_time * 10);
 
         // lock planning scene
         planning_scene_monitor::LockedPlanningSceneRO planning_scene(planning_scene_monitor_);
@@ -123,7 +133,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         // ---------------- run trajectory generation for the pickup plan --------------- //
         moveit::planning_interface::MoveGroupInterface::Plan pickup_plan;
         t0 = std::chrono::high_resolution_clock::now();
-        err_code = this->plan_pickup(*current_state, grasp_pose, pickup_plan);
+        err_code = this->plan_pickup(*current_state, grasp_pose, pickup_plan, pickup_planning_time);
         t1 = std::chrono::high_resolution_clock::now();
         result->pickup_plan_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
 
@@ -226,7 +236,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         result->move_plan_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
 
         t0 = std::chrono::high_resolution_clock::now();
-        err_code = this->plan_move(move_start_state, grasp_pose, goal_pose, move_plan);
+        err_code = this->plan_move(move_start_state, grasp_pose, goal_pose, move_plan, move_planning_time);
         t1 = std::chrono::high_resolution_clock::now();
         result->move_refine_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000 - result->move_refine_time;
 
@@ -391,7 +401,7 @@ void hts_node::handle_accepted_pickup_(const std::shared_ptr<rclcpp_action::Serv
         }
 
         moveit::planning_interface::MoveGroupInterface::Plan plan;
-        success = this->plan_pickup(*current_state, target, plan);
+        success = this->plan_pickup(*current_state, target, plan, DEFAULT_PICKUP_TIME);
         
         if (!success) {
             RCLCPP_ERROR(this->get_logger(), "Planning Failed");
@@ -468,7 +478,7 @@ void hts_node::handle_accepted_move_(const std::shared_ptr<rclcpp_action::Server
         this->log_pose(target_pose, "Target Move");
 
         moveit::planning_interface::MoveGroupInterface::Plan plan;
-        success = this->plan_move(*current_state, current_pose, target_pose, plan);
+        success = this->plan_move(*current_state, current_pose, target_pose, plan, DEFAULT_MOVE_TIME);
         
         if (!success) {
             RCLCPP_ERROR(this->get_logger(), "Planning Failed");

@@ -149,7 +149,8 @@ class hts_node : public rclcpp::Node {
             const moveit::core::RobotState& start_state, 
             const geometry_msgs::msg::Pose& start_pose, 
             const geometry_msgs::msg::Pose& target_pose,
-             moveit::planning_interface::MoveGroupInterface::Plan &plan
+            moveit::planning_interface::MoveGroupInterface::Plan &plan,
+            double move_timeout
         );
         moveit::core::MoveItErrorCode plan_move_no_refine(
             const moveit::core::RobotState& start_state, 
@@ -160,7 +161,8 @@ class hts_node : public rclcpp::Node {
         moveit::core::MoveItErrorCode plan_pickup(
             const moveit::core::RobotState& start_state, 
             const geometry_msgs::msg::Pose& target_pose, 
-            moveit::planning_interface::MoveGroupInterface::Plan &plan
+            moveit::planning_interface::MoveGroupInterface::Plan &plan,
+            double move_timeout
         );
 
         // planning scene utilities

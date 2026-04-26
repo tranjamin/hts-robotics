@@ -18,11 +18,17 @@
 
 #include <tf2_eigen/tf2_eigen.hpp>
 
-moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
-    #define RUN_REFINEMENT_PICKUP false
-    #define PICKUP_TIMEOUT 0.3
+#define RUN_REFINEMENT_PICKUP false
+#define RUN_REFINEMENT_MOVE true
+#define USE_SELF_PIPELINE false
 
-    move_group_interface_->setPlanningTime(PICKUP_TIMEOUT);
+moveit::core::MoveItErrorCode hts_node::plan_pickup(
+    const moveit::core::RobotState& start_state, 
+    const geometry_msgs::msg::Pose& target_pose, 
+    moveit::planning_interface::MoveGroupInterface::Plan &plan,
+    double pickup_timeout
+) {
+    move_group_interface_->setPlanningTime(pickup_timeout);
     
     // set the start state of the plan
     move_group_interface_->getCurrentState(10.0);
@@ -68,8 +74,12 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(const moveit::core::RobotSta
     return ompl_status;
 }
 
-
-moveit::core::MoveItErrorCode hts_node::plan_move_no_refine(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {  
+moveit::core::MoveItErrorCode hts_node::plan_move_no_refine(
+    const moveit::core::RobotState& start_state, 
+    const geometry_msgs::msg::Pose& start_pose, 
+    const geometry_msgs::msg::Pose& target_pose, 
+    moveit::planning_interface::MoveGroupInterface::Plan &plan
+) {  
     move_group_interface_->setStartState(start_state);
       
     // define orientation constraints
@@ -185,12 +195,14 @@ moveit::core::MoveItErrorCode hts_node::plan_move_no_refine(const moveit::core::
 	return ompl_status;
 }
 
-moveit::core::MoveItErrorCode hts_node::plan_move(const moveit::core::RobotState& start_state, const geometry_msgs::msg::Pose& start_pose, const geometry_msgs::msg::Pose& target_pose, moveit::planning_interface::MoveGroupInterface::Plan &plan) {
-    #define RUN_REFINEMENT_MOVE true
-    #define USE_SELF_PIPELINE false
-    #define MOVE_TIMEOUT 3.0
-        
-    move_group_interface_->setPlanningTime(MOVE_TIMEOUT);
+moveit::core::MoveItErrorCode hts_node::plan_move(
+    const moveit::core::RobotState& start_state, 
+    const geometry_msgs::msg::Pose& start_pose, 
+    const geometry_msgs::msg::Pose& target_pose, 
+    moveit::planning_interface::MoveGroupInterface::Plan &plan,
+    double move_timeout
+) {       
+    move_group_interface_->setPlanningTime(move_timeout);
 
     move_group_interface_->setStartState(start_state);
       
