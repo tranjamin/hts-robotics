@@ -31,7 +31,9 @@ from gsnet import AnyGrasp
 
 from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .symmetry import SymmetryGroup
-from .grasp_selection import ProblemPoints, ProblemSpace, ValidityContext
+from .grasp_selection_custom import GraspSelectorCustom, ValidityContext
+from .grasp_selection_basic import GraspSelectorBasic
+from .grasp_selection_gp import GraspSelectorGP
 from .utils import display_grasps, display_pointcloud, fast_norgb_pc2_to_numpy, fast_pc2_to_numpy
 
 
@@ -387,14 +389,22 @@ class AnyGraspNode(Node):
             hts_grasp_group_mirrored.append(hts_grasp)
 
         context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request)
-        problem = ProblemSpace(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
+        problem = GraspSelectorGP(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
         problem.start_timer()
         problem._handle_validity_send_goal(context)
-        # self._handle_validity_send_goal(context, 0)
 
         while context.response is None:
             time.sleep(0.01)
-        time.sleep(10.0)
+        time.sleep(1.0)
+
+        context_flipped = ValidityContext(goal_handle, hts_grasp_group_mirrored, folder, cloud, request, is_flipped=True)
+        problem_flipped = GraspSelectorGP(hts_grasp_group_mirrored, self.get_logger(), self.grasp_validity_client_)
+        problem_flipped.start_timer()
+        problem_flipped._handle_validity_send_goal(context_flipped)
+
+        while context_flipped.response is None:
+            time.sleep(0.01)
+        time.sleep(1.0)
 
         return context.response
     
@@ -413,11 +423,14 @@ class AnyGraspNode(Node):
         final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
 
         # detect if camera is pointing downwards
-        flip_rotation = Rotation.from_euler('z', 180, degrees=True)
-        _, _, yaw = final_rotation.as_euler('xyz', degrees=True)
-        if flip_z:
-            self.get_logger().info("Identified Flipped Grasp. Unflipping...")
+        flip_rotation = Rotation.from_euler('x', 180, degrees=True)
+        roll, pitch, yaw = final_rotation.as_euler('xyz', degrees=True)
+        # self.get_logger().info(f"Identified Grasp with roll {roll} pitch {pitch} yaw {yaw}. Unflipping...")
+        if flip_z ^ (abs(roll) > 90):
+            self.get_logger().info(f"Identified Grasp with roll {roll} pitch {pitch} yaw {yaw}. Unflipping...")
             final_rotation = final_rotation * flip_rotation
+            nroll, npitch, nyaw = final_rotation.as_euler('xyz', degrees=True)
+            self.get_logger().info(f"Now Grasp with roll {nroll} pitch {npitch} yaw {nyaw}.")
 
         final_quaternion = final_rotation.as_quat()
 

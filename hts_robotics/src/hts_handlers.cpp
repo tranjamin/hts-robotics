@@ -52,7 +52,8 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         if (base_planning_time == 0.0) base_planning_time = 0.3;
 
         double pickup_planning_time = base_planning_time;
-        double move_planning_time = base_planning_time * 10 < 1 ? 1 : base_planning_time * 10;
+        // double move_planning_time = base_planning_time * 10 < 1 ? 1 : base_planning_time * 10;
+        double move_planning_time = base_planning_time;
 
         // lock planning scene
         planning_scene_monitor::LockedPlanningSceneRO planning_scene(planning_scene_monitor_);

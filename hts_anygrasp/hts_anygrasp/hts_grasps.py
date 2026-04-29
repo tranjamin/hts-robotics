@@ -115,9 +115,10 @@ class HTSGrasp():
         """Has this grasp been evaluated?"""
         return self._evaluated
 
-    def save_grasp_message(self, folder: str):
+    def save_grasp_message(self, folder: str, is_flipped: bool=False):
         """Adds a line to grasp_messages.txt with result codes and messages"""
-        with open(f"{folder}/grasp_messages.txt", "a") as f:
+        filename = f"{folder}/grasp_messages.txt" if not is_flipped else f"{folder}/grasp_messages_flipped.txt"
+        with open(filename, "a") as f:
             f.write(f"Message {self.result_message} | Err Code {self.result_err_code} | Err Source {self.result_err_source} | Err Msg {self.result_err_message}\r\n")
     
     def start_timer(self):
@@ -128,9 +129,10 @@ class HTSGrasp():
         """Ends evaluation timer"""
         self.time = time.time() - self._t0
 
-    def save_grasp_validity(self, folder: str, include_header: bool=False):
+    def save_grasp_validity(self, folder: str, include_header: bool=False, is_flipped: bool=False):
         """Saves grasp metrics to /grasp_evaluations.txt"""
-        with open(f"{folder}/grasp_evaluations.txt", "a") as f:
+        filename = f"{folder}/grasp_evaluations.txt" if not is_flipped else f"{folder}/grasp_evaluations_flipped.txt"
+        with open(filename, "a") as f:
             if include_header:
                 f.write(f"id,z,th,planning_time,planing_score,grasp_score,pickup_ik_t,pickup_plan_t,pickup_refine_t,move_ik_t,move_plan_t,move_refine_t\r\n") 
             f.write(f"{self.id},{self.z},{self.theta},{self.time},{self.path_score},{self.grasp_score},{str(self.result_timings)[1:-1]}\r\n")
@@ -139,7 +141,7 @@ class HTSGrasp():
         """Saves the grasp positions and orientations to /grasps.txt"""
         pose = self.get_pose()
         with open(f"{folder}/grasps.txt", "a") as f:
-            f.write(f"{id} | {pose.position.x} {pose.position.y} {pose.position.z} {pose.orientation.x} {pose.orientation.y} {pose.orientation.z} {pose.orientation.w}\r\n")
+            f.write(f"{self.id} | {pose.position.x} {pose.position.y} {pose.position.z} {pose.orientation.x} {pose.orientation.y} {pose.orientation.z} {pose.orientation.w}\r\n")
 
 class HTSGraspGroup():
     def __init__(self, grasp_list=None):
@@ -160,14 +162,15 @@ class HTSGraspGroup():
     def num_valid(self) -> int:
         return len([grasp for grasp in self._grasps if grasp.is_valid()])
 
-    def save_metrics(self, folder: str):
+    def save_metrics(self, folder: str, is_flipped: bool=False):
         """Aggregates the results of the grasps and saves it to /grasp_metrics.txt"""
 
         valid_grasps = [grasp for grasp in self._grasps if grasp.is_valid()]
         valid_scores = [grasp.path_score for grasp in valid_grasps]
         total_time = sum([grasp.time for grasp in self._grasps])
 
-        with open(f"{folder}/grasp_metrics.txt", "a") as f:
+        filename = f"{folder}/grasp_metrics.txt" if not is_flipped else f"{folder}/grasp_metrics_flipped.txt"
+        with open(filename, "a") as f:
             f.write(f"Total Grasps: {len(self)}\r\n")
             f.write(f"Valid Grasps: {len(valid_grasps)}\r\n")
             f.write(f"Percent Valid Grasps: {(len(valid_grasps) / len(self)) if len(self) else '-'}\r\n")

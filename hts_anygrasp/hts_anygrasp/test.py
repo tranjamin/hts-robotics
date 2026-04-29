@@ -5,10 +5,59 @@ import time
 import random
 import numpy as np
 import scipy
+import random as random
 import functools
+from sklearn.gaussian_process.kernels import Matern, RBF
 
-GRASPS_Z = np.load("z.npy")
-GRASPS_TH = np.load("th.npy")
+file = "grasps_planning.npz"
+data = np.genfromtxt(file, delimiter=",", skip_header=1)
+GRASPS_Z = data[:, 0]
+GRASPS_TH = data[:, 1]
+GRASPS_PATH_SCORE = data[:, 3]
+GRASPS_GRASP_SCORE = data[:, 4]
+
+# GRASPS_Z = np.load("z.npy")
+# GRASPS_TH = np.load("th.npy")
+
+from scipy.spatial.distance import cdist, pdist, squareform
+
+def wrapped_sqeuclidean(x, y):
+    # return (x[0] - y[0])**2 + ((x[1] - y[1] + np.pi) % (2*np.pi) - np.pi)**2
+    return (x[0] - y[0])**2 + (x[1] - y[1])**2
+
+class WrappedRBF(RBF):
+    def __init__(self, length_scale=1.0, length_scale_bounds=(1e-5, 1e5)):
+        super().__init__(length_scale=length_scale, length_scale_bounds=length_scale_bounds)
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+        X = np.atleast_2d(X)
+        length_scale = self.length_scale
+        if Y is None:
+            dists = pdist(X / length_scale, metric=wrapped_sqeuclidean)
+            K = np.exp(-0.5 * dists)
+            # convert from upper-triangular matrix to square matrix
+            K = squareform(K)
+            np.fill_diagonal(K, 1)
+        else:
+            dists = cdist(X / length_scale, Y / length_scale, metric=wrapped_sqeuclidean)
+            K = np.exp(-0.5 * dists)
+
+        if eval_gradient:
+            if self.hyperparameter_length_scale.fixed:
+                # Hyperparameter l kept fixed
+                return K, np.empty((X.shape[0], X.shape[0], 0))
+            elif not self.anisotropic or length_scale.shape[0] == 1:
+                K_gradient = (K * squareform(dists))[:, :, np.newaxis]
+                return K, K_gradient
+            elif self.anisotropic:
+                # We need to recompute the pairwise dimension-wise distances
+                K_gradient = (X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2 / (
+                    length_scale**2
+                )
+                K_gradient *= K[..., np.newaxis]
+                return K, K_gradient
+        else:
+            return K
 
 # construct a problem space
 class ProblemSpace():
@@ -23,77 +72,50 @@ class ProblemSpace():
     sigma_z: float = 0.05
     
     select_greedy_eps: float = 0.7
-
-    certainty_scaler_range: float = 1e-3
-    prediction_z_range: float = 0.05
-    prediction_th_range: float = math.pi/4
     
     total_max_time = 100.0
     
+    kernel = Matern(length_scale=[0.02, 0.2], nu=0.5)
+    # kernel = 
+    
     def __init__(self):        
         self.points: list[ProblemPoints] = [ProblemPoints(GRASPS_Z[i], GRASPS_TH[i]) for i in range(len(GRASPS_TH))] # points
-        self.t0 = 0.0
 
-        self.max_path_score = 0.0
+        for i in range(len(self.points)):
+            self.points[i].path_ret = GRASPS_PATH_SCORE[i]
+            self.points[i].grasp_score = 1
+
+        self.t0 = 0.0
+        self.N = len(self.points)
+        self.k = 1.0
+
+        self.max_path_score = 10
+
+        self.all_z = np.array([p.z for p in self.points]).reshape((len(self.points), 1))
+        self.all_th = np.array([p.theta for p in self.points]).reshape((len(self.points), 1))
+        self.all_coords = np.hstack((self.all_z, self.all_th))
+
+        self.mean_cost = np.zeros((self.N, 1))
+        self.cov = np.eye(self.N)
     
     def start_timer(self):
         self.t0 = time.time()
     
     def select_next(self):
-        # print("Select Next")
-        # highest uncertainty
-        uncertanties = [1 - x.get_certainty() for x in self.points]
-        costs = [x.cost(self.max_path_score) for x in self.points]
-        if min(costs) < 0:
-            costs = [x - min(costs) for x in costs]
-        weighted_cost = [costs[i]*uncertanties[i] for i in range(len(costs))]
+        # construct training dataset from already sampled points
+        weights = (self.mean_cost.ravel() + 3*np.sqrt(np.diag(self.cov)))*np.array([1 - p.certainty for p in self.points])
+        weights = weights - np.min(weights)
 
-        zs = np.array([p.z for p in self.points])
-        thetas = np.array([p.theta for p in self.points])
+        # weights = (self.mean_cost.ravel() + 3*np.sqrt(np.diag(self.cov)))
+        # weights = weights - np.min(weights)
 
-        x = zs*np.cos(thetas)
-        y = zs*np.sin(thetas)
+        if np.sum(weights) == 0.0:
+            idx = random.choices(range(len(self.points)))[0]
+            return idx, self.points[idx]
 
-        # fig, axs = plt.subplots(1, 2)
-
-        # splt1 = axs[0].scatter(x, y, c=weighted_cost)
-        # splt2 = axs[1].scatter(x, y, c=uncertanties)
-
-        # axs[0].set_title("Weighted Cost")
-        # axs[1].set_title("Uncertainties")
-        
-        # fig.colorbar(splt1, ax=axs[0])
-        # fig.colorbar(splt2, ax=axs[1])
-
-        # plt.show()
-
-
-        # if everything is uncertain, then select greedily
-        if sum(weighted_cost) != 0.0 and (min(uncertanties) == 1.0 or random.random() < self.select_greedy_eps):
-            if random.random() < 0.5:
-                # print(f"Trying to sample greedily")
-                idx = random.choices(range(len(self.points)), weights=weighted_cost)[0]
-                print(f"Selecting probabilistic greedily {idx}")
-                return idx, self.points[idx]
-            else:
-                # print(f"Trying to sample greedily")
-                idx = weighted_cost.index(max(weighted_cost))
-                print(f"Selecting greedily {idx}")
-                return idx, self.points[idx]
-        elif sum(uncertanties) != 0.0:
-            if random.random() < 0.5:
-                # print(f"Trying to sample uncertainty")
-                idx = random.choices(range(len(self.points)), weights=uncertanties)[0]
-                print(f"Selecting greedily based on uncertainty {idx}")
-                return idx, self.points[idx]
-            else:
-                # print(f"Trying to sample greedily")
-                idx = uncertanties.index(max(uncertanties))
-                print(f"Selecting based on uncertainty {idx}")
-                return idx, self.points[idx]
-        else:
-            print("Everything is 100%% certain now")
-            pass # do something
+        # sample
+        idx = random.choices(range(len(self.points)), weights=list(weights))[0]
+        return idx, self.points[idx]
         
     def plot_grasps(self):
         zs = np.array([p.z for p in self.points])
@@ -102,32 +124,46 @@ class ProblemSpace():
         x = zs*np.cos(thetas)
         y = zs*np.sin(thetas)
 
-        path_scores = [min(self.max_path_score, x.path_score) for x in self.points]
-        grasp_scores = [x.grasp_score for x in self.points]
-        
-        uncertanties = [1 - x.get_certainty() for x in self.points]
-        costs = [x.cost(self.max_path_score) for x in self.points]
-        if min(costs) < 0:
-            costs = [x - min(costs) for x in costs]
-        weighted_cost = [costs[i]*uncertanties[i] for i in range(len(costs))]
+        x_mesh, y_mesh = np.meshgrid(np.linspace(-0.1, 0.1, 60), np.linspace(-0.1, 0.1, 60))
+        x_mesh = np.array(x_mesh).reshape((-1, 1))
+        y_mesh = np.array(y_mesh).reshape((-1, 1))
+        z_mesh = np.sqrt(x_mesh**2 + y_mesh**2)
+        th_mesh = np.atan2(y_mesh, x_mesh)
 
-        evaluated = [x.evaluated for x in self.points]
-        distance = [ProblemPoints._distance_scaler(p.z, p.theta) for p in self.points]
+        mesh_mean, mesh_cov = self.get_preds(np.hstack((z_mesh, th_mesh)))
+        mesh_uncertanties = np.sqrt(np.diag(mesh_cov))
+        # mesh_mean = self.max_path_score - mesh_mean
+        x_mesh = z_mesh*np.cos(th_mesh)
+        y_mesh = z_mesh*np.sin(th_mesh)
+
+        costs_estimated = self.mean_cost        
+        uncertanties = np.sqrt(np.diag(self.cov))
+
+        # evaluated = [x.evaluated for x in self.points]
+
+        true_costs = [x.cost(self.max_path_score) for x in self.points]
+        true_path_scores = [x.path_ret if x.valid else 0.0 for x in self.points]
+        calculated_path_scores = [0.0 if not x.evaluated else x.path_score for x in self.points]
+        errs = [costs_estimated[i] - true_costs[i] for i in range(len(true_costs))]
+
+        weights = (self.mean_cost.ravel() - self.k*np.sqrt(np.diag(self.cov)))
 
         fig, axs = plt.subplots(2, 3, figsize=(24, 12))
-        splt1 = axs[0, 0].scatter(x, y, c=uncertanties, vmin=0.0, vmax=1.0)
-        splt2 = axs[0, 1].scatter(x, y, c=costs, vmin=0.0)
-        splt3 = axs[0, 2].scatter(x, y, c=path_scores, vmin=0.0)
-        splt4 = axs[1, 0].scatter(x, y, c=grasp_scores, vmin=0.0)
-        splt5 = axs[1, 1].scatter(x, y, c=weighted_cost)
-        splt6 = axs[1, 2].scatter(x, y, c=evaluated)
+        splt1 = axs[0, 0].scatter(x, y, c=uncertanties)
+        splt2 = axs[0, 1].scatter(x, y, c=costs_estimated)
+        splt3 = axs[0, 2].scatter(x, y, c=true_costs)
 
-        axs[0, 0].set_title("Uncertainties")
-        axs[0, 1].set_title("Costs")
-        axs[0, 2].set_title("Path Scores")
-        axs[1, 0].set_title("Grasp Scores")
-        axs[1, 1].set_title("Weighted Cost")
-        axs[1, 2].set_title("Evaluated")
+        splt4 = axs[1, 0].scatter(x_mesh, y_mesh, c=mesh_uncertanties)
+        splt5 = axs[1, 1].scatter(x_mesh, y_mesh, c=mesh_mean)
+        splt6 = axs[1, 2].scatter(x, y, c=errs)
+
+        axs[0, 0].set_title("Variance")
+        axs[0, 1].set_title("Mean Cost Score")
+        axs[0, 2].set_title("True Path Scores")
+
+        axs[1, 0].set_title("Variance Map")
+        axs[1, 1].set_title("Mean Cost Map")
+        axs[1, 2].set_title("Errs")
 
         fig.colorbar(splt1, ax=axs[0,0])
         fig.colorbar(splt2, ax=axs[0,1])
@@ -140,21 +176,50 @@ class ProblemSpace():
         plt.show()
         
     def choose_best(self) -> ProblemPoints:
-        # print("Choose Best")
-        cost = [x.cost(self.max_path_score) for x in self.points]
-        max_cost = max(cost)
-        cost = [(1 if x == max_cost else 0) for x in cost]
-        return random.choices(self.points, weights=cost)[0]
+        print("Choose Best")
+        # cost = [x.cost(self.max_path_score) for x in self.points]
+        # max_cost = max(cost)
+        # cost = [(1 if x == max_cost else 0) for x in cost]
+        # return random.choices(self.points, weights=cost)[0]
         
     def update_map(self):
-        # print("Update Map")
-        for idx, p in enumerate(self.points):
-            orig_certainty = p.certainty
-            orig_prediction = p.path_score
-            p.update_certainty_by_kde(self.points)
-            p.update_prediction_by_kde(self.points, self.max_path_score)
-            # print(f"idx {idx}: Updated uncertainty from {orig_certainty} to {p.certainty}")
-            # print(f"idx {idx}: Updated path score from {orig_prediction} to {p.path_score}")
+        # construct training dataset from already sampled points
+        evaluated_points = list(filter(lambda p: p.evaluated, self.points))
+        n = len(evaluated_points)
+        evaluated_z = np.array([p.z for p in evaluated_points]).reshape((n, 1))
+        evaluated_th = np.array([p.theta for p in evaluated_points]).reshape((n, 1))
+        evaluated_coords = np.hstack((evaluated_z, evaluated_th))
+        evaluated_noise = np.array([1 - p.certainty for p in evaluated_points])
+
+        KXX = self.kernel(evaluated_coords)
+        KxX = self.kernel(self.all_coords, evaluated_coords)
+        Kxx = self.kernel(self.all_coords)
+
+        # Sigma = np.eye(len(evaluated_points))
+        Sigma = np.diag([(1 - p.known_certainty)*np.max(self.cov) for p in evaluated_points])
+        y = np.array([p.cost(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
+        
+        self.mean_cost = KxX @ np.linalg.inv(KXX + Sigma) @ y
+        self.cov = Kxx - KxX @ np.linalg.inv(KXX + Sigma) @ KxX.T
+
+        np.clip(self.cov, 0.0, None, self.cov)
+    
+    def get_preds(self, coords):
+        evaluated_points = list(filter(lambda p: p.evaluated, self.points))
+        n = len(evaluated_points)
+        evaluated_z = np.array([p.z for p in evaluated_points]).reshape((n, 1))
+        evaluated_th = np.array([p.theta for p in evaluated_points]).reshape((n, 1))
+        evaluated_coords = np.hstack((evaluated_z, evaluated_th))
+        evaluated_noise = np.array([1 - p.certainty for p in evaluated_points])
+
+        KXX = self.kernel(evaluated_coords)
+        KxX = self.kernel(coords, evaluated_coords)
+        Kxx = self.kernel(coords)
+
+        y = np.array([p.cost(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
+        u = KxX @ np.linalg.inv(KXX) @ y
+        c = Kxx - KxX @ np.linalg.inv(KXX) @ KxX.T
+        return u,c
         
     def update_max_path_score(self, newest_score):
         # never update on an invalid score
@@ -163,15 +228,15 @@ class ProblemSpace():
 
         # if we haven't found a valid path yet:
         if self.max_path_score == 0:
-            self.max_path_score = 2*newest_score
-        elif 2*newest_score > self.max_path_score:
-            self.max_path_score = 2*newest_score
+            self.max_path_score = newest_score
+        elif newest_score > self.max_path_score:
+            self.max_path_score = newest_score
 
     @staticmethod
     def validity_failure_model(t: float):
         # calculates the probability that the failure was real
         return float(scipy.stats.weibull_min.cdf(ProblemSpace.weibull_base**t - 1, ProblemSpace.weibull_k, scale=ProblemSpace.weibull_gamma))
-        # return 1.0
+        return 1.0
             
     def send_goal(self):
         # print("Sending Goal")
@@ -185,11 +250,11 @@ class ProblemSpace():
 
         point = self.points[idx]
         point.handle_evaluation_result()
+        self.update_max_path_score(point.path_score)
         print(f"------- Evaluated idx {idx} ----------")
-        cost = point.cost(math.inf)
+        cost = point.cost(self.max_path_score)
         print(f"Certainty is now {point.certainty}, Path Score is now {point.path_score}, Cost {cost}")
 
-        self.update_max_path_score(point.path_score)
 
         self.update_map()
 
@@ -205,9 +270,11 @@ class ProblemPoints():
         
         self.theta: float = theta
         self.z: float = z
-        
+
+        self.path_ret = 0
+
         self.is_reflected: bool # whether we are dealing in the reflected space or not
-        self.grasp_score: float = 0 # the score output from anygrasp
+        self.grasp_score: float = 1.0 # the score output from anygrasp
         
         self.path_score: float = math.inf # the computed or predicted path length
         self.max_planning_time: float = ProblemPoints.INITIAL_PLANNING_TIME # how long we give for planning
@@ -230,115 +297,22 @@ class ProblemPoints():
     
     def cost(self, max_path_score):
         # if we are invalid, we say that the cost is twice is longest path cost
-        return -ProblemSpace.lambda1*min(self.path_score, max_path_score) + ProblemSpace.lambda2*self.grasp_score
- 
-    @functools.cache
-    @staticmethod
-    def _certainty_scaler_at_offset(z_offset: float, theta_offset: float):
-        # we multiply our certainty with a scaled gaussian
-        z_scaler = 2*scipy.stats.norm.sf(z_offset, scale=ProblemSpace.sigma_z)
-        theta_scaler = 2*scipy.stats.norm.sf(theta_offset, scale=ProblemSpace.sigma_theta)        
-        return float(z_scaler * theta_scaler)
-    
-    @functools.cache
-    @staticmethod
-    def _distance_scaler(z_offset: float, theta_offset: float):
-        z_scale = max(1 - abs(z_offset)/ProblemSpace.prediction_z_range, 0)
-        th_scale = max(1 - abs(theta_offset)/ProblemSpace.prediction_th_range, 0)
-        # return math.sqrt(z_scale**2 + th_scale**2)
-        if z_scale*th_scale == 0.0:
-            return 0.0
-        
-        return float(z_scale*th_scale/2 + 0.5)
-    
-    def update_certainty_by_kde(self, points: list[ProblemPoints]):
-        if self.evaluated and self.valid:
-            # if we have already evaluated this positively, then do not update
-            return
-        
-        # if we have already evaluated this negatively, then we update normally
-        if self.evaluated and not self.valid:
-            pass
+        # if math.isinf(self.path_score):
+        #     return -max_path_score*self.grasp_score
+        # else:
+        return max(max_path_score - self.path_score, -max_path_score)*self.grasp_score
 
-        # if we know nothing about this point, then we use KDE
-        # of if we have tried and failed
-        positive_contributions = 0.0
-        positive_weights = 0.0
-        negative_contributions = 0.0
-        negative_weights = 0.0
-        for i, p in enumerate(points):
-            # if p == self:
-                # we seed it with the current estimate of certainty
-                # all_contributions += 1.0 * self.certainty
-                # all_weights += 1.0
-                # continue
-            if not p.evaluated and p != self:
-                continue
-            dtheta = abs(p.theta - self.theta) % (2*math.pi)
-            dtheta = min(dtheta, 2*math.pi - dtheta)
-            
-            # this is how much an evaluated point is related to our point
-            k = ProblemPoints._certainty_scaler_at_offset(abs(p.z - self.z), dtheta)
-
-            # # don't add a contribution if it's too far away
-            # if (k < ProblemSpace.certainty_scaler_range):
-            #     continue
-
-            # we store the positive and the negative contributions separately
-            if p.valid:
-                positive_weights += k
-                positive_contributions += k*p.known_certainty
-            else:
-                negative_weights += k
-                if p.evaluated:
-                    negative_contributions += k*p.known_certainty
-                else:
-                    negative_contributions += k*p.certainty
-
-        total_weights = (positive_weights + negative_weights)
-        total_contributions = abs(positive_contributions - negative_contributions)
-            
-        self.certainty = total_contributions/total_weights if total_weights != 0.0 else 0.0
-    
-    def update_prediction_by_kde(self, points: list[ProblemPoints], path_max):
-        if self.evaluated and self.valid:
-            # if we have already evaluated this positively, then do not update
-            return
-        
-        # if we have already evaluated this negatively, then we update normally
-        if self.evaluated and not self.valid:
-            pass
-
-        # we start by seeding it with the current prediction
-        all_contributions = 0.0
-        all_weights = 0.0
-        for i, p in enumerate(points):
-            if not p.evaluated and p != self:
-                continue
-            k = ProblemPoints._distance_scaler(p.z - self.z, p.theta - self.theta)
-            
-            # scale all weights by by the certainty of the point
-            if p.evaluated:
-                all_weights += k*p.known_certainty
-                all_contributions += k*min(p.path_score, path_max)*p.known_certainty
-
-            # print(f"Adding contribution from {i}: distance scaler {k}")
-        self.path_score = all_contributions/all_weights if all_weights != 0.0 else path_max*2
-        if self.path_score == 0:
-            self.path_score = 2*path_max
-
-        # scale in the existing knowledge
-        self.path_score = self.path_score*(1 - self.known_certainty) + self.known_certainty*2*path_max
-    
     def handle_evaluation_result(self):
         self.evaluated = True
-        self.valid = bool(math.cos(self.theta)*self.z > 0)
+        # self.valid = bool(math.cos(self.theta)*self.z > 0)
+        self.valid = not math.isinf(self.path_ret)
         self.update_certainty_upon_eval()
-        self.path_score = 10.0 if self.valid else math.inf
+        self.path_score = self.path_ret if self.valid else math.inf
 
 if __name__ == "__main__":
     ps = ProblemSpace()
-    for i in range(100):
+    for i in range(400):
         ps.send_goal()
-        if not i % 20:
+
+        if i % 40 == 0:
             ps.plot_grasps()

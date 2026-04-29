@@ -14,6 +14,8 @@ import scipy.stats
 import functools
 import random
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("svg")
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -26,7 +28,7 @@ from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .utils import display_grasps
 
 # construct a problem space
-class ProblemSpace():
+class GraspSelectorCustom():
     lambda1: float = 1.0
     lambda2: float = 30.0
     
@@ -60,10 +62,10 @@ class ProblemSpace():
 
         zs = np.array([p.z for p in self.points])
         thetas = np.array([p.theta for p in self.points])
-        np.save("/ros2_ws/src/z", zs)
-        np.save("/ros2_ws/src/th", thetas)
+        # np.save("/ros2_ws/src/z", zs)
+        # np.save("/ros2_ws/src/th", thetas)
 
-        self.plot_grasps()
+        # self.plot_grasps()
     
     def start_timer(self):
         self.t0 = time.time()
@@ -105,7 +107,7 @@ class ProblemSpace():
             self.logger.info("Everything is 100%% certain now")
             return 0, None
         
-    def plot_grasps(self, folder=None):
+    def plot_grasps(self, folder=None, is_flipped=False):
         zs = np.array([p.z for p in self.points])
         thetas = np.array([p.theta for p in self.points])
 
@@ -146,7 +148,8 @@ class ProblemSpace():
         fig.colorbar(splt6, ax=axs[1,2])
 
         if folder:
-            plt.savefig(f"{folder}/plts/{time.time()}_plt.png")
+            filename = f"{folder}/plts/{time.time()}_plt.svg" if not is_flipped else f"{folder}/plts/flipped_{time.time()}_plt.svg"
+            plt.savefig(filename)
         
     def choose_best(self) -> ProblemPoints:
         # self.logger.info("Choose Best")
@@ -179,7 +182,7 @@ class ProblemSpace():
     @staticmethod
     def validity_failure_model(t: float):
         # calculates the probability that the failure was real
-        return float(scipy.stats.weibull_min.cdf(ProblemSpace.weibull_base**t - 1, ProblemSpace.weibull_k, scale=ProblemSpace.weibull_gamma))
+        return float(scipy.stats.weibull_min.cdf(GraspSelectorCustom.weibull_base**t - 1, GraspSelectorCustom.weibull_k, scale=GraspSelectorCustom.weibull_gamma))
             
     def _handle_validity_send_goal(self, context):        
         self.logger.info("Sending Goal")
@@ -236,11 +239,11 @@ class ProblemSpace():
         self.update_map()
 
         if self.SAVE_DATA:
-            hts_grasp.save_grasp_message(context.folder)
-            hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 0)
+            hts_grasp.save_grasp_message(context.folder, context.is_flipped)
+            hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 0, context.is_flipped)
 
             # show the updated map
-            self.plot_grasps(context.folder)
+            self.plot_grasps(context.folder, context.is_flipped)
         
         t1 = time.time()
         self.logger.info(f"start time is {self.t0} now is {t1} max time is {self.total_max_time} pending {context.pending_results}")
@@ -266,7 +269,7 @@ class ProblemSpace():
         context.goal_handle.publish_feedback(feedback)
 
         if self.SAVE_DATA:
-            hts_grasp_group.save_metrics(folder)
+            hts_grasp_group.save_metrics(folder, context.is_flipped)
 
         hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
         hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
@@ -321,27 +324,27 @@ class ProblemPoints():
             self.certainty = 1.0
             self.known_certainty = 1.0
         else:
-            self.known_certainty = ProblemSpace.validity_failure_model(self.max_planning_time)
+            self.known_certainty = GraspSelectorCustom.validity_failure_model(self.max_planning_time)
             self.certainty = self.known_certainty
             self.max_planning_time *= 2 # double the planning time next time
     
     def cost(self, max_path_score):
         # if we are invalid, we say that the cost is twice is longest path cost
-        return -ProblemSpace.lambda1*min(self.path_score, max_path_score) + ProblemSpace.lambda2*self.grasp_score
+        return -GraspSelectorCustom.lambda1*min(self.path_score, max_path_score) + GraspSelectorCustom.lambda2*self.grasp_score
  
     @functools.cache
     @staticmethod
     def _certainty_scaler_at_offset(z_offset: float, theta_offset: float):
         # we multiply our certainty with a scaled gaussian
-        z_scaler = 2*scipy.stats.norm.sf(z_offset, scale=ProblemSpace.sigma_z)
-        theta_scaler = 2*scipy.stats.norm.sf(theta_offset, scale=ProblemSpace.sigma_theta)        
+        z_scaler = 2*scipy.stats.norm.sf(z_offset, scale=GraspSelectorCustom.sigma_z)
+        theta_scaler = 2*scipy.stats.norm.sf(theta_offset, scale=GraspSelectorCustom.sigma_theta)        
         return float(z_scaler * theta_scaler)
     
     @functools.cache
     @staticmethod
     def _distance_scaler(z_offset: float, theta_offset: float):
-        z_scale = max(1 - abs(z_offset)/ProblemSpace.prediction_z_range, 0)
-        th_scale = max(1 - abs(theta_offset)/ProblemSpace.prediction_th_range, 0)
+        z_scale = max(1 - abs(z_offset)/GraspSelectorCustom.prediction_z_range, 0)
+        th_scale = max(1 - abs(theta_offset)/GraspSelectorCustom.prediction_th_range, 0)
         # return math.sqrt(z_scale**2 + th_scale**2)
         if z_scale*th_scale == 0.0:
             return 0.0
@@ -378,7 +381,7 @@ class ProblemPoints():
             k = ProblemPoints._certainty_scaler_at_offset(abs(p.z - self.z), dtheta)
 
             # # don't add a contribution if it's too far away
-            # if (k < ProblemSpace.certainty_scaler_range):
+            # if (k < GraspSelectorCustom.certainty_scaler_range):
             #     continue
 
             # we store the positive and the negative contributions separately
@@ -434,7 +437,7 @@ class ProblemPoints():
         self.path_score = result.score if result.is_valid else math.inf
 
 class ValidityContext():
-    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request):
+    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, is_flipped:bool = False):
         self.goal_handle = goal_handle
         self.hts_grasp_group = grasp_group
         self.pending_results = 0
@@ -443,3 +446,4 @@ class ValidityContext():
         self.request = request
         self.response = None
         self.all_points_certain = False
+        self.is_flipped = is_flipped
