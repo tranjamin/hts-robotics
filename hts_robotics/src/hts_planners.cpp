@@ -19,7 +19,7 @@
 #include <tf2_eigen/tf2_eigen.hpp>
 
 #define RUN_REFINEMENT_PICKUP false
-#define RUN_REFINEMENT_MOVE true
+#define RUN_REFINEMENT_MOVE false
 #define USE_SELF_PIPELINE false
 
 moveit::core::MoveItErrorCode hts_node::plan_pickup(

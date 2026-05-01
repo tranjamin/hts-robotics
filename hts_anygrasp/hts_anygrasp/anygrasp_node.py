@@ -33,7 +33,7 @@ from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .symmetry import SymmetryGroup
 from .grasp_selection_custom import GraspSelectorCustom, ValidityContext
 from .grasp_selection_basic import GraspSelectorBasic
-from .grasp_selection_gp import GraspSelectorGP
+from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP
 from .utils import display_grasps, display_pointcloud, fast_norgb_pc2_to_numpy, fast_pc2_to_numpy
 
 
@@ -389,24 +389,25 @@ class AnyGraspNode(Node):
             hts_grasp_group_mirrored.append(hts_grasp)
 
         context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request)
-        problem = GraspSelectorGP(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
-        problem.start_timer()
-        problem._handle_validity_send_goal(context)
-
-        while context.response is None:
-            time.sleep(0.01)
-        time.sleep(1.0)
+        # problem = GraspSelectorGP(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
+        # problem.start_timer()
+        # # problem._handle_validity_send_goal(context)
 
         context_flipped = ValidityContext(goal_handle, hts_grasp_group_mirrored, folder, cloud, request, is_flipped=True)
-        problem_flipped = GraspSelectorGP(hts_grasp_group_mirrored, self.get_logger(), self.grasp_validity_client_)
-        problem_flipped.start_timer()
-        problem_flipped._handle_validity_send_goal(context_flipped)
+        # problem_flipped = GraspSelectorGP(hts_grasp_group_mirrored, self.get_logger(), self.grasp_validity_client_)
+        # problem_flipped.start_timer()
+        # # problem_flipped._handle_validity_send_goal(context_flipped)
 
-        while context_flipped.response is None:
+        final_context = ValidityContext(goal_handle, hts_grasp_group, None, None, None)
+
+        dual_problem = DualGraspSelectorGP(hts_grasp_group, hts_grasp_group_mirrored, context, context_flipped, final_context, self.get_logger(), self.grasp_validity_client_)
+        dual_problem._handle_validity_send_goal()
+
+        while final_context.response is None:
             time.sleep(0.01)
         time.sleep(1.0)
 
-        return context.response
+        return final_context.response
     
     def map_grasp(self, grasp, flip_z=False):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)

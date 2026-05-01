@@ -232,7 +232,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         // ---------------- run trajectory generation for the move operation --------------- //        
         moveit::planning_interface::MoveGroupInterface::Plan move_plan;
         t0 = std::chrono::high_resolution_clock::now();
-        err_code = this->plan_move_no_refine(move_start_state, grasp_pose, goal_pose, move_plan);
+        // err_code = this->plan_move_no_refine(move_start_state, grasp_pose, goal_pose, move_plan);
         t1 = std::chrono::high_resolution_clock::now();
         result->move_plan_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
 

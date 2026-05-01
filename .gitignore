@@ -22,3 +22,4 @@ msa_moveit_config/
 moveit2/
 moveit_msgs/
 moveit_resources/
+ompl/

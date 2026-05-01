@@ -25,7 +25,7 @@ class GraspSelectorGP():
     weibull_gamma: float = 0.5
     weibull_base: float = 1.3
     
-    total_max_time = 500.0
+    total_max_time = 20.0
 
     num_iterations = 0
 
@@ -153,12 +153,20 @@ class GraspSelectorGP():
             filename = f"{folder}/plts/{time.time()}_plt.svg" if not is_flipped else f"{folder}/plts/flipped_{time.time()}_plt.svg"
             plt.savefig(filename)
         
-    def choose_best(self) -> ProblemPoints:
+    def choose_best(self) -> tuple[ProblemPoints | None, float]:
         # self.logger.info("Choose Best")
-        cost = [x.cost(self.max_path_score) for x in self.points]
-        max_cost = max(cost)
-        cost = [(1 if x == max_cost else 0) for x in cost]
-        return random.choices(self.points, weights=cost)[0]
+        best_cost = 0.0
+        best_point = None
+
+        for p in self.points:
+            if not p.evaluated:
+                continue
+            cost = p.cost(self.max_path_score)
+            if cost > best_cost:
+                best_cost = cost
+                best_point = p
+
+        return best_point, best_cost
         
     def update_map(self):
         # construct training dataset from already sampled points
@@ -250,7 +258,7 @@ class GraspSelectorGP():
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(lambda f : self._handle_validity_result(f, context, idx))
 
-    def _handle_validity_result(self, future, context: ValidityContext, idx):
+    def _handle_validity_result(self, future, context: ValidityContext, idx, ):
         result = future.result().result
         hts_grasp : HTSGrasp = self.grasps._grasps[idx]
         hts_grasp.process_result(result)
@@ -270,7 +278,7 @@ class GraspSelectorGP():
 
         if self.SAVE_DATA:
             hts_grasp.save_grasp_message(context.folder, context.is_flipped)
-            hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 0, context.is_flipped)
+            hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 1, context.is_flipped)
 
             # show the updated map
             self.plot_grasps(context.folder, context.is_flipped)
@@ -310,7 +318,14 @@ class GraspSelectorGP():
             self.logger.info("Found the best grasp")
 
             # best_grasp = hts_grasp_group.best_grasp()
-            best_grasp = self.choose_best().grasp
+            best_point, best_cost = self.choose_best()
+
+            if best_point is None:
+                self.logger.info("No valid grasps found")
+                response.success = False
+                context.goal_handle.abort()
+                context.response = response
+            best_grasp = best_point.grasp
             display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
             response.grasp_pose = best_grasp.get_pose()
@@ -366,6 +381,180 @@ class ProblemPoints():
         self.valid = result.is_valid
         self.update_certainty_upon_eval()
         self.path_score = result.score if result.is_valid else math.inf
+
+class DualGraspSelectorGP():
+    def __init__(self, group1: HTSGraspGroup, group2: HTSGraspGroup, context1, context2, final_context, logger, client):
+        self.selector1 = GraspSelectorGP(group1, logger, client)
+        self.selector2 = GraspSelectorGP(group2, logger, client)
+
+        self.selector1.start_timer()
+        self.selector2.start_timer()
+
+        self.context1 = context1
+        self.context2 = context2
+        self.final_context = final_context
+        self.logger = logger
+        self.client = client
+
+        self.first_terminated = False
+        self.first_bestgrasp = None
+        self.first_bestcost = 0
+        self.second_bestgrasp = None
+        self.second_bestcost = 0
+
+        self.current_selector = self.selector2
+        self.current_context = self.context2
+
+    def _handle_validity_send_goal(self):
+        self.current_selector = self.selector2 if self.current_selector == self.selector1 else self.selector1
+        self.current_context = self.context2 if self.current_context == self.context1 else self.context1
+        self.logger.info("FLIPPING>>>>")
+
+        self.logger.info("Sending Goal")
+        idx, point = self.current_selector.select_next()
+
+        if point is None:
+            self.logger.info("POINT IS NONE")
+            self.current_context.all_points_certain = True
+            if self.current_context.pending_results == 0:
+                self._handle_validity_finish()
+            return
+
+        grasp = point.grasp
+        
+        if point.evaluated:
+            self.logger.info(f"Candidate Grasp (Re-eval) {idx + 1}/{len(self.current_selector.points)}")
+        else:
+            self.logger.info(f"Candidate Grasp {idx + 1}/{len(self.current_selector.points)}")
+                
+        self.client.wait_for_server()
+        self.current_context.pending_results += 1
+
+        grasp.start_timer()
+
+        send_goal_future = self.client.send_goal_async(grasp.validity_request_goal(self.current_context.request, point.max_planning_time))
+        send_goal_future.add_done_callback(lambda f: self._handle_validity_response(f, idx))
+
+    def _handle_validity_response(self, future, idx):
+        goal_handle = future.result()
+        
+        if not goal_handle.accepted:
+            self.logger.warn("Goal Rejected")
+            self.current_context.pending_results -= 1
+            return
+        
+        result_future = goal_handle.get_result_async()
+        result_future.add_done_callback(lambda f : self._handle_validity_result(f, idx))
+
+    def _handle_validity_result(self, future, idx):
+        result = future.result().result
+        hts_grasp : HTSGrasp = self.current_selector.grasps._grasps[idx]
+        hts_grasp.process_result(result)
+        hts_grasp.end_timer()
+        self.current_context.pending_results -= 1
+        self.current_selector.num_iterations += 1
+        
+        point = self.current_selector.points[idx]
+        point.handle_evaluation_result(result)
+        self.logger.info(f"------- Evaluated idx {idx} ----------")
+        cost = point.cost(math.inf)
+        self.logger.info(f"Certainty is now {point.certainty}, Path Score is now {point.path_score}, Cost {cost}")
+
+        self.current_selector.update_max_path_score(point.path_score)
+
+        self.current_selector.update_map()
+
+        if self.current_selector.SAVE_DATA:
+            hts_grasp.save_grasp_message(self.current_context.folder, self.current_context.is_flipped)
+            hts_grasp.save_grasp_validity(self.current_context.folder, self.current_selector.num_iterations == 1, self.current_context.is_flipped)
+
+            # show the updated map
+            self.current_selector.plot_grasps(self.current_context.folder, self.current_context.is_flipped)
+        
+        t1 = time.time()
+        self.logger.info(f"start time is {self.current_selector.t0} now is {t1} max time is {self.current_selector.total_max_time} pending {self.current_context.pending_results}")
+        if self.current_context.pending_results == 0 and ((t1 - self.current_selector.t0) > self.current_selector.total_max_time or self.current_context.all_points_certain):
+            self.logger.info("Finishing Context")
+            self._handle_validity_finish()
+        elif not ((t1 - self.current_selector.t0) > self.current_selector.total_max_time) and not (self.current_context.all_points_certain):
+            self._handle_validity_send_goal()
+        else:
+            self.logger.info("Waiting for others to finish...")
+
+    def _handle_validity_finish(self):
+        self.logger.info(f"Handling Validity Finish for {self.current_selector == self.selector1}")
+        request = self.current_context.goal_handle.request
+        feedback = RequestGrasp.Feedback()
+        response = RequestGrasp.Result()
+
+        hts_grasp_group = self.current_context.hts_grasp_group
+        folder = self.current_context.folder
+        cloud = self.current_context.cloud
+
+        feedback.progress = f"Evaluated efficiency. {hts_grasp_group.num_valid()} valid grasps found."
+        self.current_context.goal_handle.publish_feedback(feedback)
+
+        if self.current_selector.SAVE_DATA:
+            hts_grasp_group.save_metrics(folder, self.current_context.is_flipped)
+
+        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+        hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+
+        if hts_grasp_group.num_valid():
+            self.logger.info("Found the best grasp")
+
+            best_point, best_cost = self.current_selector.choose_best()
+
+            if best_point is None:
+                self.logger.info("No valid grasps found")
+                response.success = False
+
+            best_grasp = best_point.grasp
+            
+            if not self.first_terminated:
+                self.first_bestcost = best_cost
+                self.first_bestgrasp = best_grasp
+            else:
+                self.second_bestcost = best_cost
+                self.second_bestgrasp = best_grasp
+
+            display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+
+            response.grasp_pose = best_grasp.get_pose()
+            self.logger.info("--> " + str(response.grasp_pose))
+            response.success = True
+        else:
+            self.logger.info("No valid grasps found")
+            response.success = False
+
+        self.current_context.response = response
+
+        if self.first_terminated:
+            final_response = RequestGrasp.Result()
+            final_response.success = self.context1.response.success or self.context2.response.success
+            if (self.first_bestgrasp is not None and self.second_bestgrasp is not None):
+                if self.first_bestcost > self.second_bestcost:
+                    final_response.grasp_pose = self.first_bestgrasp.get_pose()
+                else:
+                    final_response.grasp_pose = self.second_bestgrasp.get_pose()
+            elif (self.first_bestgrasp is not None):
+                final_response.grasp_pose = self.context1.response.grasp_pose.get_pose()
+            elif (self.second_bestgrasp is not None):
+                final_response.grasp_pose = self.context2.response.grasp_pose.get_pose()
+            
+            if final_response.success:
+                self.final_context.goal_handle.succeed()
+            else:
+                self.final_context.goal_handle.abort()
+            self.final_context.response = final_response
+        else:
+            self.first_terminated = True
+            self.current_selector = self.selector2 if self.current_selector == self.selector1 else self.selector1
+            self.current_context = self.context2 if self.current_context == self.context1 else self.context1
+            self._handle_validity_finish()
 
 
 class ValidityContext():

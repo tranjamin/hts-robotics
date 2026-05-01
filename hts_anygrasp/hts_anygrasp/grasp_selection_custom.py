@@ -240,7 +240,7 @@ class GraspSelectorCustom():
 
         if self.SAVE_DATA:
             hts_grasp.save_grasp_message(context.folder, context.is_flipped)
-            hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 0, context.is_flipped)
+            hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 1, context.is_flipped)
 
             # show the updated map
             self.plot_grasps(context.folder, context.is_flipped)
