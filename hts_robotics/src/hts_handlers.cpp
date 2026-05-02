@@ -53,7 +53,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
 
         double pickup_planning_time = base_planning_time;
         // double move_planning_time = base_planning_time * 10 < 1 ? 1 : base_planning_time * 10;
-        double move_planning_time = base_planning_time;
+        double move_planning_time = 10*base_planning_time;
 
         // lock planning scene
         planning_scene_monitor::LockedPlanningSceneRO planning_scene(planning_scene_monitor_);
@@ -137,6 +137,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         err_code = this->plan_pickup(*current_state, grasp_pose, pickup_plan, pickup_planning_time);
         t1 = std::chrono::high_resolution_clock::now();
         result->pickup_plan_time = ((std::chrono::duration<double, std::milli>) (t1 - t0)).count() / 1000;
+        RCLCPP_INFO(this->get_logger(), "Planning Time for Pickup is %f", result->pickup_plan_time);
 
         if (err_code != moveit::core::MoveItErrorCode::SUCCESS) {
             RCLCPP_INFO(this->get_logger(), "Planning (pickup) failed");

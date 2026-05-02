@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from sklearn.gaussian_process.kernels import Matern
 from hts_msgs.action import ComputeGraspValidity, RequestGrasp
 import matplotlib
+import matplotlib.cm as cm
 matplotlib.use("svg")
 
 from .hts_grasps import HTSGrasp, HTSGraspGroup
@@ -25,12 +26,12 @@ class GraspSelectorGP():
     weibull_gamma: float = 0.5
     weibull_base: float = 1.3
     
-    total_max_time = 20.0
+    total_max_time = 200.0
 
     num_iterations = 0
 
     kappa = 3
-    kernel = Matern()
+    kernel = Matern(length_scale=[0.03, 0.8], nu=3.5)
     
     def __init__(self, hts_gg: HTSGraspGroup, logger, client):
         self.grasps: HTSGraspGroup = hts_gg # all grasps
@@ -51,26 +52,44 @@ class GraspSelectorGP():
         self.N = len(self.points)
         self.k = 1.0
 
+        # coordinates used for update map
         self.all_z = np.array([p.z for p in self.points]).reshape((len(self.points), 1))
         self.all_th = np.array([p.theta for p in self.points]).reshape((len(self.points), 1))
         self.all_coords = np.hstack((self.all_z, self.all_th))
 
-        self.mean_cost = np.zeros((self.N, 1))
-        self.cov = np.eye(self.N)
+        # precompute x and y for plotting
+        self.all_x = self.all_z*np.cos(self.all_th)
+        self.all_y = self.all_z*np.sin(self.all_th)
 
-        # self.plot_grasps()
+        # precompute a mesh for map plotting
+        self.x_mesh, self.y_mesh = np.meshgrid(
+            np.linspace(np.min(self.all_x), np.max(self.all_x), 80), 
+            np.linspace(np.min(self.all_y), np.max(self.all_y), 80)
+        )
+        self.x_mesh = np.array(self.x_mesh).reshape((-1, 1))
+        self.y_mesh = np.array(self.y_mesh).reshape((-1, 1))
+        self.z_mesh = np.sqrt(self.x_mesh**2 + self.y_mesh**2)
+        self.th_mesh = np.arctan2(self.y_mesh, self.x_mesh)
+
+        mesh_filter = (self.z_mesh >= np.min(self.all_z)) & (self.z_mesh <= np.max(self.all_z))
+        self.x_mesh = self.x_mesh[mesh_filter].reshape((-1, 1))
+        self.y_mesh = self.y_mesh[mesh_filter].reshape((-1, 1))
+        self.z_mesh = self.z_mesh[mesh_filter].reshape((-1, 1))
+        self.th_mesh = self.th_mesh[mesh_filter].reshape((-1, 1))
+
+        # parameters for the GP
+        self.est_path_scores = np.zeros((self.N, 1))
+        self.cov = np.eye(self.N)
     
     def start_timer(self):
         self.t0 = time.time()
     
     def select_next(self):
-        # construct training dataset from already sampled points
-        weights = (self.mean_cost.ravel() + GraspSelectorGP.kappa*np.sqrt(np.diag(self.cov)))*np.array([1 - p.certainty for p in self.points])
+        # weits for sampling
+        weights = (self.est_path_scores.ravel() + GraspSelectorGP.kappa*np.sqrt(np.diag(self.cov)))*np.array([1 - p.certainty for p in self.points])
         weights = weights - np.min(weights)
 
-        # weights = (self.mean_cost.ravel() + 3*np.sqrt(np.diag(self.cov)))
-        # weights = weights - np.min(weights)
-
+        # choose a random points if no weights
         if np.sum(weights) == 0.0:
             idx = random.choices(range(len(self.points)))[0]
             return idx, self.points[idx]
@@ -80,60 +99,72 @@ class GraspSelectorGP():
         return idx, self.points[idx]
         
     def plot_grasps(self, folder=None, is_flipped=False):
-        zs = np.array([p.z for p in self.points])
-        thetas = np.array([p.theta for p in self.points])
-
-        x = zs*np.cos(thetas)
-        y = zs*np.sin(thetas)
-
-        x_mesh, y_mesh = np.meshgrid(np.linspace(-0.1, 0.1, 60), np.linspace(-0.1, 0.1, 60))
-        x_mesh = np.array(x_mesh).reshape((-1, 1))
-        y_mesh = np.array(y_mesh).reshape((-1, 1))
-        z_mesh = np.sqrt(x_mesh**2 + y_mesh**2)
-        th_mesh = np.arctan2(y_mesh, x_mesh)
-
-        mesh_mean, mesh_cov = self.get_preds(np.hstack((z_mesh, th_mesh)))
+        # predict mean and cov for mesh
+        mesh_mean, mesh_cov = self.get_preds(np.hstack((self.z_mesh, self.th_mesh)))
         mesh_uncertanties = np.sqrt(np.diag(mesh_cov))
-        # mesh_mean = self.max_path_score - mesh_mean
-        x_mesh = z_mesh*np.cos(th_mesh)
-        y_mesh = z_mesh*np.sin(th_mesh)
 
-        costs_estimated = self.mean_cost        
-        uncertanties = np.sqrt(np.diag(self.cov))
+        # get the mean and uncertainty for 
+        gp_mean = self.est_path_scores        
+        gp_uncertainties = np.sqrt(np.diag(self.cov))
 
+        # whether a point has been evaluated or not
         evaluated = [x.evaluated for x in self.points]
 
-        true_costs = [x.cost(self.max_path_score) for x in self.points]
+        # evaluated filter
+        evaluated_points = list(filter(lambda p: p.evaluated, self.points))
+        n = len(evaluated_points)
+        evaluated_z = np.array([p.z for p in evaluated_points])
+        evaluated_th = np.array([p.theta for p in evaluated_points])
+        
+        evaluated_paths = [p.norm_path_score(self.max_path_score) for p in evaluated_points]
+        evaluated_uncertainty = [1 - p.certainty for p in evaluated_points]
 
-        grasp_scores = [x.grasp_score for x in self.points]
-        calculated_path_scores = [0.0 if not x.evaluated else x.path_score for x in self.points]
+        # weights 
+        weights = (self.est_path_scores.ravel() + GraspSelectorGP.kappa*np.sqrt(np.diag(self.cov)))*np.array([1 - p.certainty for p in self.points])
 
-        weights = (self.mean_cost.ravel() - self.k*np.sqrt(np.diag(self.cov)))
+        fig, axs = plt.subplots(2, 3, figsize=(24, 12), subplot_kw={'projection': 'polar'})
+        splt1 = axs[0, 0].scatter(
+            self.all_th, self.all_z, vmin=np.min(gp_mean), vmax=np.max(gp_mean),
+            c=gp_mean, cmap=cm.RdYlGn_r,marker="o", linewidths=0.3, edgecolors="black"
+            )
+        splt2 = axs[0, 1].scatter(
+            self.all_th, self.all_z, vmin=0.0, vmax=1.0,
+            c=gp_uncertainties, cmap=cm.RdYlGn_r,marker="o", linewidths=0.3, edgecolors="black"
+            )
+        splt3 = axs[0, 2].scatter(
+            self.all_th, self.all_z, vmin=0.0, vmax=1.0,
+            c=evaluated, cmap=cm.RdYlGn_r,marker="o", linewidths=0.3, edgecolors="black"
+            )
 
-        fig, axs = plt.subplots(3, 3, figsize=(24, 12))
-        splt1 = axs[0, 0].scatter(x, y, c=uncertanties)
-        splt2 = axs[0, 1].scatter(x, y, c=costs_estimated)
-        splt3 = axs[0, 2].scatter(x, y, c=true_costs)
+        splt4 = axs[1, 0].scatter(
+            self.th_mesh, self.z_mesh, vmin=np.min(mesh_mean), vmax=np.max(mesh_mean),
+            c=mesh_mean, cmap=cm.RdYlGn_r,marker=","
+            )
+        splt5 = axs[1, 1].scatter(
+            self.th_mesh, self.z_mesh, vmin=0.0, vmax=1.0,
+            c=mesh_uncertanties, cmap=cm.RdYlGn_r,marker=","
+            )
+        splt6 = axs[1, 2].scatter(
+            self.all_th, self.all_z, vmin=np.min(weights), vmax=np.max(weights),
+            c=weights, cmap=cm.RdYlGn_r,marker="o", linewidths=0.3, edgecolors="black"
+            )
+        
+        axs[1, 0].scatter(
+            evaluated_th, evaluated_z, vmin=np.min(mesh_mean), vmax=np.max(mesh_mean),
+            c=evaluated_paths, cmap=cm.RdYlGn_r, marker="o", linewidths=0.3, edgecolors="black"
+            )
+        axs[1, 1].scatter(
+            evaluated_th, evaluated_z, vmin=0.0, vmax=1.0,
+            c=evaluated_uncertainty, cmap=cm.RdYlGn_r, marker="o", linewidths=0.3, edgecolors="black"
+            )
 
-        splt4 = axs[1, 0].scatter(x_mesh, y_mesh, c=mesh_uncertanties)
-        splt5 = axs[1, 1].scatter(x_mesh, y_mesh, c=mesh_mean)
-        splt6 = axs[1, 2].scatter(x, y, c=calculated_path_scores)
+        axs[0, 0].set_title("Predicted Path Score")
+        axs[0, 1].set_title("Path Score Uncertainty")
+        axs[0, 2].set_title("Evaluated Grasps")
 
-        splt7 = axs[2, 0].scatter(x, y, c=grasp_scores)
-        splt8 = axs[2, 1].scatter(x, y, c=weights)
-        splt9 = axs[2, 2].scatter(x, y, c=evaluated)
-
-        axs[0, 0].set_title("Variance")
-        axs[0, 1].set_title("Mean Cost Score")
-        axs[0, 2].set_title("Calculateed Costs Scores")
-
-        axs[1, 0].set_title("Variance Map")
-        axs[1, 1].set_title("Mean Cost Map")
-        axs[1, 2].set_title("Calculated Path Scores")
-
-        axs[2, 0].set_title("Grasp Scores")
-        axs[2, 1].set_title("Sampling Weights")
-        axs[2, 2].set_title("Evaluated")
+        axs[1, 0].set_title("GP Mean Map")
+        axs[1, 1].set_title("GP Covariance Map")
+        axs[1, 2].set_title("Sampling Weights")
 
         fig.colorbar(splt1, ax=axs[0,0])
         fig.colorbar(splt2, ax=axs[0,1])
@@ -141,17 +172,11 @@ class GraspSelectorGP():
         fig.colorbar(splt4, ax=axs[1,0])
         fig.colorbar(splt5, ax=axs[1,1])
         fig.colorbar(splt6, ax=axs[1,2])
-        fig.colorbar(splt7, ax=axs[2,0])
-        fig.colorbar(splt8, ax=axs[2,1])
-        fig.colorbar(splt9, ax=axs[2,2])
-
-
-        # plt.savefig(f"{time.time()}_plt.png")
-        # plt.show()
 
         if folder:
             filename = f"{folder}/plts/{time.time()}_plt.svg" if not is_flipped else f"{folder}/plts/flipped_{time.time()}_plt.svg"
             plt.savefig(filename)
+            plt.close(fig)
         
     def choose_best(self) -> tuple[ProblemPoints | None, float]:
         # self.logger.info("Choose Best")
@@ -175,18 +200,18 @@ class GraspSelectorGP():
         evaluated_z = np.array([p.z for p in evaluated_points]).reshape((n, 1))
         evaluated_th = np.array([p.theta for p in evaluated_points]).reshape((n, 1))
         evaluated_coords = np.hstack((evaluated_z, evaluated_th))
-        evaluated_noise = np.array([1 - p.certainty for p in evaluated_points])
 
+        # compute kernel components
         KXX = self.kernel(evaluated_coords)
         KxX = self.kernel(self.all_coords, evaluated_coords)
         Kxx = self.kernel(self.all_coords)
 
-        # Sigma = np.eye(len(evaluated_points))
+        # compute noise and y
         Sigma = np.diag([(1 - p.known_certainty)*np.max(self.cov) for p in evaluated_points])
-        y = np.array([p.cost(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
+        y = np.array([p.norm_path_score(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
         
-        self.mean_cost = KxX @ np.linalg.inv(KXX + Sigma) @ y
-        self.cov = Kxx - KxX @ np.linalg.inv(KXX + Sigma) @ KxX.T
+        self.est_path_scores = KxX @ np.linalg.inv(KXX + 1e-10*np.eye(n) + Sigma) @ y
+        self.cov = Kxx - KxX @ np.linalg.inv(KXX + 1e-10*np.eye(n) + Sigma) @ KxX.T
 
         np.clip(self.cov, 0.0, None, self.cov)
 
@@ -196,15 +221,14 @@ class GraspSelectorGP():
         evaluated_z = np.array([p.z for p in evaluated_points]).reshape((n, 1))
         evaluated_th = np.array([p.theta for p in evaluated_points]).reshape((n, 1))
         evaluated_coords = np.hstack((evaluated_z, evaluated_th))
-        evaluated_noise = np.array([1 - p.certainty for p in evaluated_points])
 
         KXX = self.kernel(evaluated_coords)
         KxX = self.kernel(coords, evaluated_coords)
         Kxx = self.kernel(coords)
 
-        y = np.array([p.cost(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
-        u = KxX @ np.linalg.inv(KXX) @ y
-        c = Kxx - KxX @ np.linalg.inv(KXX) @ KxX.T
+        y = np.array([p.norm_path_score(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
+        u = KxX @ np.linalg.inv(KXX + 1e-10*np.eye(n)) @ y
+        c = Kxx - KxX @ np.linalg.inv(KXX + 1e-10*np.eye(n)) @ KxX.T
         return u,c
         
     def update_max_path_score(self, newest_score):
@@ -221,7 +245,8 @@ class GraspSelectorGP():
     @staticmethod
     def validity_failure_model(t: float):
         # calculates the probability that the failure was real
-        return float(scipy.stats.weibull_min.cdf(GraspSelectorGP.weibull_base**t - 1, GraspSelectorGP.weibull_k, scale=GraspSelectorGP.weibull_gamma))
+        return 1
+        # return float(scipy.stats.weibull_min.cdf(GraspSelectorGP.weibull_base**t - 1, GraspSelectorGP.weibull_k, scale=GraspSelectorGP.weibull_gamma))
             
     def _handle_validity_send_goal(self, context):        
         self.logger.info("Sending Goal")
@@ -355,7 +380,6 @@ class ProblemPoints():
         
         self.path_score: float = math.inf # the computed or predicted path length
         self.max_planning_time: float = ProblemPoints.INITIAL_PLANNING_TIME # how long we give for planning
-        self.max_planning_time_move: float = 0.03 # how long we give for planning
         
         self.valid: bool = False
         self.evaluated: bool = False
@@ -373,8 +397,10 @@ class ProblemPoints():
             self.max_planning_time *= 2 # double the planning time next time
     
     def cost(self, max_path_score):
-        # if we are invalid, we say that the cost is twice is longest path cost
-        return max(max_path_score - self.path_score, -max_path_score)*self.grasp_score
+        return self.norm_path_score(max_path_score)*self.grasp_score
+
+    def norm_path_score(self, max_path_score):
+        return max(max_path_score - self.path_score, -max_path_score)
  
     def handle_evaluation_result(self, result: ComputeGraspValidity.Result):
         self.evaluated = True
@@ -541,9 +567,9 @@ class DualGraspSelectorGP():
                 else:
                     final_response.grasp_pose = self.second_bestgrasp.get_pose()
             elif (self.first_bestgrasp is not None):
-                final_response.grasp_pose = self.context1.response.grasp_pose.get_pose()
+                final_response.grasp_pose = self.context1.response.grasp_pose
             elif (self.second_bestgrasp is not None):
-                final_response.grasp_pose = self.context2.response.grasp_pose.get_pose()
+                final_response.grasp_pose = self.context2.response.grasp_pose
             
             if final_response.success:
                 self.final_context.goal_handle.succeed()

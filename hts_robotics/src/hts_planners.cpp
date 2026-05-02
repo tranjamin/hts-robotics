@@ -42,7 +42,7 @@ moveit::core::MoveItErrorCode hts_node::plan_pickup(
     move_group_interface_->setGoalPositionTolerance(0.001);
 
     // plan
-    RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL...");
+    RCLCPP_INFO(this->get_logger(), "Computing Path using OMPL (Timeout) %f ...", pickup_timeout);
     moveit::core::MoveItErrorCode ompl_status = move_group_interface_->plan(plan);
     RCLCPP_INFO(this->get_logger(), "OMPL finished with error code %d", ompl_status.val);
 

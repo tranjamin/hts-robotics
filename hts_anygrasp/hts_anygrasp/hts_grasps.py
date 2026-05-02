@@ -130,8 +130,8 @@ class HTSGrasp():
         self.time = time.time() - self._t0
 
     def save_grasp_validity(self, folder: str, include_header: bool=False, is_flipped: bool=False):
-        """Saves grasp metrics to /grasp_evaluations.txt"""
-        filename = f"{folder}/grasp_evaluations.txt" if not is_flipped else f"{folder}/grasp_evaluations_flipped.txt"
+        """Saves grasp metrics to /grasp_evaluations.csv"""
+        filename = f"{folder}/grasp_evaluations.csv" if not is_flipped else f"{folder}/grasp_evaluations_flipped.csv"
         with open(filename, "a") as f:
             if include_header:
                 f.write(f"id,z,th,planning_time,planing_score,grasp_score,pickup_ik_t,pickup_plan_t,pickup_refine_t,move_ik_t,move_plan_t,move_refine_t\r\n") 

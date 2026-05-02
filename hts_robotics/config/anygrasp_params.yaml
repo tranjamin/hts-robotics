@@ -36,4 +36,4 @@ visualise: True
 save_data: True
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/pointclouds/beaker_lrg.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/conic_flask.npz"
