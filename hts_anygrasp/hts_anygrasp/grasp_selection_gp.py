@@ -60,7 +60,7 @@ class GraspSelectorGP():
     planning_time_mean: float = 0.3
     planning_time_cov: float = 0.3
     
-    total_max_time = 300.0
+    total_max_time = 1200.0
 
     num_iterations = 0
 
@@ -300,6 +300,7 @@ class GraspSelectorGP():
         self.est_path_scores = KxX @ self.inv @ y
         self.cov = Kxx - KxX @ self.inv @ KxX.T
         self.est_planning_times = KxX @ np.linalg.inv(KXX + 1e-10*np.eye(n)) @ y_times
+        # self.est_planning_times = KxX @ self.inv @ y_times
 
         np.clip(self.cov, 0.0, None, self.cov)
 
@@ -320,6 +321,7 @@ class GraspSelectorGP():
         u = KxX @ self.inv @ y
         c = Kxx - KxX @ self.inv @ KxX.T
         t = KxX @ np.linalg.inv(KXX + 1e-10*np.eye(n)) @ y_times
+        # t = KxX @ self.inv @ y_times
         return u,c,t
 
     def update_max_path_score(self, newest_score):
