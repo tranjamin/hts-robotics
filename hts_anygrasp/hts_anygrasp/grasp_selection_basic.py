@@ -240,16 +240,14 @@ class GraspSelectorBasic():
             response.grasp_pose = best_grasp.get_pose()
             self.logger.info("--> " + str(response.grasp_pose))
             response.success = True
-            context.goal_handle.succeed()
             context.response = response
         else:
             self.logger.info("No valid grasps found")
             response.success = False
-            context.goal_handle.abort()
             context.response = response
             
 class ProblemPointsBasic():
-    INITIAL_PLANNING_TIME = 5.0
+    INITIAL_PLANNING_TIME = 0.3
     
     def __init__(self, grasp: HTSGrasp):              
         self.known_certainty: float = 0 # the known certainty of the path score

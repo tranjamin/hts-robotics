@@ -7,7 +7,7 @@ import numpy as np
 import scipy
 import random as random
 import functools
-from sklearn.gaussian_process.kernels import Matern, RBF
+from sklearn.gaussian_process.kernels import Matern, RBF, ExpSineSquared
 import matplotlib.cm as cm
 
 file = "grasps_planning.npz"
@@ -26,39 +26,21 @@ def wrapped_sqeuclidean(x, y):
     # return (x[0] - y[0])**2 + ((x[1] - y[1] + np.pi) % (2*np.pi) - np.pi)**2
     return (x[0] - y[0])**2 + (x[1] - y[1])**2
 
-class WrappedRBF(RBF):
-    def __init__(self, length_scale=1.0, length_scale_bounds=(1e-5, 1e5)):
-        super().__init__(length_scale=length_scale, length_scale_bounds=length_scale_bounds)
+class CompositeKernel(RBF):
+    def __init__(self, distance_kernel, angle_kernel):
+        self.distance_kernel = distance_kernel
+        self.angle_kernel = angle_kernel
 
     def __call__(self, X, Y=None, eval_gradient=False):
-        X = np.atleast_2d(X)
-        length_scale = self.length_scale
+        X_r = X[:, 0].reshape((-1, 1))
+        X_th = X[:, 1].reshape((-1, 1))
+        
         if Y is None:
-            dists = pdist(X / length_scale, metric=wrapped_sqeuclidean)
-            K = np.exp(-0.5 * dists)
-            # convert from upper-triangular matrix to square matrix
-            K = squareform(K)
-            np.fill_diagonal(K, 1)
+            return self.distance_kernel(X_r, Y=None, eval_gradient=eval_gradient) * self.angle_kernel(X_th, Y=None, eval_gradient=eval_gradient)
         else:
-            dists = cdist(X / length_scale, Y / length_scale, metric=wrapped_sqeuclidean)
-            K = np.exp(-0.5 * dists)
-
-        if eval_gradient:
-            if self.hyperparameter_length_scale.fixed:
-                # Hyperparameter l kept fixed
-                return K, np.empty((X.shape[0], X.shape[0], 0))
-            elif not self.anisotropic or length_scale.shape[0] == 1:
-                K_gradient = (K * squareform(dists))[:, :, np.newaxis]
-                return K, K_gradient
-            elif self.anisotropic:
-                # We need to recompute the pairwise dimension-wise distances
-                K_gradient = (X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2 / (
-                    length_scale**2
-                )
-                K_gradient *= K[..., np.newaxis]
-                return K, K_gradient
-        else:
-            return K
+            Y_r = Y[:, 0].reshape((-1, 1))
+            Y_th = Y[:, 1].reshape((-1, 1))
+            return self.distance_kernel(X_r, Y=Y_r, eval_gradient=eval_gradient) * self.angle_kernel(X_th, Y=Y_th, eval_gradient=eval_gradient)
 
 # construct a problem space
 class ProblemSpace():
@@ -73,8 +55,10 @@ class ProblemSpace():
     
     total_max_time = 100.0
     
-    kernel = Matern(length_scale=[0.01, 0.4], nu=3.5)
-    # kernel = 
+    # kernel = Matern(length_scale=[0.01, 0.4], nu=3.5)
+    dist_kernel = Matern(length_scale=0.03, nu=1.5)
+    angle_kernel = ExpSineSquared(length_scale=0.5, periodicity=2*np.pi)
+    kernel = CompositeKernel(dist_kernel, angle_kernel)
     
     def __init__(self):        
         self.points: list[ProblemPoints] = [ProblemPoints(GRASPS_Z[i], GRASPS_TH[i]) for i in range(len(GRASPS_TH))] # points

@@ -33,7 +33,7 @@ from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .symmetry import SymmetryGroup
 from .grasp_selection_custom import GraspSelectorCustom, ValidityContext
 from .grasp_selection_basic import GraspSelectorBasic
-from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP
+from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP, PlanningTimeTuner
 from .utils import display_grasps, display_pointcloud, fast_norgb_pc2_to_numpy, fast_pc2_to_numpy
 
 
@@ -73,6 +73,7 @@ class AnyGraspNode(Node):
         self.declare_parameter('symmetry_layer_height', 0.03)
         self.declare_parameter('symmetry_rotation_step', 45)
         self.declare_parameter('symmetry_similarity_threshold', 0.01)
+        self.declare_parameter('enable_grasp_selection', True)
 
         # config options for point/grasp bounding
         self.Z_COORDS_MIN: float = self.get_parameter('z_coords_min').value
@@ -123,6 +124,9 @@ class AnyGraspNode(Node):
 
         # pointcloud to listen on
         self.depth_pointcloud_: PointCloud2 = None
+
+        # config for grasp selection
+        self.ENABLE_GRASP_SELECTION: bool = self.get_parameter('enable_grasp_selection').value
 
         # load in point cloud from file if necessary
         if self.POINTCLOUD_FROM_FILE:
@@ -388,27 +392,42 @@ class AnyGraspNode(Node):
 
             hts_grasp_group_mirrored.append(hts_grasp)
 
+        tuner = PlanningTimeTuner()
+
         context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request)
-        # problem = GraspSelectorGP(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
-        # problem.start_timer()
-        # # problem._handle_validity_send_goal(context)
-
         context_flipped = ValidityContext(goal_handle, hts_grasp_group_mirrored, folder, cloud, request, is_flipped=True)
-        # problem_flipped = GraspSelectorGP(hts_grasp_group_mirrored, self.get_logger(), self.grasp_validity_client_)
-        # problem_flipped.start_timer()
-        # # problem_flipped._handle_validity_send_goal(context_flipped)
+        
+        if self.ENABLE_GRASP_SELECTION:
+            final_context = ValidityContext(goal_handle, hts_grasp_group, None, None, None)
 
-        final_context = ValidityContext(goal_handle, hts_grasp_group, None, None, None)
+            dual_problem = DualGraspSelectorGP(hts_grasp_group, hts_grasp_group_mirrored, context, context_flipped, final_context, self.get_logger(), self.grasp_validity_client_, tuner)
+            dual_problem._handle_validity_send_goal()
 
-        dual_problem = DualGraspSelectorGP(hts_grasp_group, hts_grasp_group_mirrored, context, context_flipped, final_context, self.get_logger(), self.grasp_validity_client_)
-        dual_problem._handle_validity_send_goal()
+            while final_context.response is None:
+                time.sleep(0.01)
+            time.sleep(1.0)
 
-        while final_context.response is None:
-            time.sleep(0.01)
-        time.sleep(1.0)
+            return final_context.response
+        else:
+            problem = GraspSelectorBasic(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
+            problem._handle_validity_send_goal(context)
 
-        return final_context.response
-    
+            while context.response is None:
+                time.sleep(0.01)
+            time.sleep(1.0)
+
+            problem_flipped = GraspSelectorBasic(hts_grasp_group_mirrored, self.get_logger(), self.grasp_validity_client_)
+            problem_flipped._handle_validity_send_goal(context_flipped)
+
+            while context_flipped.response is None:
+                time.sleep(0.01)
+            time.sleep(1.0)
+
+            context.goal_handle.succeed()
+            response = RequestGrasp.Result()
+            response.success = False
+            return response
+
     def map_grasp(self, grasp, flip_z=False):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
         offset_rotation = Rotation.from_euler('y', 90, degrees=True)
