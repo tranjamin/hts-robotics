@@ -3,17 +3,17 @@ objects:
   # - volumetric_flask
   # - round_bottomed_flask
   # - measuring_cylinder_sml
-  # - measuring_cylinder_lrg
+  - measuring_cylinder_lrg
   # - beaker_sml
   # - beaker_med
-  - beaker_lrg
-  # - table
+  # - beaker_lrg
+  - table
 
 table:
   object_id: 99
   geometry_file: "table.sdf"
-  x: 0.0
-  y: 0.3
+  x: 0.3
+  y: -0.3
   z: 0.1
   primitive_type: BOX
   primitive_dims:
