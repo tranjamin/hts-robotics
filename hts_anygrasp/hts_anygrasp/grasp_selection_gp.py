@@ -60,7 +60,7 @@ class GraspSelectorGP():
     planning_time_mean: float = 0.3
     planning_time_cov: float = 0.3
     
-    total_max_time = 60.0
+    total_max_time = 300.0
 
     num_iterations = 0
 

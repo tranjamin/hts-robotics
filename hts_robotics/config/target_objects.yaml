@@ -1,13 +1,13 @@
 objects:
-  # - conic_flask
+  - conic_flask
   # - volumetric_flask
   # - round_bottomed_flask
   # - measuring_cylinder_sml
-  - measuring_cylinder_lrg
+  # - measuring_cylinder_lrg
   # - beaker_sml
   # - beaker_med
   # - beaker_lrg
-  - table
+  # - table
 
 table:
   object_id: 99
