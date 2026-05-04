@@ -224,18 +224,20 @@ class GraspSelectorBasic():
         if self.SAVE_DATA:
             hts_grasp_group.save_metrics(folder, context.is_flipped)
 
-        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
-        hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+        if context.visualise:
+            hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+            hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
 
         if hts_grasp_group.num_valid():
             self.logger.info("Found the best grasp")
 
             # best_grasp = hts_grasp_group.best_grasp()
             best_grasp = self.choose_best().grasp
-            display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+            if context.visualise:
+                display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
             response.grasp_pose = best_grasp.get_pose()
             self.logger.info("--> " + str(response.grasp_pose))
@@ -285,7 +287,7 @@ class ProblemPointsBasic():
         self.path_score = result.score if result.is_valid else math.inf
 
 class ValidityContext():
-    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, is_flipped:bool = False):
+    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, plot, visualise, is_flipped:bool = False):
         self.goal_handle = goal_handle
         self.hts_grasp_group = grasp_group
         self.pending_results = 0
@@ -295,3 +297,5 @@ class ValidityContext():
         self.response = None
         self.all_points_certain = False
         self.is_flipped = is_flipped
+        self.plot = plot
+        self.visualise = visualise

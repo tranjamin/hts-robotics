@@ -12,7 +12,7 @@ from sklearn.gaussian_process.kernels import Matern, RBF, ExpSineSquared
 from hts_msgs.action import ComputeGraspValidity, RequestGrasp
 import matplotlib
 import matplotlib.cm as cm
-matplotlib.use("svg")
+matplotlib.use("agg")
 
 from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .utils import display_grasps
@@ -60,7 +60,7 @@ class GraspSelectorGP():
     planning_time_mean: float = 0.3
     planning_time_cov: float = 0.3
     
-    total_max_time = 1200.0
+    total_max_time = 60.0
 
     num_iterations = 0
 
@@ -143,7 +143,11 @@ class GraspSelectorGP():
         
     def plot_grasps(self, folder=None, is_flipped=False):
         # predict mean and cov for mesh
+        tmp1 = time.time()
         mesh_mean, mesh_cov, mesh_times = self.get_preds(np.hstack((self.z_mesh, self.th_mesh)))
+        self.logger.info(f"!!!!!!!!! Took {time.time() - tmp1} seconds to get predictions")
+        tmp1 = time.time()
+
         mesh_uncertanties = np.sqrt(np.diag(mesh_cov))
 
         # get the mean and uncertainty for 
@@ -170,6 +174,9 @@ class GraspSelectorGP():
 
         clipped_planning_times = np.log2(np.clip(self.est_planning_times, ProblemPoints.INITIAL_PLANNING_TIME, None))
         clipped_mesh_times = np.log2(np.clip(mesh_times, ProblemPoints.INITIAL_PLANNING_TIME, None))
+
+        self.logger.info(f"!!!!!!!!! Took {time.time() - tmp1} seconds to make arrays")
+        tmp1 = time.time()
 
         fig, axs = plt.subplots(2, 4, figsize=(30, 12), subplot_kw={'projection': 'polar'})
         splt1 = axs[0, 0].scatter(
@@ -251,10 +258,17 @@ class GraspSelectorGP():
         fig.colorbar(splt7, ax=axs[0,3])
         fig.colorbar(splt8, ax=axs[1,3])
 
+        self.logger.info(f"!!!!!!!!! Took {time.time() - tmp1} seconds to make scatter plots")
+        tmp1 = time.time()
+
         if folder:
-            filename = f"{folder}/plts/{time.time()}_plt.svg" if not is_flipped else f"{folder}/plts/flipped_{time.time()}_plt.svg"
+            filename = f"{folder}/plts/{time.time()}_plt.png" if not is_flipped else f"{folder}/plts/flipped_{time.time()}_plt.png"
             plt.savefig(filename)
+            self.logger.info(f"!!!!!!!!! Took {time.time() - tmp1} seconds to save fig")
+            tmp1 = time.time()
             plt.close(fig)
+            self.logger.info(f"!!!!!!!!! Took {time.time() - tmp1} seconds to close fig")
+
         
     def choose_best(self) -> tuple[ProblemPoints | None, float]:
         # self.logger.info("Choose Best")
@@ -382,6 +396,8 @@ class GraspSelectorGP():
         hts_grasp : HTSGrasp = self.grasps._grasps[idx]
         hts_grasp.process_result(result)
         hts_grasp.end_timer()
+        tmp1 = time.time()
+
         context.pending_results -= 1
         self.num_iterations += 1
         
@@ -395,12 +411,20 @@ class GraspSelectorGP():
 
         self.update_map()
 
+        tmp2 = time.time()
+        self.logger.info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!! Took {tmp2 - tmp1} seconds to update map and stuff")
+
+        tmp1 = time.time()
         if self.SAVE_DATA:
             hts_grasp.save_grasp_message(context.folder, context.is_flipped)
             hts_grasp.save_grasp_validity(context.folder, self.num_iterations == 1, context.is_flipped)
 
             # show the updated map
-            self.plot_grasps(context.folder, context.is_flipped)
+            if context.plot:
+                self.plot_grasps(context.folder, context.is_flipped)
+        
+        tmp2 = time.time()
+        self.logger.info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Took {tmp2 - tmp1} seconds to save data")
         
         t1 = time.time()
         self.logger.info(f"start time is {self.t0} now is {t1} max time is {self.total_max_time} pending {context.pending_results}")
@@ -427,11 +451,12 @@ class GraspSelectorGP():
         if self.SAVE_DATA:
             hts_grasp_group.save_metrics(folder, context.is_flipped)
 
-        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
-        hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+        if context.visualise:
+            hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+            hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
 
         if hts_grasp_group.num_valid():
             self.logger.info("Found the best grasp")
@@ -446,7 +471,8 @@ class GraspSelectorGP():
                 context.response = response
             else:
                 best_grasp = best_point.grasp
-                display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+                if context.visualise:
+                    display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
                 response.grasp_pose = best_grasp.get_pose()
                 self.logger.info("--> " + str(response.grasp_pose))
@@ -585,6 +611,8 @@ class DualGraspSelectorGP():
         hts_grasp : HTSGrasp = self.current_selector.grasps._grasps[idx]
         hts_grasp.process_result(result)
         hts_grasp.end_timer()
+        tmp1 = time.time()
+
         self.current_context.pending_results -= 1
         self.current_selector.num_iterations += 1
         
@@ -599,13 +627,22 @@ class DualGraspSelectorGP():
 
         self.current_selector.update_map()
 
+        tmp2 = time.time()
+        self.logger.info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!! Took {tmp2 - tmp1} seconds to update map and stuff")
+        tmp1 = time.time()
+
         if self.current_selector.SAVE_DATA:
             hts_grasp.save_grasp_message(self.current_context.folder, self.current_context.is_flipped)
             hts_grasp.save_grasp_validity(self.current_context.folder, self.current_selector.num_iterations == 1, self.current_context.is_flipped)
 
             # show the updated map
-            self.current_selector.plot_grasps(self.current_context.folder, self.current_context.is_flipped)
+            # show the updated map
+            if self.current_context.plot:
+                self.current_selector.plot_grasps(self.current_context.folder, self.current_context.is_flipped)
         
+        tmp2 = time.time()
+        self.logger.info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Took {tmp2 - tmp1} seconds to save data")
+
         t1 = time.time()
         self.logger.info(f"start time is {self.current_selector.t0} now is {t1} max time is {self.current_selector.total_max_time} pending {self.current_context.pending_results}")
         if self.current_context.pending_results == 0 and ((t1 - self.current_selector.t0) > self.current_selector.total_max_time or self.current_context.all_points_certain):
@@ -632,11 +669,12 @@ class DualGraspSelectorGP():
         if self.current_selector.SAVE_DATA:
             hts_grasp_group.save_metrics(folder, self.current_context.is_flipped)
 
-        hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
-        hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
-        hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
+        if self.current_context.visualise:
+            hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
+            hts_grasp_group.filter_grasp_group(lambda x: not x.evaluated()).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Non Evaluated Grasps")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.is_valid).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Valid Scores")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.pickup_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Pickup Failed Scores")
+            hts_grasp_group.filter_grasp_group(HTSGrasp.move_failed).visualise(cloud, origin_position=[request.x, request.y, request.z], description="Move Failed Scores")
 
         if hts_grasp_group.num_valid():
             self.logger.info("Found the best grasp")
@@ -656,7 +694,8 @@ class DualGraspSelectorGP():
                 self.second_bestcost = best_cost
                 self.second_bestgrasp = best_grasp
 
-            display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+            if self.current_context.visualise:
+                display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
             response.grasp_pose = best_grasp.get_pose()
             self.logger.info("--> " + str(response.grasp_pose))
@@ -693,7 +732,7 @@ class DualGraspSelectorGP():
 
 
 class ValidityContext():
-    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, is_flipped:bool = False):
+    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, plot, visualise, is_flipped:bool = False):
         self.goal_handle = goal_handle
         self.hts_grasp_group = grasp_group
         self.pending_results = 0
@@ -703,3 +742,5 @@ class ValidityContext():
         self.response = None
         self.all_points_certain = False
         self.is_flipped = is_flipped
+        self.plot = plot
+        self.visualise = visualise
