@@ -35,7 +35,7 @@ pointcloud_topic: "/octomap_point_cloud_centers"
 visualise: False
 save_data: True
 
-plot_selection_graphs: True
+plot_selection_graphs: False
 enable_grasp_selection: True
 planning_time_multiplier: 2.0
 baseline_planning_time: 0.03
@@ -51,4 +51,4 @@ acquisition_eps_final: 0.1
 acquisition_eps_decay_rate: 0.99
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/pointclouds/conic_flask.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/beaker_lrg.npz"

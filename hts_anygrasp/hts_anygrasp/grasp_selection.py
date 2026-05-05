@@ -14,56 +14,19 @@ from abc import ABC, abstractmethod
 try: # ros-dependent packages
     from .hts_grasps import HTSGraspGroup, HTSGrasp
     from .utils import ValidityContext, display_grasps
+    from .planning_time_models import PlanningTimeModel, LognormalPlanningTimeModel
+    from .acquisition_functions import AcquisitionFunction, EpsilonGreedyUCB, SequentialAcquisition
+    from .selection_points import GenericPoint, GraspPointBaseline, GraspPoint, CoordinatePoint
     from hts_msgs.action import ComputeGraspValidity, RequestGrasp
 except ImportError as e:
     print(f"Received Import Error {e}, continuing")
     from hts_grasps import HTSGraspGroup, HTSGrasp
     from utils import ValidityContext, display_grasps
+    from planning_time_models import PlanningTimeModel, LognormalPlanningTimeModel
+    from acquisition_functions import AcquisitionFunction, EpsilonGreedyUCB, SequentialAcquisition
+    from selection_points import GenericPoint, GraspPointBaseline, GraspPoint, CoordinatePoint
 
 matplotlib.use("agg")
-
-class PlanningTimeModel(ABC):
-    def __init__(self, planning_multiplier=2.0, **kwargs):
-        self.planning_data: np.ndarray = np.array([])
-        self.planning_multiplier: float = planning_multiplier
-
-    @abstractmethod
-    def add_planning_data(self, t: float):
-        pass
-
-    @abstractmethod
-    def validity_failure_model(self, t: float) -> float:
-        pass
-
-    @abstractmethod
-    def get_initial_planning_time(self) -> float:
-        pass
-
-    def get_planning_multiplier(self) -> float:
-        return self.planning_multiplier
-
-class LognormalPlanningTimeModel(PlanningTimeModel):
-    def __init__(self, planning_multiplier: float=2.0, initial_planning_time: float=0.03, initial_var: float=0.5):
-        super().__init__(planning_multiplier)
-        self._initial_planning_time: float = initial_planning_time
-        self.planning_time_mean: float = np.log(initial_planning_time)
-        self.planning_time_variance: float = initial_var
-
-    def get_initial_planning_time(self) -> float:
-        return self._initial_planning_time
-
-    def add_planning_data(self, t: float):
-        self.planning_data = np.append(self.planning_data, t)
-        self.planning_time_mean = 1/self.planning_data.shape[0]*np.sum(np.log(self.planning_data))
-        if self.planning_data.shape[0] > 2:
-            self.planning_time_variance = 1/self.planning_data.shape[0]*np.sum(np.square(np.log(self.planning_data) - self.planning_time_mean))
-
-    def validity_failure_model(self, t: float):
-        return LognormalPlanningTimeModel._compute_norm(t, self.planning_time_mean, self.planning_time_variance)
-
-    @staticmethod
-    def _compute_norm(t: float, mean, var):
-        return float(scipy.stats.lognorm.cdf(t, np.sqrt(var), scale=np.exp(mean)))
 
 class CompositeKernel(RBF):
     def __init__(self, distance_kernel, angle_kernel):
@@ -80,172 +43,6 @@ class CompositeKernel(RBF):
             Y_r = Y[:, 0].reshape((-1, 1))
             Y_th = Y[:, 1].reshape((-1, 1))
             return self.distance_kernel(X_r, Y=Y_r, eval_gradient=eval_gradient) * self.angle_kernel(X_th, Y=Y_th, eval_gradient=eval_gradient)
-
-class AcquisitionFunction(ABC):
-    def __init__(self):
-        pass
-
-    @abstractmethod
-    def sample(self, **kwargs) -> int:
-        pass
-
-    @abstractmethod
-    def time_step(self) -> None:
-        pass
-
-class SequentialAcquisition(AcquisitionFunction):
-    def __init__(self):
-        super().__init__()
-        self.current_idx = 0
-    
-    def sample(self, **kwargs):
-        return self.current_idx
-    
-    def time_step(self) -> None:
-        self.current_idx += 1
-    
-
-class EpsilonGreedyUCB(AcquisitionFunction):
-    def __init__(self, kappa: float=3, eps: float=0.1, eps_final: float | None=None, eps_decay_rate: float=0.99):
-        super().__init__()
-
-        assert eps_decay_rate > 0 and eps_decay_rate < 1
-        assert eps >= 0 and eps <= 1
-        if eps_final is not None:
-            assert (eps_final >= 0 and eps_final <= 1) 
-
-        self.kappa = kappa
-
-        # a bigger epsilon tends to more exploration
-        self.current_eps: float = eps
-        self.eps_start: float = eps
-        self.eps_final: float | None = eps_final
-        self.eps_decay: float = eps_decay_rate
-
-    def sample(self, mean: np.ndarray | None=None, var: np.ndarray | None=None, uncertainty_weightings: np.ndarray | None=None, logger=None, **kwargs) -> int:
-        assert mean is not None and var is not None and uncertainty_weightings is not None
-        
-        weights = mean + self.kappa*np.sqrt(var) # calculate UCB
-        weights = weights - np.min(weights) # make nonnegative
-        weights = weights * uncertainty_weightings # weight by uncertainties
-
-        if logger:
-            logger.info(f"Weight Sum: {np.sum(weights)}")
-
-        if random.random() > self.current_eps or np.sum(weights) == 0.0:
-            return int(np.argmax(weights))
-        else:
-            return random.choices(range(weights.shape[0]), weights=list(weights))[0]
-    
-    def time_step(self):
-        if self.eps_final is not None:
-            if self.eps_final > self.eps_start: # exponential increase towards exploration
-                self.current_eps = max(self.eps_final, self.current_eps / self.eps_decay)
-            elif self.eps_start > self.eps_final: # exponential increase towards exploitation
-                self.current_eps = max(self.eps_final, self.current_eps * self.eps_decay)
-
-class GenericPoint(ABC):
-    def __init__(self, _):
-        self.certainty: float = 0 # how certain we are of our evaluation
-        self._z: float = 0 # the vertical position of the grasp
-        self._theta: float = 0 # the yaw of the grasp
-        self.grasp_score: float = 0 # the grasp score
-        self.path_score: float = math.inf # the computed path length
-        self.allocated_planning_time: float = 0.03 # the planning time allocated for this grasp
-        self.valid: bool = False # whether this grasp is valid or not
-        self.evaluated: bool = False # whether this grasp has been evaluated or not
-
-    def get_certainty(self):
-        return self.certainty
-
-    def cost(self, max_path_score: float):
-        return self.norm_path_score(max_path_score)*self.grasp_score
-    
-    def z(self) -> float:
-        return self._z
-    
-    def theta(self) -> float:
-        return self._theta
-
-    def norm_path_score(self, max_path_score: float) -> float:
-        if not math.isinf(max_path_score) and not max_path_score == 0:
-            return max(max_path_score - self.path_score, -max_path_score) / max_path_score
-        else:
-            return max(max_path_score - self.path_score, -max_path_score)
-
-    @abstractmethod
-    def handle_evaluation_result(self, result: Any, time_model: PlanningTimeModel):
-        pass
-
-    @abstractmethod
-    def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float):
-        pass
-
-class GraspPoint(GenericPoint):
-    def __init__(self, grasp: HTSGrasp):
-        super().__init__(grasp)
-
-        self.grasp: HTSGrasp = grasp
-        self._z: float = grasp.z
-        self._theta: float = grasp.theta
-        self.grasp_score: float = grasp.get_grasp_object().score
-
-    def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float):
-        if self.valid:
-            time_model.add_planning_data(time_taken)
-            self.certainty = 1.0
-        else:
-            self.certainty = time_model.validity_failure_model(self.allocated_planning_time)
-            self.allocated_planning_time *= time_model.get_planning_multiplier()
-
-    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel):
-        self.evaluated = True
-        self.valid = result.is_valid
-        self.update_certainty_on_eval(time_model, float(result.pickup_plan_time))
-        self.path_score = result.score if result.is_valid else math.inf
-
-class GraspPointBaseline(GenericPoint):
-    def __init__(self, grasp: HTSGrasp):
-        super().__init__(grasp)
-
-        self.grasp: HTSGrasp = grasp
-        self._z: float = grasp.z
-        self._theta: float = grasp.theta
-        self.grasp_score: float = grasp.get_grasp_object().score
-
-    def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float):
-        self.certainty = 1.0
-
-    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel):
-        self.evaluated = True
-        self.valid = result.is_valid
-        self.update_certainty_on_eval(time_model, float(result.pickup_plan_time))
-        self.path_score = result.score if result.is_valid else math.inf
-
-class CoordinatePoint(GenericPoint):
-    def __init__(self, coord: tuple[float, float]):
-        super().__init__(coord)
-        
-        self._z: float = coord[0]
-        self._theta: float = coord[1]
-        self.known_path_score: float = 0
-
-    def set_known_path_score(self, score: float):
-        self.known_path_score = score
-
-    def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float):
-        if self.valid:
-            # time_model.add_planning_data(time_taken)
-            self.certainty = 1.0
-        else:
-            self.certainty = 1.0
-            # self.allocated_planning_time *= time_model.get_planning_multiplier()
-
-    def handle_evaluation_result(self, result: float, time_model: PlanningTimeModel):
-        self.evaluated = True
-        self.valid = not math.isinf(result)
-        self.update_certainty_on_eval(time_model, 0.0)
-        self.path_score = result if self.valid else math.inf
 
 class GenericSelector(ABC):
     def __init__(self, 
@@ -525,6 +322,8 @@ class GPGraspSelector(GenericSelector):
         # recover the point from the index
         point = self.points[idx]
         point.handle_evaluation_result(result, self.tuner)
+        point.grasp.process_result(result)
+        point.grasp.end_timer()
 
         # update the max score found 
         self.update_max_path_score(point.path_score)
@@ -1123,6 +922,8 @@ class SequentialGraspSelector(GenericSelector):
         # recover the point from the index
         point = self.points[idx]
         point.handle_evaluation_result(result, self.tuner)
+        point.grasp.process_result(result)
+        point.grasp.end_timer()
 
         if self.context.save_data:
             hts_grasp.save_grasp_message(self.context.folder, self.context.is_flipped)
@@ -1251,22 +1052,22 @@ class DualGraspSelector(ABC):
             if best_point is None:
                 self.current_selector.context.logger.info("No valid grasps found")
                 response.success = False
-
-            best_grasp = best_point.grasp
-            
-            if not self.first_terminated:
-                self.first_bestcost = best_cost
-                self.first_bestgrasp = best_grasp
             else:
-                self.second_bestcost = best_cost
-                self.second_bestgrasp = best_grasp
+                best_grasp = best_point.grasp
+            
+                if not self.first_terminated:
+                    self.first_bestcost = best_cost
+                    self.first_bestgrasp = best_grasp
+                else:
+                    self.second_bestcost = best_cost
+                    self.second_bestgrasp = best_grasp
 
-            if self.current_selector.context.visualise:
-                display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
+                if self.current_selector.context.visualise:
+                    display_grasps(best_grasp.single_grasp_group(), cloud, only_first=True, origin_position=[request.x, request.y, request.z], description="Best Grasp")
 
-            response.grasp_pose = best_grasp.get_pose()
-            self.current_selector.context.logger.info("--> " + str(response.grasp_pose))
-            response.success = True
+                response.grasp_pose = best_grasp.get_pose()
+                self.current_selector.context.logger.info("--> " + str(response.grasp_pose))
+                response.success = True
         else:
             self.current_selector.context.logger.info("No valid grasps found")
             response.success = False
@@ -1274,6 +1075,8 @@ class DualGraspSelector(ABC):
         self.current_selector.context.response = response
 
         if self.first_terminated:
+            self.selector1.context.logger.info("Now the first terminated")
+            self.selector1.context.logger.info(f"Success? {self.selector1.context.response.success} {self.selector2.context.response.success}")
             final_response = RequestGrasp.Result()
             final_response.success = self.selector1.context.response.success or self.selector2.context.response.success
             if (self.first_bestgrasp is not None and self.second_bestgrasp is not None):

@@ -254,8 +254,13 @@ class hts_missions : public rclcpp::Node {
               feedback->progress = std::string(buf);
               goal_handle->publish_feedback(feedback);
 
-              pickup_goal->pose = *grasp_pose;             
-              pickup_client_->async_send_goal(*pickup_goal, pickup_send_goal_options);
+              pickup_goal->pose = *grasp_pose;
+              
+              // temporarily do it
+              // pickup_client_->async_send_goal(*pickup_goal, pickup_send_goal_options);
+              result->success = false;
+              result->message = "Terminated early on purpose";
+              goal_handle->abort(result);
             }
           };
         grasp_object_send_goal_options.feedback_callback =
