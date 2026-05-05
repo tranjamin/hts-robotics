@@ -45,12 +45,40 @@ planner_configs:
     maximum_waypoint_distance: 0.005
 
 fr3_arm:
+  path_tolerance: 0.005
+  resample_dt: 0.02
+  min_angle_change: 0.001
+
+  default_workspace_bounds: 2.0
+  start_state_max_bounds_error: 0.01
+  start_state_max_dt: 10.0
+  jiggle_fraction: 0.005
+  max_sampling_attempts: 500
+
+  goal_orientation_tolerance: 0.001
+  goal_position_tolerance: 0.005
+  planning_time: 5.0
+  
   enforce_constrained_state_space: true
   projection_evaluator: link(fr3_hand_tcp)
   planner_configs:
     - RRTstarkConfigDefault
     - RRTConnectkConfigDefault
 fr3_hand:
+  path_tolerance: 0.005
+  resample_dt: 0.02
+  min_angle_change: 0.001
+
+  default_workspace_bounds: 2.0
+  start_state_max_bounds_error: 0.01
+  start_state_max_dt: 10.0
+  jiggle_fraction: 0.005
+  max_sampling_attempts: 500
+
+  goal_orientation_tolerance: 0.001
+  goal_position_tolerance: 0.005
+  planning_time: 5.0
+
   planner_configs:
     - RRTstarkConfigDefault
     - RRTConnectkConfigDefault

@@ -4,75 +4,35 @@ import time
 import math
 import numpy as np
 import time
-import scipy.stats
-import functools
 import random
 import matplotlib.pyplot as plt
-from sklearn.gaussian_process.kernels import Matern, RBF, ExpSineSquared
+from sklearn.gaussian_process.kernels import Matern, ExpSineSquared
 from hts_msgs.action import ComputeGraspValidity, RequestGrasp
 import matplotlib
 import matplotlib.cm as cm
 matplotlib.use("agg")
 
 from .hts_grasps import HTSGrasp, HTSGraspGroup
-from .utils import display_grasps
-
-class PlanningTimeTuner():
-
-    def __init__(self):
-        self.planning_time_mean: float = np.log(0.03)
-        self.planning_time_variance: float = 0.5
-        self.planning_data = np.array([])
-
-    def add_planning_data(self, t: float):
-        self.planning_data = np.append(self.planning_data, t)
-        self.planning_time_mean = 1/self.planning_data.shape[0]*np.sum(np.log(self.planning_data))
-        if self.planning_data.shape[0] > 2:
-            self.planning_time_variance = 1/self.planning_data.shape[0]*np.sum(np.square(np.log(self.planning_data) - self.planning_time_mean))
-
-    def validity_failure_model(self, t: float):
-        return PlanningTimeTuner._compute_norm(t, self.planning_time_mean, self.planning_time_variance)
-        # return 1
-
-    @staticmethod
-    def _compute_norm(t: float, mean, var):
-        return float(scipy.stats.lognorm.cdf(t, np.sqrt(var), scale=np.exp(mean)))
-
-class CompositeKernel(RBF):
-    def __init__(self, distance_kernel, angle_kernel):
-        self.distance_kernel = distance_kernel
-        self.angle_kernel = angle_kernel
-
-    def __call__(self, X, Y=None, eval_gradient=False):
-        X_r = X[:, 0].reshape((-1, 1))
-        X_th = X[:, 1].reshape((-1, 1))
-        
-        if Y is None:
-            return self.distance_kernel(X_r, Y=None, eval_gradient=eval_gradient) * self.angle_kernel(X_th, Y=None, eval_gradient=eval_gradient)
-        else:
-            Y_r = Y[:, 0].reshape((-1, 1))
-            Y_th = Y[:, 1].reshape((-1, 1))
-            return self.distance_kernel(X_r, Y=Y_r, eval_gradient=eval_gradient) * self.angle_kernel(X_th, Y=Y_th, eval_gradient=eval_gradient)
+from .utils import display_grasps, ValidityContext
+from .grasp_selection import PlanningTimeTuner, CompositeKernel, EpsilonGreedyUCB, AcquisitionFunction
 
 
 # construct a problem space
-class GraspSelectorGP():
-    planning_time_mean: float = 0.3
-    planning_time_cov: float = 0.3
-    
+class GraspSelectorGP():    
     total_max_time = 300.0
 
-    num_iterations = 0
 
     kappa = 3
+
+    epsilon = 0.2
     
     dist_kernel = Matern(length_scale=0.03, nu=2.5)
     angle_kernel = ExpSineSquared(length_scale=0.8, periodicity=2*np.pi)
     kernel = CompositeKernel(dist_kernel, angle_kernel)
-
     # kernel = Matern(length_scale=[0.03, 0.8], nu=3.5)
-    
+
     def __init__(self, hts_gg: HTSGraspGroup, logger, client, tuner: PlanningTimeTuner):
+        num_iterations = 0
         self.grasps: HTSGraspGroup = hts_gg # all grasps
         self.logger = logger
         self.client = client
@@ -84,11 +44,6 @@ class GraspSelectorGP():
 
         self.max_path_score = 0.0
 
-        zs = np.array([p.z for p in self.points])
-        thetas = np.array([p.theta for p in self.points])
-        np.save("/ros2_ws/src/z", zs)
-        np.save("/ros2_ws/src/th", thetas)
-        
         self.N = len(self.points)
         self.k = 1.0
 
@@ -125,22 +80,18 @@ class GraspSelectorGP():
     def start_timer(self):
         self.t0 = time.time()
     
-    def select_next(self):
-        # weits for sampling
-        weights = (self.est_path_scores.ravel() + GraspSelectorGP.kappa*np.sqrt(np.diag(self.cov)))
-        weights = weights - np.min(weights)
-        weights = weights * np.array([1 - p.certainty for p in self.points])
-
-        self.logger.info(f"Weight Sum: {np.sum(weights)}")
-
-        # choose a random points if no weights
-        if np.sum(weights) == 0.0:
-            idx = random.choices(range(len(self.points)))[0]
-        else:
-            idx = random.choices(range(len(self.points)), weights=list(weights))[0]
-
-        return idx, self.points[idx]
+    def select_next(self) -> tuple[int, ProblemPoints]:
+        acquisition_function: AcquisitionFunction = EpsilonGreedyUCB(kappa=self.kappa, eps=self.epsilon)
         
+        sampled_idx = acquisition_function.sample(
+            self.est_path_scores.ravel(), 
+            np.diag(self.cov), 
+            np.array([1 - p.certainty for p in self.points])
+        )
+
+        acquisition_function.time_step()
+        return sampled_idx, self.points[sampled_idx]
+
     def plot_grasps(self, folder=None, is_flipped=False):
         # predict mean and cov for mesh
         tmp1 = time.time()
@@ -484,56 +435,7 @@ class GraspSelectorGP():
             response.success = False
             context.goal_handle.abort()
             context.response = response
-            
-class ProblemPoints():
-    INITIAL_PLANNING_TIME = 0.03
-    PLANNING_MULTIPLIER = 2
-    
-    def __init__(self, grasp: HTSGrasp):              
-        self.known_certainty: float = 0 # the known certainty of the path score
-        self.certainty: float = 0 # how certain we are of the path score
-        self.grasp: HTSGrasp = grasp # grasp oject
-        
-        self.z = grasp.z
-        self.theta = grasp.theta
-        
-        self.is_reflected: bool # whether we are dealing in the reflected space or not
-        self.grasp_score: float = grasp.get_grasp_object().score # the score output from anygrasp
-        
-        self.path_score: float = math.inf # the computed or predicted path length
-        self.max_planning_time: float = ProblemPoints.INITIAL_PLANNING_TIME # how long we give for planning
-        
-        self.valid: bool = False
-        self.evaluated: bool = False
-    
-    def get_certainty(self):
-        return self.certainty
-    
-    def update_certainty_upon_eval(self, time_model: PlanningTimeTuner, time_taken: float):
-        if self.valid:
-            time_model.add_planning_data(time_taken)
-            self.certainty = 1.0
-            self.known_certainty = 1.0
-        else:
-            self.known_certainty = time_model.validity_failure_model(self.max_planning_time)
-            self.certainty = self.known_certainty
-            self.max_planning_time *= ProblemPoints.PLANNING_MULTIPLIER # double the planning time next time
-    
-    def cost(self, max_path_score):
-        return self.norm_path_score(max_path_score)*self.grasp_score
-
-    def norm_path_score(self, max_path_score):
-        if not math.isinf(max_path_score) and not max_path_score == 0:
-            return max(max_path_score - self.path_score, -max_path_score) / max_path_score
-        else:
-            return max(max_path_score - self.path_score, -max_path_score)
  
-    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeTuner):
-        self.evaluated = True
-        self.valid = result.is_valid
-        self.update_certainty_upon_eval(time_model, result.pickup_plan_time)
-        self.path_score = result.score if result.is_valid else math.inf
-
 class DualGraspSelectorGP():
     def __init__(self, group1: HTSGraspGroup, group2: HTSGraspGroup, context1, context2, final_context, logger, client, tuner: PlanningTimeTuner):
         self.selector1 = GraspSelectorGP(group1, logger, client, tuner)
@@ -729,18 +631,3 @@ class DualGraspSelectorGP():
             self.current_selector = self.selector2 if self.current_selector == self.selector1 else self.selector1
             self.current_context = self.context2 if self.current_context == self.context1 else self.context1
             self._handle_validity_finish()
-
-
-class ValidityContext():
-    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, plot, visualise, is_flipped:bool = False):
-        self.goal_handle = goal_handle
-        self.hts_grasp_group = grasp_group
-        self.pending_results = 0
-        self.folder = folder
-        self.cloud = cloud
-        self.request = request
-        self.response = None
-        self.all_points_certain = False
-        self.is_flipped = is_flipped
-        self.plot = plot
-        self.visualise = visualise

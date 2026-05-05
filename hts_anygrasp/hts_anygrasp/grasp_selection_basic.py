@@ -1,29 +1,16 @@
 
 from __future__ import annotations
-import os
 import time
-import argparse
 import math
-import matplotlib.cm as cm
-import threading
 import numpy as np
-import open3d as o3d
 import time
-import typing
-import scipy.stats
-import functools
 import random
 import matplotlib.pyplot as plt
 
-from ament_index_python.packages import get_package_prefix
-from scipy.spatial.transform import Rotation
-
-import rclpy
 from hts_msgs.action import ComputeGraspValidity, RequestGrasp
 
-
 from .hts_grasps import HTSGrasp, HTSGraspGroup
-from .utils import display_grasps
+from .utils import display_grasps, ValidityContext
 
 # construct a problem space
 class GraspSelectorBasic():
@@ -247,55 +234,3 @@ class GraspSelectorBasic():
             self.logger.info("No valid grasps found")
             response.success = False
             context.response = response
-            
-class ProblemPointsBasic():
-    INITIAL_PLANNING_TIME = 0.3
-    
-    def __init__(self, grasp: HTSGrasp):              
-        self.known_certainty: float = 0 # the known certainty of the path score
-        self.certainty: float = 0 # how certain we are of the path score
-        self.grasp: HTSGrasp = grasp # grasp oject
-        
-        self.z = grasp.z
-        self.theta = grasp.theta
-        
-        self.is_reflected: bool # whether we are dealing in the reflected space or not
-        self.grasp_score: float = grasp.get_grasp_object().score # the score output from anygrasp
-        
-        self.path_score: float = math.inf # the computed or predicted path length
-        self.max_planning_time: float = ProblemPointsBasic.INITIAL_PLANNING_TIME # how long we give for planning
-        self.max_planning_time_move: float = 0.03 # how long we give for planning
-        
-        self.valid: bool = False
-        self.evaluated: bool = False
-    
-    def get_certainty(self):
-        return self.certainty
-    
-    def update_certainty_upon_eval(self):
-        self.certainty = 1
-        self.known_certainty = 1
-    
-    def cost(self, max_path_score):
-        # if we are invalid, we say that the cost is twice is longest path cost
-        return -GraspSelectorBasic.lambda1*min(self.path_score, max_path_score) + GraspSelectorBasic.lambda2*self.grasp_score
- 
-    def handle_evaluation_result(self, result: ComputeGraspValidity.Result):
-        self.evaluated = True
-        self.valid = result.is_valid
-        self.update_certainty_upon_eval()
-        self.path_score = result.score if result.is_valid else math.inf
-
-class ValidityContext():
-    def __init__(self, goal_handle, grasp_group: HTSGraspGroup, folder, cloud, request, plot, visualise, is_flipped:bool = False):
-        self.goal_handle = goal_handle
-        self.hts_grasp_group = grasp_group
-        self.pending_results = 0
-        self.folder = folder
-        self.cloud = cloud
-        self.request = request
-        self.response = None
-        self.all_points_certain = False
-        self.is_flipped = is_flipped
-        self.plot = plot
-        self.visualise = visualise

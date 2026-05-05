@@ -31,11 +31,11 @@ from gsnet import AnyGrasp
 
 from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .symmetry import SymmetryGroup
-from .grasp_selection_custom import GraspSelectorCustom
-from .grasp_selection_basic import GraspSelectorBasic
-from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP, PlanningTimeTuner, ValidityContext
-from .utils import display_grasps, display_pointcloud, fast_norgb_pc2_to_numpy, fast_pc2_to_numpy
 
+# from .grasp_selection_basic import GraspSelectorBasic
+# from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP, PlanningTimeTuner
+from .utils import display_grasps, display_pointcloud, fast_norgb_pc2_to_numpy, fast_pc2_to_numpy, ValidityContext
+from .grasp_selection import DualGPGraspSelector, GPGraspSelector, EpsilonGreedyUCB, LognormalPlanningTimeModel, SequentialGraspSelector, SequentialAcquisition
 
 class AnyGraspNode(Node):
     def __init__(self):
@@ -75,6 +75,17 @@ class AnyGraspNode(Node):
         self.declare_parameter('symmetry_similarity_threshold', 0.01)
         self.declare_parameter('enable_grasp_selection', True)
         self.declare_parameter('plot_selection_graphs', True)
+        self.declare_parameter('planning_time_multiplier', 2.0)
+        self.declare_parameter('baseline_planning_time', 0.03)
+        self.declare_parameter('acquisition_kappa', 3.0)
+        self.declare_parameter('acquisition_eps', 0.1)
+        self.declare_parameter('kernel_length_scale_z', 0.03)
+        self.declare_parameter('kernel_length_scale_th', 0.8)
+        self.declare_parameter('kernel_matern_nu', 2.5)
+        self.declare_parameter('total_planning_time_sec', 300)
+        self.declare_parameter('acquisition_enable_decay', False)
+        self.declare_parameter('acquisition_eps_final', 0.1)
+        self.declare_parameter('acquisition_eps_decay_rate', 0.99)
 
         # config options for point/grasp bounding
         self.Z_COORDS_MIN: float = self.get_parameter('z_coords_min').value
@@ -128,7 +139,19 @@ class AnyGraspNode(Node):
         self.depth_pointcloud_: PointCloud2 = None
 
         # config for grasp selection
-        self.ENABLE_GRASP_SELECTION: bool = self.get_parameter('enable_grasp_selection').value
+        self.ENABLE_GRASP_SELECTION: bool = self.get_parameter('enable_grasp_selection').value      
+        self.PLOT_SELECTION_GRAPHS: bool = self.get_parameter('plot_selection_graphs').value
+        self.PLANNING_TIME_MULTIPLIER: float = self.get_parameter('planning_time_multiplier').value
+        self.BASELINE_PLANNING_TIME: float = self.get_parameter('baseline_planning_time').value
+        self.ACQUISITION_KAPPA: float = self.get_parameter('acquisition_kappa').value
+        self.ACQUISITION_EPS: float = self.get_parameter('acquisition_eps').value
+        self.KERNEL_LENGTH_SCALE_Z: float = self.get_parameter('kernel_length_scale_z').value
+        self.KERNEL_LENGTH_SCALE_TH: float = self.get_parameter('kernel_length_scale_th').value
+        self.KERNEL_MATERN_NU: float = self.get_parameter('kernel_matern_nu').value
+        self.TOTAL_PLANNING_TIME_SEC: float = self.get_parameter('total_planning_time_sec').value
+        self.ACQUISITION_ENABLE_DECAY: bool = self.get_parameter('acquisition_enable_decay').value
+        self.ACQUISITION_EPS_FINAL: float = self.get_parameter('acquisition_eps_final').value
+        self.ACQUISITION_EPS_DECAY_RATE: float = self.get_parameter('acquisition_eps_decay_rate').value
 
         # load in point cloud from file if necessary
         if self.POINTCLOUD_FROM_FILE:
@@ -339,6 +362,10 @@ class AnyGraspNode(Node):
         f.write(f"NMS thresholds: translation [{self.NMS_TRANSLATION_THRESH}] rotation [{self.NMS_ANGLE_THRESH_DEG}]\r\n")
         f.write(f"max pitch/roll filtering: [{self.MAX_GRASP_PITCH_ROLL_DEG}] degrees\r\n")
         f.write(f"grasp offsets: approach axis [{self.GRASP_AXIS_OFFSET}] vertical [{self.GRASP_Z_OFFSET}]\r\n")
+        f.write(f"symmetry enabled? [{self.SYMMETRY_ENABLE}] layer height [{self.SYMMETRY_LAYER_HEIGHT}] rotation step [{self.SYMMETRY_ROTATION_STEP}] similarity thresh [{self.SYMMETRY_SIMILARITY_THRESHOLD}]\r\n")
+        f.write(f"acquisition function eps [{self.ACQUISITION_EPS}] kappa [{self.ACQUISITION_KAPPA}] decay? [{self.ACQUISITION_ENABLE_DECAY}] rate [{self.ACQUISITION_EPS_DECAY_RATE}] final [{self.ACQUISITION_EPS_FINAL}]\r\n")
+        f.write(f"kernel length scale z [{self.KERNEL_LENGTH_SCALE_Z}] theta [{self.KERNEL_LENGTH_SCALE_TH}] matern nu [{self.KERNEL_MATERN_NU}]")
+        f.write(f"planning time multiplier [{self.PLANNING_TIME_MULTIPLIER}] base planning time [{self.BASELINE_PLANNING_TIME}] total planning time [{self.TOTAL_PLANNING_TIME_SEC}]")
 
     def grasp_callback_(self, goal_handle):
         request = goal_handle.request
@@ -394,15 +421,65 @@ class AnyGraspNode(Node):
 
             hts_grasp_group_mirrored.append(hts_grasp)
 
-        tuner = PlanningTimeTuner()
+        tuner = LognormalPlanningTimeModel(
+            planning_multiplier=self.PLANNING_TIME_MULTIPLIER,
+            initial_planning_time=self.BASELINE_PLANNING_TIME,
+            initial_var=0.5
+        )
 
-        context = ValidityContext(goal_handle, hts_grasp_group, folder, cloud, request, self.PLOT_SELECTION_GRAPHS, self.VISUALISE)
-        context_flipped = ValidityContext(goal_handle, hts_grasp_group_mirrored, folder, cloud, request, self.PLOT_SELECTION_GRAPHS, self.VISUALISE, is_flipped=True)
-        
+        acquisition_fn = EpsilonGreedyUCB(
+            kappa=self.ACQUISITION_KAPPA,
+            eps=self.ACQUISITION_EPS,
+            eps_final=self.ACQUISITION_EPS_FINAL if self.ACQUISITION_ENABLE_DECAY else None,
+            eps_decay_rate=self.ACQUISITION_EPS_DECAY_RATE
+        )
+
+        context = ValidityContext(
+            goal_handle=goal_handle,
+            grasp_group=hts_grasp_group,
+            folder=folder,
+            cloud=cloud,
+            request=request,
+            plot=self.PLOT_SELECTION_GRAPHS,
+            visualise=self.VISUALISE,
+            logger=self.get_logger(),
+            is_flipped=False,
+            save_data=True,
+            client=self.grasp_validity_client_
+        )
+
+        context_flipped = ValidityContext(
+            goal_handle=goal_handle,
+            grasp_group=hts_grasp_group_mirrored,
+            folder=folder,
+            cloud=cloud,
+            request=request,
+            plot=self.PLOT_SELECTION_GRAPHS,
+            visualise=self.VISUALISE,
+            logger=self.get_logger(),
+            is_flipped=True,
+            save_data=True,
+            client=self.grasp_validity_client_
+        )
+
         if self.ENABLE_GRASP_SELECTION:
-            final_context = ValidityContext(goal_handle, hts_grasp_group, None, None, None, self.PLOT_SELECTION_GRAPHS, self.VISUALISE)
+            final_context = ValidityContext(goal_handle=goal_handle)
 
-            dual_problem = DualGraspSelectorGP(hts_grasp_group, hts_grasp_group_mirrored, context, context_flipped, final_context, self.get_logger(), self.grasp_validity_client_, tuner)
+            first_selector = GPGraspSelector(
+                hts_grasp_group, tuner, acquisition_fn, context,
+                length_scale_z=self.KERNEL_LENGTH_SCALE_Z, 
+                matern_nu_z=self.KERNEL_MATERN_NU, 
+                length_scale_th=self.KERNEL_LENGTH_SCALE_TH,
+                total_planning_time=self.TOTAL_PLANNING_TIME_SEC
+            )
+            second_selector = GPGraspSelector(
+                hts_grasp_group_mirrored, tuner, acquisition_fn, context_flipped,
+                length_scale_z=self.KERNEL_LENGTH_SCALE_Z, 
+                matern_nu_z=self.KERNEL_MATERN_NU, 
+                length_scale_th=self.KERNEL_LENGTH_SCALE_TH,
+                total_planning_time=self.TOTAL_PLANNING_TIME_SEC
+            )
+            dual_problem = DualGPGraspSelector(first_selector, second_selector, final_context)
             dual_problem._handle_validity_send_goal()
 
             while final_context.response is None:
@@ -411,15 +488,15 @@ class AnyGraspNode(Node):
 
             return final_context.response
         else:
-            problem = GraspSelectorBasic(hts_grasp_group, self.get_logger(), self.grasp_validity_client_)
-            problem._handle_validity_send_goal(context)
+            problem = SequentialGraspSelector(hts_grasp_group, tuner, SequentialAcquisition(), context)
+            problem._handle_validity_send_goal()
 
             while context.response is None:
                 time.sleep(0.01)
             time.sleep(1.0)
 
-            problem_flipped = GraspSelectorBasic(hts_grasp_group_mirrored, self.get_logger(), self.grasp_validity_client_)
-            problem_flipped._handle_validity_send_goal(context_flipped)
+            problem = SequentialGraspSelector(hts_grasp_group_mirrored, tuner, SequentialAcquisition(), context_flipped)
+            problem._handle_validity_send_goal()
 
             while context_flipped.response is None:
                 time.sleep(0.01)

@@ -334,11 +334,14 @@ void hts_node::handle_accepted_open_(const std::shared_ptr<rclcpp_action::Server
     std::thread([this, goal_handle] {
         RCLCPP_INFO(this->get_logger(), "\n\n\n\n--------------- OPEN CALLBACK ---------------\n\n\n\n");
         
+        // get the name of the object
         auto object_name = "target_" + std::to_string(goal_handle->get_goal()->target_id);
 
-        std::shared_ptr<moveit::core::RobotState> current_state = gripper_interface_->getCurrentState(10.0);
-        current_state->enforceBounds();
-        gripper_interface_->setStartState(*current_state);
+        // enforce the bounds and set the current state
+        // std::shared_ptr<moveit::core::RobotState> current_state = gripper_interface_->getCurrentState(10.0);
+        // current_state->enforceBounds();
+        // gripper_interface_->setStartState(*current_state);
+        gripper_interface_->setStartStateToCurrentState();
 
         gripper_interface_->setNamedTarget("open");
 

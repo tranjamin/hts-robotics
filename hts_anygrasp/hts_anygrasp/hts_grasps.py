@@ -3,17 +3,20 @@ from __future__ import annotations
 import numpy as np
 import math
 import time
-import open3d as o3d
 import matplotlib.cm as cm
 from scipy.spatial.transform import Rotation
 
-# ros imports
-from geometry_msgs.msg import Pose
+try: # ros imports
+    from geometry_msgs.msg import Pose
+    import open3d as o3d
 
-# hts robotics imports
-from hts_msgs.action import ComputeGraspValidity, RequestGrasp
-from graspnetAPI import GraspGroup
-from graspnetAPI.grasp import Grasp as GraspNetGrasp
+    # hts robotics imports
+    from hts_msgs.action import ComputeGraspValidity, RequestGrasp
+    from graspnetAPI import GraspGroup
+    from graspnetAPI.grasp import Grasp as GraspNetGrasp
+except ImportError as e:
+    print(f"Received Import Error {e}, continuing")
+
 
 class HTSGrasp():
     def __init__(self, grasp: GraspNetGrasp, id):

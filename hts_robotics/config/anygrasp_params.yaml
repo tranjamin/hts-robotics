@@ -35,8 +35,20 @@ pointcloud_topic: "/octomap_point_cloud_centers"
 visualise: False
 save_data: True
 
-plot_selection_graphs: False
+plot_selection_graphs: True
 enable_grasp_selection: True
+planning_time_multiplier: 2.0
+baseline_planning_time: 0.03
+acquisition_kappa: 3.0
+kernel_length_scale_z: 0.03
+kernel_length_scale_th: 0.8
+kernel_matern_nu: 2.5
+total_planning_time_sec: 300
+
+acquisition_eps: 0.1
+acquisition_enable_decay: False
+acquisition_eps_final: 0.1
+acquisition_eps_decay_rate: 0.99
 
 pointcloud_from_file: True
 pointcloud_file: "/ros2_ws/src/pointclouds/conic_flask.npz"

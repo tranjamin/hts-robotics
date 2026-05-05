@@ -1,16 +1,58 @@
 from __future__ import annotations
 import os
 import numpy as np
-import open3d as o3d
 
-from ament_index_python.packages import get_package_prefix
+try:
+    import open3d as o3d
+    from ament_index_python.packages import get_package_prefix
 
-pkg_prefix = get_package_prefix("hts_anygrasp")
-lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
-os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
-checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
+    pkg_prefix = get_package_prefix("hts_anygrasp")
+    lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
+    os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
+    checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
 
-from graspnetAPI import GraspGroup
+    from graspnetAPI import GraspGroup
+except ImportError as e:
+    print(f"Received Import Error {e}, continuing")
+
+class FakeLogger():
+    def __init__(self) -> None:
+        pass
+
+    def info(self, *args, sep=' ', end='\n', file=None, flush=False):
+        print(*args, sep=sep, end=end, file=file, flush=flush)
+
+    def warn(self, *args, sep=' ', end='\n', file=None, flush=False):
+        print(*args, sep=sep, end=end, file=file, flush=flush)
+
+class ValidityContext():
+    def __init__(self, 
+                 goal_handle, 
+                 grasp_group: 'HTSGraspGroup'=None, 
+                 folder=None, 
+                 cloud=None, 
+                 request=None, 
+                 plot=False, 
+                 visualise=False, 
+                 logger=FakeLogger(), 
+                 is_flipped=False, 
+                 save_data=False, 
+                 client=None
+                 ):
+        self.logger = logger
+        self.goal_handle = goal_handle
+        self.hts_grasp_group = grasp_group
+        self.pending_results = 0
+        self.folder = folder
+        self.cloud = cloud
+        self.request = request
+        self.response = None
+        self.all_points_certain = False
+        self.is_flipped = is_flipped
+        self.plot = plot
+        self.client = client
+        self.save_data = save_data
+        self.visualise = visualise
 
 def display_grasps(gg: GraspGroup, cloud: o3d.cuda.pybind.geometry.PointCloud, 
                    only_first: bool=False, origin_position: list[float]=[0,0,0], description: str=""

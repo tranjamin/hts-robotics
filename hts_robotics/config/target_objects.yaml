@@ -7,7 +7,7 @@ objects:
   # - beaker_sml
   # - beaker_med
   # - beaker_lrg
-  # - table
+  - table
 
 table:
   object_id: 99
