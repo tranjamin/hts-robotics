@@ -364,8 +364,9 @@ class AnyGraspNode(Node):
         f.write(f"grasp offsets: approach axis [{self.GRASP_AXIS_OFFSET}] vertical [{self.GRASP_Z_OFFSET}]\r\n")
         f.write(f"symmetry enabled? [{self.SYMMETRY_ENABLE}] layer height [{self.SYMMETRY_LAYER_HEIGHT}] rotation step [{self.SYMMETRY_ROTATION_STEP}] similarity thresh [{self.SYMMETRY_SIMILARITY_THRESHOLD}]\r\n")
         f.write(f"acquisition function eps [{self.ACQUISITION_EPS}] kappa [{self.ACQUISITION_KAPPA}] decay? [{self.ACQUISITION_ENABLE_DECAY}] rate [{self.ACQUISITION_EPS_DECAY_RATE}] final [{self.ACQUISITION_EPS_FINAL}]\r\n")
-        f.write(f"kernel length scale z [{self.KERNEL_LENGTH_SCALE_Z}] theta [{self.KERNEL_LENGTH_SCALE_TH}] matern nu [{self.KERNEL_MATERN_NU}]")
-        f.write(f"planning time multiplier [{self.PLANNING_TIME_MULTIPLIER}] base planning time [{self.BASELINE_PLANNING_TIME}] total planning time [{self.TOTAL_PLANNING_TIME_SEC}]")
+        f.write(f"kernel length scale z [{self.KERNEL_LENGTH_SCALE_Z}] theta [{self.KERNEL_LENGTH_SCALE_TH}] matern nu [{self.KERNEL_MATERN_NU}]\r\n")
+        f.write(f"planning time multiplier [{self.PLANNING_TIME_MULTIPLIER}] base planning time [{self.BASELINE_PLANNING_TIME}] total planning time [{self.TOTAL_PLANNING_TIME_SEC}]\r\n")
+        f.write(f"using point cloud file [{self.POINTCLOUD_FILE}]\r\n")
 
     def grasp_callback_(self, goal_handle):
         request = goal_handle.request

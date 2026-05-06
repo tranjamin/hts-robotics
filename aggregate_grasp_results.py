@@ -4,10 +4,15 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-SAVE_FOLDER = "out/MERGED TABLE ENVIRONMENT/BEAKER_LRG"
-os.makedirs(SAVE_FOLDER, exist_ok=False)
-FOLDERS = ["out/BEAKER_LRG_TABLE_1", "out/BEAKER_LRG_TABLE_2", "out/BEAKER_LRG_TABLE_3", "out/BEAKER_LRG_TABLE_4", "out/BEAKER_LRG_TABLE_5"]
-BASE_FOLDER = "out/TABLE ENVIRONMENT/BEAKER_LRG_BASE_TABLE"
+SAVE_FOLDER = "out/MERGED SIMPLE ENVIRONMENT/ROUND_BOTTOM_FLASK"
+FOLDERS = [
+    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_1", 
+    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_2", 
+    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_3", 
+    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_4", 
+    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_5"
+    ]
+BASE_FOLDER = "out/SIMPLE ENVIRONMENT/ROUND_BOTTOM_WK9_ALL"
 
 def merge_evaluations(folder):
     normal_grasps = pd.read_csv(folder + "/grasp_evaluations.csv")
@@ -86,6 +91,7 @@ def plot(fields: dict[str, pd.DataFrame]):
     axs[1, 3].legend()
 
     fig.show()
+    input()
     return fig
 
 def aggregate_grasps(dfs: list[pd.DataFrame]):
@@ -104,13 +110,32 @@ base_grasps_random = base_grasps.sample(frac=1, ignore_index=True)
 add_metrics(base_grasps)
 add_metrics(base_grasps_random)
 
-data = {"Average Grasp Selection": average_grasps, "Grasp Score Ordered": base_grasps, "Random Ordering": base_grasps_random}
+data = {
+    "Average Grasp Selection": average_grasps, 
+    "Grasp Score Ordered": base_grasps, 
+    "Random Ordering": base_grasps_random,
+    }
 
 fig = plot(data)
-fig.show()
+
+os.makedirs(SAVE_FOLDER, exist_ok=False)
+
+data_runs = {
+    "Grasp Score Ordered": base_grasps, 
+    "Random Ordering": base_grasps_random,
+    "Run 1": all_grasps[0],
+    "Run 2": all_grasps[1],
+    "Run 3": all_grasps[2],
+    "Run 4": all_grasps[3],
+    "Run 5": all_grasps[4]
+    }
+
+fig_runs = plot(data_runs)
 
 fig.savefig(SAVE_FOLDER + "/images.png", format="png")
 fig.savefig(SAVE_FOLDER + "/images.svg", format="svg")
+fig_runs.savefig(SAVE_FOLDER + "/images_all_runs.png", format="png")
+fig_runs.savefig(SAVE_FOLDER + "/images_all_runs.svg", format="svg")
 base_grasps.to_csv(SAVE_FOLDER + "/base_merged.csv")
 base_grasps_random.to_csv(SAVE_FOLDER + "/base_random_merged.csv")
 average_grasps.to_csv(SAVE_FOLDER + "/average.csv")

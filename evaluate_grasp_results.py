@@ -3,8 +3,8 @@ import math
 import matplotlib.pyplot as plt
 import pandas as pd
 
-FOLDER = "out/1777966953.834931"
-BASE_FOLDER = "out/TABLE ENVIRONMENT/CONIC_FLASK_BASE_TABLE"
+FOLDER = "out/BEAKER_LRG_CORRECTED_WITH_TABLE_PLOTS"
+BASE_FOLDER = "out/TABLE ENVIRONMENT/BEAKER_LRG_BASE_TABLE"
 
 def merge_evaluations(folder):
     normal_grasps = pd.read_csv(folder + "/grasp_evaluations.csv")
@@ -19,6 +19,7 @@ def merge_evaluations(folder):
     all_grasps = pd.concat([normal_grasps, flipped_grasps])
     all_grasps.sort_values(["order", "flipped"], ascending=[True, True], inplace=True, ignore_index=True)
 
+    return normal_grasps
     return all_grasps
 
 def add_metrics(df: pd.DataFrame):
