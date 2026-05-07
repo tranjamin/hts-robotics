@@ -6,6 +6,9 @@ import math
 import numpy as np
 import open3d as o3d
 import time
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("agg")
 
 from ament_index_python.packages import get_package_prefix
 from scipy.spatial.transform import Rotation
@@ -170,6 +173,7 @@ class AnyGraspNode(Node):
         )
         self.anygrasp = AnyGrasp(cfgs)
         self.anygrasp.load_net()
+        self.anygrasp_lims = [self.X_GRASP_MIN, self.X_GRASP_MAX, self.Y_GRASP_MIN, self.Y_GRASP_MAX, self.Z_GRASP_MIN, self.Z_GRASP_MAX]
 
         # subscribe to pointcloud
         qos = QoSProfile(depth=10)
@@ -209,7 +213,7 @@ class AnyGraspNode(Node):
 
         return response
 
-    def generate_pose_(self, x, y, z, radius, save_folder):
+    def retrieve_pointcloud(self, save_folder):
         if self.NO_RGB:
             if not self.POINTCLOUD_FROM_FILE:
                 points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
@@ -227,6 +231,9 @@ class AnyGraspNode(Node):
             if self.VISUALISE:
                 display_pointcloud(points, colors, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
 
+        return points, colors
+
+    def crop_point_cloud(self, points, colors, x, y, z, radius, save_folder):
         # filter according to z
         z_coords = points[:, 2]
         y_coords = points[:, 1]
@@ -240,8 +247,8 @@ class AnyGraspNode(Node):
 
         if not cropped_points.shape[0]:
             self.get_logger().error("Cropped pointcloud contains no points")
-            return None
-
+            return None, None
+        
         # show cropped and uncropped pointclouds
         if self.VISUALISE:
             if self.NO_RGB:
@@ -251,48 +258,9 @@ class AnyGraspNode(Node):
                 display_pointcloud(cropped_points, cropped_colors, save=self.SAVE_DATA, filename=f"{save_folder}/cropped_cloud", description="Cropped Point Cloud")
                 display_pointcloud(uncropped_points, uncropped_colors, save=self.SAVE_DATA, filename=f"{save_folder}/uncropped_cloud", description="Uncropped Point Cloud")
 
-        # set workspace to filter output grasps
-        xmin, xmax = self.X_GRASP_MIN, self.X_GRASP_MAX
-        ymin, ymax = self.Y_GRASP_MIN, self.Y_GRASP_MAX
-        zmin, zmax = self.Z_GRASP_MIN, self.Z_GRASP_MAX
-        lims = [xmin, xmax, ymin, ymax, zmin, zmax]
+        return cropped_points, cropped_colors
 
-        t0 = time.time()
-        gg, cloud = self.anygrasp.get_grasp(
-            cropped_points, cropped_colors, 
-            lims=lims, 
-            apply_object_mask=self.APPLY_OBJECT_MASK, 
-            dense_grasp=self.DENSE_GRASP, 
-            collision_detection=self.APPLY_COLLISIONS
-            )
-        t1 = time.time()
-
-        # replace cloud with rainbow point clouds
-        rainbow_cloud = o3d.geometry.PointCloud()
-        rainbow_cloud.points = o3d.utility.Vector3dVector(cropped_points)
-        
-        if self.SAVE_DATA:
-            with open(f"{save_folder}/grasp_metrics.txt", "w") as f:
-                f.write(f"Grasp algorithm time: {t1 - t0}\r\n")
-
-        if gg is None or len(gg) == 0:
-            self.get_logger().error('No Grasp detected after collision detection!')
-            return None
-        
-        unfiltered_gg = gg.nms(
-            translation_thresh = self.NMS_TRANSLATION_THRESH,
-            rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
-        )
-
-        if self.SAVE_DATA:
-            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                f.write(f"Total num grasps: {len(gg)}\r\n")
-                f.write(f"Total num grasps after nms: {len(unfiltered_gg)}\r\n")
-            unfiltered_gg.save_npy(f"{save_folder}/grasp_groups/all_grasps")
-        if self.VISUALISE:
-            display_grasps(unfiltered_gg, rainbow_cloud, origin_position=[x,y,z], description="All Grasps")
-
-        # compute symmetries
+    def apply_symmetries(self, gg, cloud, x, y, z, save_folder):
         if self.SYMMETRY_ENABLE: 
             self.get_logger().info("Creating Symmetry Grasps...")
             self.create_symmetry_grasps(gg, cloud)
@@ -308,9 +276,12 @@ class AnyGraspNode(Node):
                     f.write(f"Total num grasps (post-symmetry): {len(gg)}\r\n")
                     f.write(f"Total num grasps after nms (post-symmetry): {len(unfiltered_gg)}\r\n")
                 unfiltered_gg.save_npy(f"{save_folder}/grasp_groups/post_symmetry_grasps")
+                self.save_grasps_in_polar(gg, save_folder, "post_symmetry")
+                self.save_grasps_in_polar(unfiltered_gg, save_folder, "post_symmetry_postnms")
             if self.VISUALISE:
                 display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="Post-Symmetry Grasps")
 
+    def filter_grasps(self, gg):
         exclude_grasps = []
         for ind, grasp in enumerate(gg):
             # exclude grasps by width
@@ -326,18 +297,76 @@ class AnyGraspNode(Node):
             if abs(roll) > self.MAX_GRASP_PITCH_ROLL_DEG and abs(roll - 180) > self.MAX_GRASP_PITCH_ROLL_DEG:
                 exclude_grasps.append(ind)
                 continue
-
         gg.remove(exclude_grasps)
+
+    def generate_pose_(self, x, y, z, radius, save_folder):
+        # STEP 1: Retrieve Point Cloud
+        points, colors = self.retrieve_pointcloud(save_folder)
+
+
+        # STEP 2: Crop Point Cloud
+        cropped_points, cropped_colors = self.crop_point_cloud(points, colors, x, y, z, radius, save_folder)
+        if cropped_points is None or cropped_colors is None:
+            return None, None
+        
+        # create rainbow cloud
+        rainbow_cloud = o3d.geometry.PointCloud()
+        rainbow_cloud.points = o3d.utility.Vector3dVector(cropped_points)
+
+        # STEP 3: Get Grasps
+        t0 = time.time()
+        gg, cloud = self.anygrasp.get_grasp(
+            cropped_points, cropped_colors, 
+            lims=self.anygrasp_lims, 
+            apply_object_mask=self.APPLY_OBJECT_MASK, 
+            dense_grasp=self.DENSE_GRASP, 
+            collision_detection=self.APPLY_COLLISIONS
+            )
+        t1 = time.time()
+
+        # logging and error handling
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "w") as f:
+                f.write(f"Grasp algorithm time: {t1 - t0}\r\n")
+
+        if gg is None or len(gg) == 0:
+            self.get_logger().error('No Grasp detected after collision detection!')
+            return None, None
+        
+        # for logging only
+        unfiltered_gg = gg.nms(
+            translation_thresh = self.NMS_TRANSLATION_THRESH,
+            rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
+        )
+
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Total num grasps: {len(gg)}\r\n")
+                f.write(f"Total num grasps after nms: {len(unfiltered_gg)}\r\n")
+            unfiltered_gg.save_npy(f"{save_folder}/grasp_groups/all_grasps")
+            self.save_grasps_in_polar(gg, save_folder, "all")
+            self.save_grasps_in_polar(unfiltered_gg, save_folder, "all_postnms")
+        if self.VISUALISE:
+            display_grasps(unfiltered_gg, rainbow_cloud, origin_position=[x,y,z], description="All Grasps")
+
+        # STEP 4: Compute Symmetries
+        self.apply_symmetries(gg, cloud, x, y, z, save_folder)
+
+        # STEP 5: TODO Recheck Collisions
+
+        # STEP 6: Filter Grasps
+        self.filter_grasps(gg)
 
         if len(gg) == 0:
             self.get_logger().error('No Grasps obtained after orientation filtering performed')
             return
         
         if self.SAVE_DATA:
+            self.save_grasps_in_polar(gg, save_folder, "post_filtering")
             with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
                 f.write(f"Filtered num grasps: {len(gg)}\r\n")
 
-        # perform non-maximum suppression
+        # STEP 7: Perform NMS
         gg = gg.nms(
             translation_thresh = self.NMS_TRANSLATION_THRESH,
             rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
@@ -347,6 +376,70 @@ class AnyGraspNode(Node):
             with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
                 f.write(f"Filtered num grasps after nms: {len(gg)}\r\n")
             gg.save_npy(f"{save_folder}/grasp_groups/filtered_grasps")
+            self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
+
+        # STEP 8: Correct Grasp Score
+        self.save_grasps_in_polar(gg, save_folder, "before correction", c=gg.scores)
+        original_scores = gg.scores
+        original_xyz = np.array([g.translation for g in gg])
+        centroid = cloud.get_center()
+
+        distance_above_centroid = original_xyz[:, 2] - centroid[2]
+        max_distance = np.max(np.linalg.norm(original_xyz - centroid, axis=-1))
+
+        stable_score = np.abs(distance_above_centroid)/(max_distance*1.5)
+
+        self.save_grasps_in_polar(gg, save_folder, "stable score", c=stable_score)
+        unstable_scores = (original_scores/(1 - stable_score)).clip(max=1.0)
+        self.save_grasps_in_polar(gg, save_folder, "without stable score", c=unstable_scores)
+
+        # simplify the structure to stacked rings
+        total_mass = 0
+        total_ixx = 0
+        
+        SLICE_LAYER_HEIGHT = 0.02
+
+        layer_base_height = self.Z_COORDS_MIN
+        while (layer_base_height < self.Z_COORDS_MAX):
+            self.get_logger().info(f"Slicing layer at height {layer_base_height}")
+
+            # filter cloud and grasps by height
+            bb = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=[-math.inf, -math.inf, layer_base_height],
+                max_bound=[math.inf, math.inf, layer_base_height + SLICE_LAYER_HEIGHT]
+            )
+            layer_cloud = cloud.crop(bb)
+
+            if layer_cloud.is_empty():
+                self.get_logger().info(f"Skipping... {layer_cloud}")
+                layer_base_height += SLICE_LAYER_HEIGHT
+                continue
+
+            layer_points = np.asarray(layer_cloud.points)
+            rsquared = np.square(layer_points[:,0] - centroid[0]) + np.square(layer_points[:,1] - centroid[1])
+            average_rsquared= np.mean(rsquared)
+            layer_mass = average_rsquared*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
+            total_mass += layer_mass
+
+            layer_ixx = 1/4*layer_mass*average_rsquared + 1/3*layer_mass*(SLICE_LAYER_HEIGHT**2)
+            shifted_ixx = layer_ixx + layer_mass*((centroid[2] - layer_base_height)**2)
+            total_ixx += shifted_ixx
+            layer_base_height += SLICE_LAYER_HEIGHT
+
+        # now we have an estimate of Ixx and m
+        lambdas = -np.sign(distance_above_centroid)*np.sqrt(total_mass*9.81*np.abs(distance_above_centroid)/(total_ixx + total_mass*distance_above_centroid**2))
+
+        # anything that is negative is already stable
+        if np.max(lambdas):
+            lambdas = lambdas/np.abs(np.max(lambdas))
+
+        self.save_grasps_in_polar(gg, save_folder, "lambdas", c=lambdas)
+
+        # lambdas = lambdas.clip(min=0.0)
+
+        # multiply grasp scores by this
+        gg.scores = gg.scores*(1 - lambdas)
+        self.save_grasps_in_polar(gg, save_folder, "corrected score", c=gg.scores)
 
         # visualization
         if self.VISUALISE:
@@ -510,28 +603,25 @@ class AnyGraspNode(Node):
 
     def map_grasp(self, grasp, flip_z=False):
         grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
+
         offset_rotation = Rotation.from_euler('y', 90, degrees=True)
+        flip_rotation = Rotation.from_euler('z', 180, degrees=True)
+
         final_rotation = grasp_rotation * offset_rotation
+
+        # detect if camera is pointing downwards
+        x_axis = final_rotation.as_matrix()[:, 0] # x_axis[2] > 0 ==> camera is facing upwards
+        if (x_axis[2] < 0) ^ flip_z: # we are up and want to be down, or vice versa
+            final_rotation =  final_rotation * flip_rotation
 
         # local axes:
             # z points in the direction of grasp attack
-            # y is perpendicular to z in the horizontal plane
+            # y is perpendicular to z in the horizontal plane (action of gripper)
             # x points vertical
 
         offset_translation = np.array([0, 0, -self.GRASP_AXIS_OFFSET])
         grasp.translation[2] += self.GRASP_Z_OFFSET
         final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
-
-        # detect if camera is pointing downwards
-        flip_rotation = Rotation.from_euler('x', 180, degrees=True)
-        roll, pitch, yaw = final_rotation.as_euler('xyz', degrees=True)
-        # self.get_logger().info(f"Identified Grasp with roll {roll} pitch {pitch} yaw {yaw}. Unflipping...")
-        if flip_z ^ (abs(roll) > 90):
-            self.get_logger().info(f"Identified Grasp with roll {roll} pitch {pitch} yaw {yaw}. Unflipping...")
-            final_rotation = final_rotation * flip_rotation
-            nroll, npitch, nyaw = final_rotation.as_euler('xyz', degrees=True)
-            self.get_logger().info(f"Now Grasp with roll {nroll} pitch {npitch} yaw {nyaw}.")
-
         final_quaternion = final_rotation.as_quat()
 
         pose = Pose()
@@ -544,6 +634,26 @@ class AnyGraspNode(Node):
         pose.orientation.w = final_quaternion[3]
 
         return pose
+
+    def save_grasps_in_polar(self, gg, folder, descr="", c=None):
+        hts_grasp_group = HTSGraspGroup()
+
+        for ind, grasp in enumerate(gg):            
+            hts_grasp = HTSGrasp(grasp, ind)
+            hts_grasp.set_pose(self.map_grasp(grasp, flip_z=False))
+            hts_grasp_group.append(hts_grasp)
+        
+        zs = np.array([p.z for p in hts_grasp_group._grasps]).reshape((-1, 1))
+        ths = np.array([p.theta for p in hts_grasp_group._grasps]).reshape((-1, 1))
+
+        fig = plt.figure()
+        ax = fig.add_subplot(projection="polar")
+        plot = ax.scatter(ths, zs, c=c)
+        ax.set_title(f"Grasp Group: {descr}")
+        if c is not None:
+            fig.colorbar(plot, ax=ax)
+        fig.savefig(f"{folder}/grasp_group_{descr}.png", format="png")
+        plt.close(fig)
 
     def create_symmetry_grasps(self, gg, cloud):
         # batch grasps in horizontal layers

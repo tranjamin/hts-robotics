@@ -4,15 +4,15 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-SAVE_FOLDER = "out/MERGED SIMPLE ENVIRONMENT/ROUND_BOTTOM_FLASK"
+SAVE_FOLDER = "out/MERGED TABLE ENVIRONMENT/BEAKER_LRG"
 FOLDERS = [
-    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_1", 
-    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_2", 
-    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_3", 
-    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_4", 
-    "out/ROUND_BOTTOM_FLASK_SIMPLE_RUN_5"
+    "out/BEAKER_LRG_TABLE_RUN_1", 
+    "out/BEAKER_LRG_TABLE_RUN_2", 
+    "out/BEAKER_LRG_TABLE_RUN_3", 
+    "out/BEAKER_LRG_TABLE_RUN_4", 
+    "out/BEAKER_LRG_TABLE_RUN_5"
     ]
-BASE_FOLDER = "out/SIMPLE ENVIRONMENT/ROUND_BOTTOM_WK9_ALL"
+BASE_FOLDER = "out/TABLE ENVIRONMENT/BEAKER_LRG_BASE_TABLE"
 
 def merge_evaluations(folder):
     normal_grasps = pd.read_csv(folder + "/grasp_evaluations.csv")
