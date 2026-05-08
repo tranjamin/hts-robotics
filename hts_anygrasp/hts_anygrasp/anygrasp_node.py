@@ -3,7 +3,9 @@ import os
 import time
 import argparse
 import math
+from typing import Any
 import numpy as np
+import numpy.typing as npt
 import open3d as o3d
 import time
 import matplotlib.pyplot as plt
@@ -35,16 +37,51 @@ from gsnet import AnyGrasp
 from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .symmetry import SymmetryGroup
 
-# from .grasp_selection_basic import GraspSelectorBasic
-# from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP, PlanningTimeTuner
 from .utils import display_grasps, display_pointcloud, norgb_pointcloud2numpy, pointcloud2numpy, ValidityContext
 from .grasp_selection import DualGPGraspSelector, GPGraspSelector, EpsilonGreedyUCB, LognormalPlanningTimeModel, SequentialGraspSelector, SequentialAcquisition
 
 class AnyGraspNode(Node):
     def __init__(self):
         super().__init__('hts_anygrasp')
+        self.load_parameters()
+        
+        # pointcloud to listen on
+        self.depth_pointcloud_: PointCloud2 = None
 
-        # DECLARE PARAMETERS
+        # load in point cloud from file if necessary
+        if self.POINTCLOUD_FROM_FILE:
+            from_file = np.load(self.POINTCLOUD_FILE)
+            self.file_points = from_file['points']
+            if not self.NO_RGB:
+                self.file_colours = from_file['colours']
+
+        # configs for anygrasp
+        cfgs = argparse.Namespace(
+            checkpoint_path=checkpoint_path,
+            max_gripper_width=max(0, min(0.1, self.MAX_GRIPPER_WIDTH)),
+            gripper_height=self.GRIPPER_HEIGHT,
+            top_down_grasp=self.TOP_DOWN_GRASP,
+            debug=True, # was true
+        )
+        self.anygrasp = AnyGrasp(cfgs)
+        self.anygrasp.load_net()
+        self.anygrasp_lims = [self.X_GRASP_MIN, self.X_GRASP_MAX, self.Y_GRASP_MIN, self.Y_GRASP_MAX, self.Z_GRASP_MIN, self.Z_GRASP_MAX]
+
+        # subscribe to pointcloud
+        qos = QoSProfile(depth=10)
+        qos.reliability = ReliabilityPolicy.BEST_EFFORT
+        self.pointcloud_listener_ = self.create_subscription(PointCloud2, self.POINTCLOUD_TOPIC, self.pointcloud_callback_, qos)
+
+        # ros interfaces
+        self.grasp_service_ = ActionServer(self, RequestGrasp, 'request_grasp', self.grasp_callback_)
+        self.display_service_ = self.create_service(DisplayCloud, 'display_cloud', self.display_callback_)
+        self.grasp_validity_client_ = ActionClient(self, ComputeGraspValidity, "compute_grasp_validity")
+
+        self.get_logger().info("Started AnyGrasp Node")
+
+    def load_parameters(self) -> None:
+        """Declares and loads parameters"""
+
         self.declare_parameter('z_coords_min', 0.001)
         self.declare_parameter('z_coords_max', 100.0)
         self.declare_parameter('x_grasp_min', -1.0)
@@ -99,7 +136,7 @@ class AnyGraspNode(Node):
         self.Y_GRASP_MAX: float = self.get_parameter('y_grasp_max').value
         self.Z_GRASP_MIN: float = self.get_parameter('z_grasp_min').value 
         self.Z_GRASP_MAX: float = self.get_parameter('z_grasp_max').value
-        self.MASK_RADIUS: str = self.get_parameter('mask_radius').value
+        self.MASK_RADIUS: float = self.get_parameter('mask_radius').value
 
         # config options for anygrasp
         self.APPLY_OBJECT_MASK: bool = self.get_parameter('apply_object_mask').value
@@ -135,11 +172,8 @@ class AnyGraspNode(Node):
         # config options for symmetry generation
         self.SYMMETRY_ENABLE: bool = self.get_parameter('symmetry_enable').value
         self.SYMMETRY_LAYER_HEIGHT: float = self.get_parameter('symmetry_layer_height').value
-        self.SYMMETRY_ROTATION_STEP: float = self.get_parameter('symmetry_rotation_step').value
+        self.SYMMETRY_ROTATION_STEP: int = self.get_parameter('symmetry_rotation_step').value
         self.SYMMETRY_SIMILARITY_THRESHOLD: float = self.get_parameter('symmetry_similarity_threshold').value
-
-        # pointcloud to listen on
-        self.depth_pointcloud_: PointCloud2 = None
 
         # config for grasp selection
         self.ENABLE_GRASP_SELECTION: bool = self.get_parameter('enable_grasp_selection').value      
@@ -156,94 +190,96 @@ class AnyGraspNode(Node):
         self.ACQUISITION_EPS_FINAL: float = self.get_parameter('acquisition_eps_final').value
         self.ACQUISITION_EPS_DECAY_RATE: float = self.get_parameter('acquisition_eps_decay_rate').value
 
-        # load in point cloud from file if necessary
-        if self.POINTCLOUD_FROM_FILE:
-            from_file = np.load(self.POINTCLOUD_FILE)
-            self.file_points = from_file['points']
-            if not self.NO_RGB:
-                self.file_colors = from_file['colors']
+    def pointcloud_callback_(self, msg: PointCloud2) -> None:
+        """
+        Stores a pointcloud
 
-        # configs for anygrasp
-        cfgs = argparse.Namespace(
-            checkpoint_path=checkpoint_path,
-            max_gripper_width=max(0, min(0.1, self.MAX_GRIPPER_WIDTH)),
-            gripper_height=self.GRIPPER_HEIGHT,
-            top_down_grasp=self.TOP_DOWN_GRASP,
-            debug=True, # was true
-        )
-        self.anygrasp = AnyGrasp(cfgs)
-        self.anygrasp.load_net()
-        self.anygrasp_lims = [self.X_GRASP_MIN, self.X_GRASP_MAX, self.Y_GRASP_MIN, self.Y_GRASP_MAX, self.Z_GRASP_MIN, self.Z_GRASP_MAX]
-
-        # subscribe to pointcloud
-        qos = QoSProfile(depth=10)
-        qos.reliability = ReliabilityPolicy.BEST_EFFORT
-        self.pointcloud_listener_ = self.create_subscription(PointCloud2, self.POINTCLOUD_TOPIC, self.pointcloud_callback_, qos)
-
-        # ros interfaces
-        self.grasp_service_ = ActionServer(self, RequestGrasp, 'request_grasp', self.grasp_callback_)
-        self.display_service_ = self.create_service(DisplayCloud, 'display_cloud', self.display_callback_)
-        self.grasp_validity_client_ = ActionClient(self, ComputeGraspValidity, "compute_grasp_validity")
-
-        self.get_logger().info("Started AnyGrasp Node")
-
-    def pointcloud_callback_(self, msg):
+        Parameters:
+            msg: the point cloud
+        """
         self.depth_pointcloud_ = msg
 
-    def display_callback_(self, request, response):
-        # Convert PointCloud2 to numpy array
-        self.get_logger().info("Displaying...")
+    def display_callback_(self, request: DisplayCloud.Request, response: DisplayCloud.Response) -> DisplayCloud.Response:
+        """Callback for the display_cloud service"""
+
         if self.depth_pointcloud_ is None:
             self.get_logger().info("Found no points")
 
+        points: npt.NDArray[np.float64]
+        colours: npt.NDArray[np.float64]
+
         if self.NO_RGB:
-            points, colors = norgb_pointcloud2numpy(self.depth_pointcloud_)
+            points, colours = norgb_pointcloud2numpy(self.depth_pointcloud_)
         else:
-            points, colors = pointcloud2numpy(self.depth_pointcloud_)
+            points, colours = pointcloud2numpy(self.depth_pointcloud_)
 
         if points.shape[0] == 0:
             self.get_logger().info("No points found")
             return response
 
         # Open3D visualization
-        display_pointcloud(points, colors)
+        display_pointcloud(points, colours)
 
         if self.SAVE_DATA:
-            np.savez(f"src/pointclouds/displayed_cloud_{time.time()}.npz", points=points, colors=colors)
+            np.savez(f"src/pointclouds/displayed_cloud_{time.time()}.npz", points=points, colours=colours)
 
         return response
 
-    def retrieve_pointcloud(self, save_folder):
+    def retrieve_pointcloud(self, save_folder: str) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        Retrieves the current point cloud, and saves it under full_cloud.npz
+
+        Parameters:
+            save_folder: the main directory to save data to
+        """
+        points: npt.NDArray[np.float64]
+        colours: npt.NDArray[np.float64]
         if self.NO_RGB:
             if not self.POINTCLOUD_FROM_FILE:
-                points, colors = self.norgb_pointcloud2numpy(self.depth_pointcloud_)
+                points, colours = self.norgb_pointcloud2numpy(self.depth_pointcloud_)
             else:
                 points = self.file_points
-                colors = np.zeros_like(points, dtype=np.float32)
+                colours = np.zeros_like(points, dtype=np.float64)
             if self.VISUALISE:
                 display_pointcloud(points, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
         else:
             if not self.POINTCLOUD_FROM_FILE:
-                points, colors = self.pointcloud2numpy(self.depth_pointcloud_)
+                points, colours = self.pointcloud2numpy(self.depth_pointcloud_)
             else:
                 points = self.file_points
-                colors = self.file_colors
+                colours = self.file_colours
             if self.VISUALISE:
-                display_pointcloud(points, colors, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
+                display_pointcloud(points, colours, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
 
-        return points, colors
+        return points, colours
 
-    def crop_point_cloud(self, points, colors, x, y, z, radius, save_folder):
+    def crop_point_cloud(self, 
+        points: npt.NDArray[np.float64], 
+        colours: npt.NDArray[np.float64], 
+        x: float, y: float, z: float, radius: float, save_folder: str) -> tuple[npt.NDArray[np.float64] | None, npt.NDArray[np.float64] | None]:
+        """
+        Crops a point cloud as a cylinder, centred at (x,y) with a radius of radius
+
+        Parameters:
+            points: the points of the point cloud
+            colours: the colours of the point cloud
+            x,y,z: the centre of the object
+            radius: the radius of the bounding box
+            save_folder: the main directory of data being stored
+
+        Return:
+            a tuple of the cropped points and colours, or None if the cropped cloud is empty
+        """
         # filter according to z
-        z_coords = points[:, 2]
-        y_coords = points[:, 1]
-        x_coords = points[:, 0]
+        z_coords: npt.NDArray[np.float64] = points[:, 2]
+        y_coords: npt.NDArray[np.float64] = points[:, 1]
+        x_coords: npt.NDArray[np.float64] = points[:, 0]
         mask = (z_coords > self.Z_COORDS_MIN) & (z_coords < self.Z_COORDS_MAX) & ((x - x_coords)**2 + (y - y_coords)**2 < radius**2)
         
-        cropped_points = points[mask].astype(np.float32)
-        cropped_colors = colors[mask].astype(np.float32)
-        uncropped_points = points[~mask].astype(np.float32)
-        uncropped_colors = colors[~mask].astype(np.float32)
+        cropped_points: npt.NDArray[np.float64] = points[mask].astype(np.float64)
+        cropped_colours: npt.NDArray[np.float64] = colours[mask].astype(np.float64)
+        uncropped_points: npt.NDArray[np.float64] = points[~mask].astype(np.float64)
+        uncropped_colours: npt.NDArray[np.float64] = colours[~mask].astype(np.float64)
 
         if not cropped_points.shape[0]:
             self.get_logger().error("Cropped pointcloud contains no points")
@@ -255,12 +291,22 @@ class AnyGraspNode(Node):
                 display_pointcloud(cropped_points, save=self.SAVE_DATA, filename=f"{save_folder}/cropped_cloud", description="Cropped Point Cloud")
                 display_pointcloud(uncropped_points, save=self.SAVE_DATA, filename=f"{save_folder}/uncropped_cloud", description="Uncropped Point Cloud")
             else:
-                display_pointcloud(cropped_points, cropped_colors, save=self.SAVE_DATA, filename=f"{save_folder}/cropped_cloud", description="Cropped Point Cloud")
-                display_pointcloud(uncropped_points, uncropped_colors, save=self.SAVE_DATA, filename=f"{save_folder}/uncropped_cloud", description="Uncropped Point Cloud")
+                display_pointcloud(cropped_points, cropped_colours, save=self.SAVE_DATA, filename=f"{save_folder}/cropped_cloud", description="Cropped Point Cloud")
+                display_pointcloud(uncropped_points, uncropped_colours, save=self.SAVE_DATA, filename=f"{save_folder}/uncropped_cloud", description="Uncropped Point Cloud")
 
-        return cropped_points, cropped_colors
+        return cropped_points, cropped_colours
 
-    def apply_symmetries(self, gg, cloud, x, y, z, save_folder):
+    def apply_symmetries(self, gg: GraspNetGroup, cloud: o3d.cuda.pybind.geometry.PointCloud, x: float, y: float, z: float, save_folder: str) -> None:
+        """
+        Modifies a grasp group to add symmetries.
+
+        Parameters:
+            gg: the grasp group to modify
+            cloud: the point cloud
+            x,y,z: the centre of the object
+            save_folder: the main directory of the data being stored
+        """
+
         if self.SYMMETRY_ENABLE: 
             self.get_logger().info("Creating Symmetry Grasps...")
             self.create_symmetry_grasps(gg, cloud)
@@ -281,11 +327,17 @@ class AnyGraspNode(Node):
             if self.VISUALISE:
                 display_grasps(unfiltered_gg, cloud, origin_position=[x,y,z], description="Post-Symmetry Grasps")
 
-    def filter_grasps(self, gg):
-        exclude_grasps = []
+    def filter_grasps(self, gg: GraspNetGroup) -> None:
+        """
+        Filters grasps according to their angle.
+
+        Parameters:
+            gg: the grasp group to filter
+        """
+
+        exclude_grasps: list[int] = []
         for ind, grasp in enumerate(gg):
-            # exclude grasps by width
-            if grasp.width < self.MIN_GRASP_WIDTH:
+            if grasp.width < self.MIN_GRASP_WIDTH: # exclude grasps by width
                 exclude_grasps.append(ind)
                 continue
 
@@ -299,30 +351,125 @@ class AnyGraspNode(Node):
                 continue
         gg.remove(exclude_grasps)
 
-    def generate_pose_(self, x, y, z, radius, save_folder):
-        # STEP 1: Retrieve Point Cloud
-        points, colors = self.retrieve_pointcloud(save_folder)
+    def correct_scores(self, gg: GraspNetGroup, cloud: o3d.cuda.pybind.geometry.PointCloud, save_folder: str) -> None:
+        """
+        Corrects the scores of the grasp group.
 
+        Parameters:
+            gg: the grasp group
+            cloud: the point cloud
+            save_folder: the main directory of the data being stored
+        """
+
+        original_xyz: npt.NDArray[np.float64] = np.array([g.translation for g in gg])
+
+        # gets the original grasp scores
+        original_scores: npt.NDArray[np.float64] = gg.scores
+        self.save_grasps_in_polar(gg, save_folder, "grasp_score_original", c=gg.scores)
+
+        # calculates the distance away from the centroid
+        centroid: npt.NDArray[np.float64] = cloud.get_center()
+        distance_above_centroid: npt.NDArray[np.float64] = original_xyz[:, 2] - centroid[2]
+        max_distance: float = np.max(np.linalg.norm(original_xyz - centroid, axis=-1))
+
+        # calculates the stable score
+        stable_score: npt.NDArray[np.float64] = np.abs(distance_above_centroid)/(max_distance*1.5)
+        self.save_grasps_in_polar(gg, save_folder, "stable_score", c=stable_score)
+
+        # calculates the grasp score without stable score
+        unstable_scores: npt.NDArray[np.float64] = (original_scores/(1 - stable_score)).clip(max=1.0)
+        self.save_grasps_in_polar(gg, save_folder, "grasp_score_without_stable", c=unstable_scores)
+
+        # calculate a simplified inertia and mass
+        SLICE_LAYER_HEIGHT = 0.02
+        total_mass: float = 0
+        total_ixx: float = 0
+        layer_base_height: float = self.Z_COORDS_MIN
+        while (layer_base_height < self.Z_COORDS_MAX):
+            self.get_logger().info(f"Slicing layer at height {layer_base_height}")
+
+            # filter cloud and grasps by height
+            bb: Any = o3d.geometry.AxisAlignedBoundingBox(
+                min_bound=[-math.inf, -math.inf, layer_base_height],
+                max_bound=[math.inf, math.inf, layer_base_height + SLICE_LAYER_HEIGHT]
+            )
+            layer_cloud: Any = cloud.crop(bb)
+
+            if layer_cloud.is_empty():
+                self.get_logger().info(f"Skipping... {layer_cloud}")
+                layer_base_height += SLICE_LAYER_HEIGHT
+                continue
+
+            # approximate layer as disk
+            layer_points: npt.NDArray[np.float64] = np.asarray(layer_cloud.points)
+            rsquared: npt.NDArray[np.float64] = np.square(layer_points[:,0] - centroid[0]) + np.square(layer_points[:,1] - centroid[1])
+            average_rsquared: float= float(np.mean(rsquared))
+
+            # approximate mass
+            layer_mass: float = average_rsquared*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
+            total_mass += layer_mass
+
+            # approximate inertia
+            layer_ixx: float = 1/4*layer_mass*average_rsquared + 1/3*layer_mass*(SLICE_LAYER_HEIGHT**2)
+            shifted_ixx: float = layer_ixx + layer_mass*((centroid[2] - layer_base_height)**2)
+            total_ixx += shifted_ixx
+            layer_base_height += SLICE_LAYER_HEIGHT
+
+        # calculate the estimated (sqrt) lambda
+        lambdas: npt.NDArray[np.float64] = -np.sign(distance_above_centroid)*np.sqrt(total_mass*9.81*np.abs(distance_above_centroid)/(total_ixx + total_mass*distance_above_centroid**2))
+
+        # normalise lambdas
+        if np.max(lambdas):
+            lambdas = lambdas/np.abs(np.max(lambdas))
+
+        self.save_grasps_in_polar(gg, save_folder, "lambdas", c=lambdas)
+
+        # lambdas = lambdas.clip(min=0.0)
+
+        # multiply grasp scores by this
+        gg.scores = gg.scores*(1 - lambdas)
+        self.save_grasps_in_polar(gg, save_folder, "corrected score", c=gg.scores)
+
+    def generate_candidates_(self, x: float, y: float, z: float, radius: float, save_folder: str) -> tuple[GraspNetGroup | None, o3d.cuda.pybind.geometry.PointCloud | None]:
+        """
+        Generates the candidate set of grasps
+
+        Parameters:
+            x,y,z: the centre of the object
+            radius: the bounding box radius of the object
+            save_folder: the main directory of the data being stored
+        Returns:
+            a tuple of the grasp group and cloud, or None, None
+        """
+        
+        # STEP 1: Retrieve Point Cloud
+        points: npt.NDArray[np.float64]
+        colours: npt.NDArray[np.float64]
+        points, colours = self.retrieve_pointcloud(save_folder)
 
         # STEP 2: Crop Point Cloud
-        cropped_points, cropped_colors = self.crop_point_cloud(points, colors, x, y, z, radius, save_folder)
-        if cropped_points is None or cropped_colors is None:
+        cropped_points: npt.NDArray[np.float64] | None
+        cropped_colours: npt.NDArray[np.float64] | None
+        cropped_points, cropped_colours = self.crop_point_cloud(points, colours, x, y, z, radius, save_folder)
+        if cropped_points is None or cropped_colours is None:
             return None, None
         
         # create rainbow cloud
-        rainbow_cloud = o3d.geometry.PointCloud()
+        rainbow_cloud: o3d.geometry.PointCloud = o3d.geometry.PointCloud()
         rainbow_cloud.points = o3d.utility.Vector3dVector(cropped_points)
 
         # STEP 3: Get Grasps
-        t0 = time.time()
+        t0: float = time.time()
+        gg: GraspNetGrasp
+        cloud: o3d.cuda.pybind.geometry.PointCloud
         gg, cloud = self.anygrasp.get_grasp(
-            cropped_points, cropped_colors, 
+            cropped_points.astype(np.float32), cropped_colours.astype(np.float32), 
             lims=self.anygrasp_lims, 
             apply_object_mask=self.APPLY_OBJECT_MASK, 
             dense_grasp=self.DENSE_GRASP, 
             collision_detection=self.APPLY_COLLISIONS
             )
-        t1 = time.time()
+        t1: float = time.time()
 
         # logging and error handling
         if self.SAVE_DATA:
@@ -334,7 +481,7 @@ class AnyGraspNode(Node):
             return None, None
         
         # for logging only
-        unfiltered_gg = gg.nms(
+        unfiltered_gg: GraspNetGroup = gg.nms(
             translation_thresh = self.NMS_TRANSLATION_THRESH,
             rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
         )
@@ -359,7 +506,7 @@ class AnyGraspNode(Node):
 
         if len(gg) == 0:
             self.get_logger().error('No Grasps obtained after orientation filtering performed')
-            return
+            return None, None
         
         if self.SAVE_DATA:
             self.save_grasps_in_polar(gg, save_folder, "post_filtering")
@@ -379,67 +526,7 @@ class AnyGraspNode(Node):
             self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
 
         # STEP 8: Correct Grasp Score
-        self.save_grasps_in_polar(gg, save_folder, "before correction", c=gg.scores)
-        original_scores = gg.scores
-        original_xyz = np.array([g.translation for g in gg])
-        centroid = cloud.get_center()
-
-        distance_above_centroid = original_xyz[:, 2] - centroid[2]
-        max_distance = np.max(np.linalg.norm(original_xyz - centroid, axis=-1))
-
-        stable_score = np.abs(distance_above_centroid)/(max_distance*1.5)
-
-        self.save_grasps_in_polar(gg, save_folder, "stable score", c=stable_score)
-        unstable_scores = (original_scores/(1 - stable_score)).clip(max=1.0)
-        self.save_grasps_in_polar(gg, save_folder, "without stable score", c=unstable_scores)
-
-        # simplify the structure to stacked rings
-        total_mass = 0
-        total_ixx = 0
-        
-        SLICE_LAYER_HEIGHT = 0.02
-
-        layer_base_height = self.Z_COORDS_MIN
-        while (layer_base_height < self.Z_COORDS_MAX):
-            self.get_logger().info(f"Slicing layer at height {layer_base_height}")
-
-            # filter cloud and grasps by height
-            bb = o3d.geometry.AxisAlignedBoundingBox(
-                min_bound=[-math.inf, -math.inf, layer_base_height],
-                max_bound=[math.inf, math.inf, layer_base_height + SLICE_LAYER_HEIGHT]
-            )
-            layer_cloud = cloud.crop(bb)
-
-            if layer_cloud.is_empty():
-                self.get_logger().info(f"Skipping... {layer_cloud}")
-                layer_base_height += SLICE_LAYER_HEIGHT
-                continue
-
-            layer_points = np.asarray(layer_cloud.points)
-            rsquared = np.square(layer_points[:,0] - centroid[0]) + np.square(layer_points[:,1] - centroid[1])
-            average_rsquared= np.mean(rsquared)
-            layer_mass = average_rsquared*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
-            total_mass += layer_mass
-
-            layer_ixx = 1/4*layer_mass*average_rsquared + 1/3*layer_mass*(SLICE_LAYER_HEIGHT**2)
-            shifted_ixx = layer_ixx + layer_mass*((centroid[2] - layer_base_height)**2)
-            total_ixx += shifted_ixx
-            layer_base_height += SLICE_LAYER_HEIGHT
-
-        # now we have an estimate of Ixx and m
-        lambdas = -np.sign(distance_above_centroid)*np.sqrt(total_mass*9.81*np.abs(distance_above_centroid)/(total_ixx + total_mass*distance_above_centroid**2))
-
-        # anything that is negative is already stable
-        if np.max(lambdas):
-            lambdas = lambdas/np.abs(np.max(lambdas))
-
-        self.save_grasps_in_polar(gg, save_folder, "lambdas", c=lambdas)
-
-        # lambdas = lambdas.clip(min=0.0)
-
-        # multiply grasp scores by this
-        gg.scores = gg.scores*(1 - lambdas)
-        self.save_grasps_in_polar(gg, save_folder, "corrected score", c=gg.scores)
+        self.correct_scores(gg, cloud, save_folder)
 
         # visualization
         if self.VISUALISE:
@@ -448,7 +535,8 @@ class AnyGraspNode(Node):
 
         return gg, cloud
 
-    def log_anygrasp_data(self, f):
+    def log_anygrasp_data(self, f: Any) -> None:
+        """Logs config data"""
         f.write(f"z-coords point cloud bounding [{self.Z_COORDS_MIN}, {self.Z_COORDS_MAX}]\r\n")
         f.write(f"grasping bounds [{self.X_GRASP_MIN},{self.X_GRASP_MAX},{self.Y_GRASP_MIN},{self.Y_GRASP_MAX},{self.Z_GRASP_MIN},{self.Z_GRASP_MAX}]\r\n")
         f.write(f"apply: object mask [{self.APPLY_OBJECT_MASK}] collisions [{self.APPLY_COLLISIONS}] dense_grasp [{self.DENSE_GRASP}]\r\n")
@@ -461,12 +549,40 @@ class AnyGraspNode(Node):
         f.write(f"planning time multiplier [{self.PLANNING_TIME_MULTIPLIER}] base planning time [{self.BASELINE_PLANNING_TIME}] total planning time [{self.TOTAL_PLANNING_TIME_SEC}]\r\n")
         f.write(f"using point cloud file [{self.POINTCLOUD_FILE}]\r\n")
 
-    def grasp_callback_(self, goal_handle):
-        request = goal_handle.request
-        feedback = RequestGrasp.Feedback()
-        response = RequestGrasp.Result()
+    def to_hts_gg(self, gg: GraspNetGroup, folder: str, flip_z: bool=False) -> HTSGraspGroup:
+        """
+        Converts a grasp group to a HTSGraspGroup.
+        
+        Parameters:
+            gg: the grasp group
+            folder: the main directory to save data to
+            flip_z: whether to flip the grasp group or not
+
+        Returns:
+            a new HTSGraspGroup
+        """
+
+        hts_grasp_group: HTSGraspGroup = HTSGraspGroup()
+        for ind, grasp in enumerate(gg):            
+            hts_grasp = HTSGrasp(grasp, ind)
+            hts_grasp.set_pose(self.map_grasp(grasp, flip_z=flip_z))
+
+            if self.SAVE_DATA:
+                hts_grasp.save_grasp_info(folder)
+
+            hts_grasp_group.append(hts_grasp)
+
+        return hts_grasp_group
+
+    def grasp_callback_(self, goal_handle) -> RequestGrasp.Result:
+        """Callback for grasp request"""
+        request: RequestGrasp.Request = goal_handle.request
+        feedback: RequestGrasp.Feedback = RequestGrasp.Feedback()
+        response: RequestGrasp.Result = RequestGrasp.Result()
             
-        folder = f"/ros2_ws/src/out/{time.time()}"
+        folder: str = f"/ros2_ws/src/out/{time.time()}"
+
+        # save data
         if self.SAVE_DATA:
             os.makedirs(folder)            
             os.makedirs(f"{folder}/plts")
@@ -475,6 +591,7 @@ class AnyGraspNode(Node):
                 f.write(f"Request: Object ID {request.id} | Centred At ({request.x}, {request.y}, {request.z}) | Target ({request.goal_x},{request.goal_y},{request.goal_z})\r\n")
                 self.log_anygrasp_data(f)
 
+        # check if point cloud is valid
         if not self.POINTCLOUD_FROM_FILE and self.depth_pointcloud_ is None:
             self.get_logger().error("PointCloud Not Available")
             response.success = False
@@ -482,8 +599,12 @@ class AnyGraspNode(Node):
             goal_handle.abort()
             return response
 
-        gg, cloud = self.generate_pose_(request.x, request.y, request.z, self.MASK_RADIUS, folder)
+        # get candidates
+        gg: GraspNetGroup | None
+        cloud: o3d.cuda.pybind.geometry.PointCloud
+        gg, cloud = self.generate_candidates_(request.x, request.y, request.z, self.MASK_RADIUS, folder)
 
+        # check if gg is valid
         if gg is None or len(gg) == 0:
             self.get_logger().error("Grasp Failed")
             response.success = False
@@ -491,29 +612,12 @@ class AnyGraspNode(Node):
             goal_handle.abort()
             return response
         
+        # publish feedback
         feedback.progress = f"Identified {len(gg)} grasps. Evaluating efficiency..."
         goal_handle.publish_feedback(feedback)
 
-        hts_grasp_group = HTSGraspGroup()
-        hts_grasp_group_mirrored = HTSGraspGroup()
-
-        for ind, grasp in enumerate(gg):            
-            hts_grasp = HTSGrasp(grasp, ind)
-            hts_grasp.set_pose(self.map_grasp(grasp, flip_z=False))
-
-            if self.SAVE_DATA:
-                hts_grasp.save_grasp_info(folder)
-
-            hts_grasp_group.append(hts_grasp)
-
-        for ind, grasp in enumerate(gg):            
-            hts_grasp = HTSGrasp(grasp, ind)
-            hts_grasp.set_pose(self.map_grasp(grasp, flip_z=True))
-
-            if self.SAVE_DATA:
-                hts_grasp.save_grasp_info(folder)
-
-            hts_grasp_group_mirrored.append(hts_grasp)
+        hts_grasp_group: HTSGraspGroup = self.to_hts_gg(gg, folder, flip_z=False)
+        hts_grasp_group_flipped: HTSGraspGroup = self.to_hts_gg(gg, folder, flip_z=True)
 
         tuner = LognormalPlanningTimeModel(
             planning_multiplier=self.PLANNING_TIME_MULTIPLIER,
@@ -528,32 +632,14 @@ class AnyGraspNode(Node):
             eps_decay_rate=self.ACQUISITION_EPS_DECAY_RATE
         )
 
-        context = ValidityContext(
-            goal_handle=goal_handle,
-            grasp_group=hts_grasp_group,
-            folder=folder,
-            cloud=cloud,
-            request=request,
-            plot=self.PLOT_SELECTION_GRAPHS,
-            visualise=self.VISUALISE,
-            logger=self.get_logger(),
-            is_flipped=False,
-            save_data=True,
-            client=self.grasp_validity_client_
+        context = ValidityContext(goal_handle=goal_handle, grasp_group=hts_grasp_group, folder=folder, cloud=cloud,
+            request=request, plot=self.PLOT_SELECTION_GRAPHS, visualise=self.VISUALISE, logger=self.get_logger(), is_flipped=False,
+            save_data=True, client=self.grasp_validity_client_
         )
 
-        context_flipped = ValidityContext(
-            goal_handle=goal_handle,
-            grasp_group=hts_grasp_group_mirrored,
-            folder=folder,
-            cloud=cloud,
-            request=request,
-            plot=self.PLOT_SELECTION_GRAPHS,
-            visualise=self.VISUALISE,
-            logger=self.get_logger(),
-            is_flipped=True,
-            save_data=True,
-            client=self.grasp_validity_client_
+        context_flipped = ValidityContext(goal_handle=goal_handle, grasp_group=hts_grasp_group_flipped, folder=folder, cloud=cloud,
+            request=request, plot=self.PLOT_SELECTION_GRAPHS, visualise=self.VISUALISE, logger=self.get_logger(), is_flipped=True,
+            save_data=True, client=self.grasp_validity_client_
         )
 
         if self.ENABLE_GRASP_SELECTION:
@@ -567,7 +653,7 @@ class AnyGraspNode(Node):
                 total_planning_time=self.TOTAL_PLANNING_TIME_SEC
             )
             second_selector = GPGraspSelector(
-                hts_grasp_group_mirrored, tuner, acquisition_fn, context_flipped,
+                hts_grasp_group_flipped, tuner, acquisition_fn, context_flipped,
                 length_scale_z=self.KERNEL_LENGTH_SCALE_Z, 
                 matern_nu_z=self.KERNEL_MATERN_NU, 
                 length_scale_th=self.KERNEL_LENGTH_SCALE_TH,
@@ -580,6 +666,10 @@ class AnyGraspNode(Node):
                 time.sleep(0.01)
             time.sleep(1.0)
 
+            if final_context.response.success:
+                goal_handle.succeed()
+            else:
+                goal_handle.abort()
             return final_context.response
         else:
             problem = SequentialGraspSelector(hts_grasp_group, tuner, SequentialAcquisition(), context)
@@ -589,28 +679,50 @@ class AnyGraspNode(Node):
                 time.sleep(0.01)
             time.sleep(1.0)
 
-            problem = SequentialGraspSelector(hts_grasp_group_mirrored, tuner, SequentialAcquisition(), context_flipped)
+            problem = SequentialGraspSelector(hts_grasp_group_flipped, tuner, SequentialAcquisition(), context_flipped)
             problem._handle_validity_send_goal()
 
             while context_flipped.response is None:
                 time.sleep(0.01)
             time.sleep(1.0)
 
-            context.goal_handle.succeed()
-            response = RequestGrasp.Result()
-            response.success = False
-            return response
+            if context.response.success:
+                response = context.response
+                goal_handle.succeed()
+                return response
+            elif context_flipped.response.success:
+                response = context_flipped.response
+                goal_handle.succeed()
+                return response
+            else:
+                response = context.response
+                goal_handle.abort()
+                return response
 
-    def map_grasp(self, grasp, flip_z=False):
-        grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
+    def map_grasp(self, grasp: GraspNetGrasp, flip_z: bool=False) -> Pose:
+        """
+        Maps a grasp to the problem domain
 
-        offset_rotation = Rotation.from_euler('y', 90, degrees=True)
-        flip_rotation = Rotation.from_euler('z', 180, degrees=True)
+        Parameters:
+            grasp: the grasp to map
+            flip_z: whether to flip the gripper to be facing down or not
 
-        final_rotation = grasp_rotation * offset_rotation
+        Returns:
+            the resulting pose
+        """
+
+        # the original grasp rotation
+        grasp_rotation : Rotation = Rotation.from_matrix(grasp.rotation_matrix)
+
+        # define offset and flip rotations
+        offset_rotation: Rotation = Rotation.from_euler('y', 90, degrees=True)
+        flip_rotation: Rotation = Rotation.from_euler('z', 180, degrees=True)
+
+        # calculates the final rotation
+        final_rotation: Rotation = grasp_rotation * offset_rotation
 
         # detect if camera is pointing downwards
-        x_axis = final_rotation.as_matrix()[:, 0] # x_axis[2] > 0 ==> camera is facing upwards
+        x_axis: npt.NDArray[np.float64] = final_rotation.as_matrix()[:, 0] # x_axis[2] > 0 ==> camera is facing upwards
         if (x_axis[2] < 0) ^ flip_z: # we are up and want to be down, or vice versa
             final_rotation =  final_rotation * flip_rotation
 
@@ -619,12 +731,15 @@ class AnyGraspNode(Node):
             # y is perpendicular to z in the horizontal plane (action of gripper)
             # x points vertical
 
-        offset_translation = np.array([0, 0, -self.GRASP_AXIS_OFFSET])
+        # calculate the offset and final translatiosn
+        offset_translation: npt.NDArray[np.float64] = np.array([0, 0, -self.GRASP_AXIS_OFFSET])
         grasp.translation[2] += self.GRASP_Z_OFFSET
-        final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
-        final_quaternion = final_rotation.as_quat()
+        
+        # calculate final pose
+        final_translation: npt.NDArray[np.float64] = grasp.translation + final_rotation.as_matrix() @ offset_translation
+        final_quaternion: Any = final_rotation.as_quat()
 
-        pose = Pose()
+        pose: Pose = Pose()
         pose.position.x = final_translation[0]
         pose.position.y = final_translation[1]
         pose.position.z = final_translation[2]
@@ -635,16 +750,26 @@ class AnyGraspNode(Node):
 
         return pose
 
-    def save_grasps_in_polar(self, gg, folder, descr="", c=None):
-        hts_grasp_group = HTSGraspGroup()
+    def save_grasps_in_polar(self, gg: GraspNetGroup, folder: str, descr: str="", c: npt.NDArray[np.float64] | None=None) -> None:
+        """
+        Saves a polar map of a grasp group
+
+        Parameters:
+            gg: the grasp group
+            folder: the main directory to save data to
+            descr: a description of the plot
+            c: an array of colours, or None        
+        """
+
+        hts_grasp_group: HTSGraspGroup = HTSGraspGroup()
 
         for ind, grasp in enumerate(gg):            
             hts_grasp = HTSGrasp(grasp, ind)
             hts_grasp.set_pose(self.map_grasp(grasp, flip_z=False))
             hts_grasp_group.append(hts_grasp)
         
-        zs = np.array([p.z for p in hts_grasp_group._grasps]).reshape((-1, 1))
-        ths = np.array([p.theta for p in hts_grasp_group._grasps]).reshape((-1, 1))
+        zs: npt.NDArray[np.float64] = np.array([p.z for p in hts_grasp_group._grasps]).reshape((-1, 1))
+        ths: npt.NDArray[np.float64] = np.array([p.theta for p in hts_grasp_group._grasps]).reshape((-1, 1))
 
         fig = plt.figure()
         ax = fig.add_subplot(projection="polar")
@@ -655,18 +780,27 @@ class AnyGraspNode(Node):
         fig.savefig(f"{folder}/grasp_group_{descr}.png", format="png")
         plt.close(fig)
 
-    def create_symmetry_grasps(self, gg, cloud):
+    def create_symmetry_grasps(self, gg: GraspNetGroup, cloud: o3d.cuda.pybind.geometry.PointCloud) -> None:
+        """
+        Applies symmetry generation to a grasp group
+
+        Parameters:
+            gg: the grasp group
+            cloud: the point cloud 
+        """
+
         # batch grasps in horizontal layers
-        layer_base_height = max(self.Z_COORDS_MIN, self.Z_GRASP_MIN)
+        layer_base_height: float = max(self.Z_COORDS_MIN, self.Z_GRASP_MIN)
         while (layer_base_height < min(self.Z_COORDS_MAX, self.Z_GRASP_MAX)):
             self.get_logger().info(f"Slicing layer at height {layer_base_height}")
+
             # filter cloud and grasps by height
-            bb = o3d.geometry.AxisAlignedBoundingBox(
+            bb: Any = o3d.geometry.AxisAlignedBoundingBox(
                 min_bound=[-math.inf, -math.inf, layer_base_height],
                 max_bound=[math.inf, math.inf, layer_base_height + self.SYMMETRY_LAYER_HEIGHT]
             )
-            layer_cloud = cloud.crop(bb)
-            layer_grasps = [grasp for grasp in gg if grasp.translation[2] >= layer_base_height and grasp.translation[2] < layer_base_height + self.SYMMETRY_LAYER_HEIGHT]
+            layer_cloud: o3d.cuda.pybind.geometry.PointCloud = cloud.crop(bb)
+            layer_grasps: list[GraspNetGrasp] = [grasp for grasp in gg if grasp.translation[2] >= layer_base_height and grasp.translation[2] < layer_base_height + self.SYMMETRY_LAYER_HEIGHT]
             
             if layer_cloud.is_empty() or len(layer_grasps) == 0:
                 self.get_logger().info(f"Skipping... {layer_cloud} {len(layer_grasps)}")
@@ -674,7 +808,7 @@ class AnyGraspNode(Node):
                 layer_base_height += self.SYMMETRY_LAYER_HEIGHT
                 continue
 
-            group = SymmetryGroup(layer_cloud, layer_grasps)
+            group: SymmetryGroup = SymmetryGroup(layer_cloud, layer_grasps)
             
             # perform rotations around the centre
             for i in range(self.SYMMETRY_ROTATION_STEP, 360, self.SYMMETRY_ROTATION_STEP):

@@ -32,7 +32,7 @@ anygrasp.load_net()
 
 from_file = np.load(cloud_path)
 points = from_file['points']
-colors = np.zeros_like(points, dtype=np.float32)
+colours = np.zeros_like(points, dtype=np.float32)
 
 # filter according to z
 z_coords = points[:, 2]
@@ -41,12 +41,12 @@ x_coords = points[:, 0]
 mask = (z_coords > 0.001) & (z_coords < 100) & ((0.3 - x_coords)**2 + (0.0 - y_coords)**2 < 0.08**2)
 
 cropped_points = points[mask].astype(np.float32)
-cropped_colors = colors[mask].astype(np.float32)
+cropped_colours = colours[mask].astype(np.float32)
 uncropped_points = points[~mask].astype(np.float32)
-uncropped_colors = colors[~mask].astype(np.float32)
+uncropped_colours = colours[~mask].astype(np.float32)
 
 # cropped_points = points
-# cropped_colors = colors
+# cropped_colours = colours
 
 display_pointcloud(cropped_points, save=False, description="Cropped Point Cloud")
 
@@ -57,7 +57,7 @@ zmin, zmax = 0.05, 50
 lims = [xmin, xmax, ymin, ymax, zmin, zmax]
 
 gg, cloud = anygrasp.get_grasp(
-    cropped_points, cropped_colors, 
+    cropped_points, cropped_colours, 
     lims=lims, 
     apply_object_mask=False, 
     dense_grasp=True, 
