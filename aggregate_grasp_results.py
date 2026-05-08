@@ -106,9 +106,14 @@ for folder in FOLDERS:
 average_grasps = aggregate_grasps(all_grasps)
 
 base_grasps = merge_evaluations(BASE_FOLDER)
-base_grasps_random = base_grasps.sample(frac=1, ignore_index=True)
+
+random_grasps = []
+for i in range(10):
+    r = base_grasps.sample(frac=1, ignore_index=True)
+    add_metrics(r)
+    random_grasps.append(r)
+base_grasps_random = aggregate_grasps(random_grasps)
 add_metrics(base_grasps)
-add_metrics(base_grasps_random)
 
 data = {
     "Average Grasp Selection": average_grasps, 

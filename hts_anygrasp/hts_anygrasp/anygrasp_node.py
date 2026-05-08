@@ -37,7 +37,7 @@ from .symmetry import SymmetryGroup
 
 # from .grasp_selection_basic import GraspSelectorBasic
 # from .grasp_selection_gp import GraspSelectorGP, DualGraspSelectorGP, PlanningTimeTuner
-from .utils import display_grasps, display_pointcloud, fast_norgb_pc2_to_numpy, fast_pc2_to_numpy, ValidityContext
+from .utils import display_grasps, display_pointcloud, norgb_pointcloud2numpy, pointcloud2numpy, ValidityContext
 from .grasp_selection import DualGPGraspSelector, GPGraspSelector, EpsilonGreedyUCB, LognormalPlanningTimeModel, SequentialGraspSelector, SequentialAcquisition
 
 class AnyGraspNode(Node):
@@ -197,9 +197,9 @@ class AnyGraspNode(Node):
             self.get_logger().info("Found no points")
 
         if self.NO_RGB:
-            points, colors = fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+            points, colors = norgb_pointcloud2numpy(self.depth_pointcloud_)
         else:
-            points, colors = fast_pc2_to_numpy(self.depth_pointcloud_)
+            points, colors = pointcloud2numpy(self.depth_pointcloud_)
 
         if points.shape[0] == 0:
             self.get_logger().info("No points found")
@@ -216,7 +216,7 @@ class AnyGraspNode(Node):
     def retrieve_pointcloud(self, save_folder):
         if self.NO_RGB:
             if not self.POINTCLOUD_FROM_FILE:
-                points, colors = self.fast_norgb_pc2_to_numpy(self.depth_pointcloud_)
+                points, colors = self.norgb_pointcloud2numpy(self.depth_pointcloud_)
             else:
                 points = self.file_points
                 colors = np.zeros_like(points, dtype=np.float32)
@@ -224,7 +224,7 @@ class AnyGraspNode(Node):
                 display_pointcloud(points, save=self.SAVE_DATA, filename=f"{save_folder}/full_cloud", description="Full Point Cloud")
         else:
             if not self.POINTCLOUD_FROM_FILE:
-                points, colors = self.fast_pc2_to_numpy(self.depth_pointcloud_)
+                points, colors = self.pointcloud2numpy(self.depth_pointcloud_)
             else:
                 points = self.file_points
                 colors = self.file_colors
@@ -674,7 +674,7 @@ class AnyGraspNode(Node):
                 layer_base_height += self.SYMMETRY_LAYER_HEIGHT
                 continue
 
-            group = SymmetryGroup(layer_cloud, layer_grasps, self.get_logger())
+            group = SymmetryGroup(layer_cloud, layer_grasps)
             
             # perform rotations around the centre
             for i in range(self.SYMMETRY_ROTATION_STEP, 360, self.SYMMETRY_ROTATION_STEP):
