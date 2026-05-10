@@ -25,14 +25,19 @@ from hts_msgs.action import ComputeGraspValidity, RequestGrasp
 from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import Pose
 
-pkg_prefix = get_package_prefix("hts_anygrasp")
-lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
-os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
-checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
-
 from graspnetAPI.grasp import Grasp as GraspNetGrasp
 from graspnetAPI import GraspGroup as GraspNetGroup
-from gsnet import AnyGrasp
+
+pkg_prefix = get_package_prefix("hts_anygrasp")
+checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detection.tar")
+lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
+os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
+
+LOAD_ANYGRASP=False
+if LOAD_ANYGRASP:
+    from gsnet import AnyGrasp
+else:
+    print("Not loading anygrasp")
 
 from .hts_grasps import HTSGrasp, HTSGraspGroup
 from .symmetry import SymmetryGroup
@@ -63,9 +68,11 @@ class AnyGraspNode(Node):
             top_down_grasp=self.TOP_DOWN_GRASP,
             debug=True, # was true
         )
-        self.anygrasp = AnyGrasp(cfgs)
-        self.anygrasp.load_net()
-        self.anygrasp_lims = [self.X_GRASP_MIN, self.X_GRASP_MAX, self.Y_GRASP_MIN, self.Y_GRASP_MAX, self.Z_GRASP_MIN, self.Z_GRASP_MAX]
+
+        if not self.OVERRIDE_ANYGRASP:
+            self.anygrasp = AnyGrasp(cfgs)
+            self.anygrasp.load_net()
+            self.anygrasp_lims = [self.X_GRASP_MIN, self.X_GRASP_MAX, self.Y_GRASP_MIN, self.Y_GRASP_MAX, self.Z_GRASP_MIN, self.Z_GRASP_MAX]
 
         # subscribe to pointcloud
         qos = QoSProfile(depth=10)
@@ -127,6 +134,8 @@ class AnyGraspNode(Node):
         self.declare_parameter('acquisition_eps_final', 0.1)
         self.declare_parameter('acquisition_eps_decay_rate', 0.99)
         self.declare_parameter('stability_score_correction_enable', True)
+        self.declare_parameter('override_anygrasp', True)
+        self.declare_parameter('override_anygrasp_folder', '')
 
         # config options for point/grasp bounding
         self.Z_COORDS_MIN: float = self.get_parameter('z_coords_min').value
@@ -177,6 +186,8 @@ class AnyGraspNode(Node):
         self.SYMMETRY_SIMILARITY_THRESHOLD: float = self.get_parameter('symmetry_similarity_threshold').value
 
         self.STABILITY_SCORE_CORRECTION_ENABLE: bool = self.get_parameter('stability_score_correction_enable').value
+        self.OVERRIDE_ANYGRASP: bool = self.get_parameter('override_anygrasp').value
+        self.OVERRIDE_ANYGRASP_FOLDER: str = self.get_parameter('override_anygrasp_folder').value
 
         # config for grasp selection
         self.ENABLE_GRASP_SELECTION: bool = self.get_parameter('enable_grasp_selection').value      
@@ -465,24 +476,36 @@ class AnyGraspNode(Node):
         t0: float = time.time()
         gg: GraspNetGrasp
         cloud: o3d.cuda.pybind.geometry.PointCloud
-        gg, cloud = self.anygrasp.get_grasp(
-            cropped_points.astype(np.float32), cropped_colours.astype(np.float32), 
-            lims=self.anygrasp_lims, 
-            apply_object_mask=self.APPLY_OBJECT_MASK, 
-            dense_grasp=self.DENSE_GRASP, 
-            collision_detection=self.APPLY_COLLISIONS
-            )
+        if not self.OVERRIDE_ANYGRASP:
+            gg, cloud = self.anygrasp.get_grasp(
+                cropped_points.astype(np.float32), cropped_colours.astype(np.float32), 
+                lims=self.anygrasp_lims, 
+                apply_object_mask=self.APPLY_OBJECT_MASK, 
+                dense_grasp=self.DENSE_GRASP, 
+                collision_detection=self.APPLY_COLLISIONS
+                )
+        else:
+            # we have a few npy's: 
+                # one is all_grasps.npy --> this is nms and nothing else
+                # another is filtered_grasps.npy --> this is after filtering and symmetry
+                # the last is post-symmetry-grasps.npy --> this is after symmetry but no filtering
+            gg = GraspNetGroup()
+            gg.from_npy(f"{self.OVERRIDE_ANYGRASP_FOLDER}/all_grasps.npy")
+            cloud = rainbow_cloud
         t1: float = time.time()
 
         # logging and error handling
         if self.SAVE_DATA:
             with open(f"{save_folder}/grasp_metrics.txt", "w") as f:
                 f.write(f"Grasp algorithm time: {t1 - t0}\r\n")
+            # saves data in the format (score, width, height, depth, rotation matrix (9 of them), translation (3 of them), object id)
+            # there is also the from_npy function
+            gg.save_npy(f"{save_folder}/grasp_groups/anygrasp_output_grasps")
 
         if gg is None or len(gg) == 0:
             self.get_logger().error('No Grasp detected after collision detection!')
             return None, None
-        
+
         # for logging only
         unfiltered_gg: GraspNetGroup = gg.nms(
             translation_thresh = self.NMS_TRANSLATION_THRESH,
@@ -499,34 +522,39 @@ class AnyGraspNode(Node):
         if self.VISUALISE:
             display_grasps(unfiltered_gg, rainbow_cloud, origin_position=[x,y,z], description="All Grasps")
 
-        # STEP 4: Compute Symmetries
-        self.apply_symmetries(gg, cloud, x, y, z, save_folder)
+        if not self.OVERRIDE_ANYGRASP:
+            # STEP 6: Filter Grasps
+            self.filter_grasps(gg)
 
-        # STEP 5: TODO Recheck Collisions
+            if len(gg) == 0:
+                self.get_logger().error('No Grasps obtained after orientation filtering performed')
+                return None, None
+            
+            if self.SAVE_DATA:
+                self.save_grasps_in_polar(gg, save_folder, "post_filtering")
+                with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                    f.write(f"Filtered num grasps: {len(gg)}\r\n")
 
-        # STEP 6: Filter Grasps
-        self.filter_grasps(gg)
+            # STEP 4: Compute Symmetries
+            self.apply_symmetries(gg, cloud, x, y, z, save_folder)
 
-        if len(gg) == 0:
-            self.get_logger().error('No Grasps obtained after orientation filtering performed')
-            return None, None
-        
-        if self.SAVE_DATA:
-            self.save_grasps_in_polar(gg, save_folder, "post_filtering")
-            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                f.write(f"Filtered num grasps: {len(gg)}\r\n")
+            # STEP 5: TODO Recheck Collisions
 
-        # STEP 7: Perform NMS
-        gg = gg.nms(
-            translation_thresh = self.NMS_TRANSLATION_THRESH,
-            rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
-        ).sort_by_score()
+            # STEP 7: Perform NMS
+            gg = gg.nms(
+                translation_thresh = self.NMS_TRANSLATION_THRESH,
+                rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
+            ).sort_by_score()
 
-        if self.SAVE_DATA:
-            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                f.write(f"Filtered num grasps after nms: {len(gg)}\r\n")
-            gg.save_npy(f"{save_folder}/grasp_groups/filtered_grasps")
-            self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
+            if self.SAVE_DATA:
+                with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                    f.write(f"Filtered num grasps after nms: {len(gg)}\r\n")
+                gg.save_npy(f"{save_folder}/grasp_groups/filtered_grasps")
+                self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
+
+        else:
+            gg = GraspNetGroup()
+            gg.from_npy(f"{self.OVERRIDE_ANYGRASP_FOLDER}/filtered_grasps.npy")
 
         # STEP 8: Correct Grasp Score
         if self.STABILITY_SCORE_CORRECTION_ENABLE:

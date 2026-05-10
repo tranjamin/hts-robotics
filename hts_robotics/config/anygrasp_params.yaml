@@ -63,4 +63,7 @@ acquisition_eps_final: 0.1
 acquisition_eps_decay_rate: 0.99
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/pointclouds/beaker_lrg.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/conic_flask.npz"
+
+override_anygrasp: True
+override_anygrasp_folder: "/ros2_ws/src/grasp_groups/conic"
