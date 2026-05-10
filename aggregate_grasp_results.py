@@ -4,15 +4,17 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-SAVE_FOLDER = "out/MERGED CLUTTERED ENVIRONMENT/BEAKER_MED"
-FOLDERS = [
-    "out/BEAKER_MED_CLUTTERED_RUN_1", 
-    "out/BEAKER_MED_CLUTTERED_RUN_2", 
-    "out/BEAKER_MED_CLUTTERED_RUN_3", 
-    "out/BEAKER_MED_CLUTTERED_RUN_4", 
-    "out/BEAKER_MED_CLUTTERED_RUN_5"
-    ]
-BASE_FOLDER = "out/CLUTTERED ENVIRONMENT/BEAKER_MED_BASE_CLUTTERED"
+OBJECT_TYPE = "BEAKER_LRG"
+ENVIRONMENT = "SIMPLE"
+RUNS_BASE_FOLDER = f"out"
+
+SAVE_FOLDER = f"out/MERGED {ENVIRONMENT} ENVIRONMENT/{OBJECT_TYPE}/"
+BASE_FOLDER = f"out/{ENVIRONMENT} ENVIRONMENT BASE/{OBJECT_TYPE}"
+BASELINE_FOLDERS = [f"{BASE_FOLDER}/{OBJECT_TYPE}_BASE_{i}" for i in range(1,6)]
+SYMMETRY_FOLDERS = [f"{BASE_FOLDER}/{OBJECT_TYPE}_BASE_SYMMETRY_{i}" for i in range(1,6)]
+CORRECTED_FOLDERS = [f"{BASE_FOLDER}/{OBJECT_TYPE}_BASE_CORRECTED_{i}" for i in range(1,6)]
+
+RUNS_FOLDERS = [f"out/{OBJECT_TYPE}_RUN_{i}" for i in range(1,6)]
 
 def merge_evaluations(folder):
     normal_grasps = pd.read_csv(folder + "/grasp_evaluations.csv")
@@ -94,57 +96,124 @@ def plot(fields: dict[str, pd.DataFrame]):
     input()
     return fig
 
-def aggregate_grasps(dfs: list[pd.DataFrame]):
+def aggregate_grasps(folders):
+    all_runs = []
+    for folder in folders:
+        df = merge_evaluations(folder)
+        add_metrics(df)
+        all_runs.append(df)
+    return all_runs
+
+def aggregate_grasps_randomised(folders):
+    all_runs = []
+    for folder in folders:
+        df = merge_evaluations(folder)
+        df = df.sample(frac=1, ignore_index=True)
+        add_metrics(df)
+        all_runs.append(df)
+    return all_runs
+
+def average_grasps(dfs):
     return pd.concat(dfs).groupby(level=0).mean()
 
-all_grasps = []
-for folder in FOLDERS:
-    df = merge_evaluations(folder)
-    add_metrics(df)
-    all_grasps.append(df)
+# average of selection runs
+all_runs = aggregate_grasps(RUNS_FOLDERS)
+average_run = average_grasps(all_runs)
 
-average_grasps = aggregate_grasps(all_grasps)
+all_baselines = aggregate_grasps(BASELINE_FOLDERS)
+average_baseline = average_grasps(all_baselines)
 
-base_grasps = merge_evaluations(BASE_FOLDER)
+all_symmetry_baselines = aggregate_grasps(SYMMETRY_FOLDERS)
+average_symmetry_baseline = average_grasps(all_symmetry_baselines)
 
-random_grasps = []
-for i in range(10):
-    r = base_grasps.sample(frac=1, ignore_index=True)
-    add_metrics(r)
-    random_grasps.append(r)
-base_grasps_random = aggregate_grasps(random_grasps)
-add_metrics(base_grasps)
+all_corrected_baselines = aggregate_grasps(CORRECTED_FOLDERS)
+average_corrected_baseline = average_grasps(all_corrected_baselines)
 
-data = {
-    "Average Grasp Selection": average_grasps, 
-    "Grasp Score Ordered": base_grasps, 
-    "Random Ordering": base_grasps_random,
-    }
+# average of selection runs
+all_runs_random = aggregate_grasps_randomised(RUNS_FOLDERS)
+average_run_random = average_grasps(all_runs_random)
 
-fig = plot(data)
+all_baselines_random = aggregate_grasps_randomised(BASELINE_FOLDERS)
+average_baseline_random = average_grasps(all_baselines_random)
+
+all_symmetry_baselines_random = aggregate_grasps_randomised(SYMMETRY_FOLDERS)
+average_symmetry_baseline_random = average_grasps(all_symmetry_baselines_random)
+
+all_corrected_baselines_random = aggregate_grasps_randomised(CORRECTED_FOLDERS)
+average_corrected_baseline_random = average_grasps(all_corrected_baselines_random)
+
+plot_baseline_symmetry = {
+    "Baseline (Grasp Score Ordered)": average_baseline,
+    "Baseline (Randomly Ordered)": average_baseline_random,
+    "Symmetry-Enabled (Grasp Score Ordered)": average_symmetry_baseline,
+    "Symmetry-Enabled (Randomly Ordered)": average_symmetry_baseline_random,
+}
+
+plot_symmetry_corrected = {
+    "Symmetry-Enabled (Grasp Score Ordered)": average_symmetry_baseline,
+    "Symmetry-Enabled (Randomly Ordered)": average_symmetry_baseline_random,
+    "Stability-Corrected (Grasp Score Ordered)": average_corrected_baseline,
+    "Stability-Corrected (Randomly Ordered)": average_corrected_baseline_random,
+}
+
+plot_corrected_selection = {
+    "Stability-Corrected (Grasp Score Ordered)": average_corrected_baseline,
+    "Stability-Corrected (Randomly Ordered)": average_corrected_baseline_random,
+    "Grasp Selection": average_run,
+}
+
+plot_baseline_selection = {
+    "Baseline (Grasp Score Ordered)": average_baseline,
+    "Baseline (Randomly Ordered)": average_baseline_random,
+    "Grasp Selection": average_run,
+}
 
 os.makedirs(SAVE_FOLDER, exist_ok=False)
 
+fig_baseline_symmetry = plot(plot_baseline_symmetry)
+fig_symmetry_corrected = plot(plot_symmetry_corrected)
+fig_corrected_selection = plot(plot_corrected_selection)
+fig_baseline_selection = plot(plot_baseline_selection)
+
+fig_baseline_symmetry.savefig(SAVE_FOLDER + "/images_baseline_symmetry.png", format="png")
+fig_baseline_symmetry.savefig(SAVE_FOLDER + "/images_baseline_symmetry.svg", format="svg")
+fig_symmetry_corrected.savefig(SAVE_FOLDER + "/images_symmetry_corrected.png", format="png")
+fig_symmetry_corrected.savefig(SAVE_FOLDER + "/images_symmetry_corrected.svg", format="svg")
+fig_corrected_selection.savefig(SAVE_FOLDER + "/images_correction_selection.png", format="png")
+fig_corrected_selection.savefig(SAVE_FOLDER + "/images_correction_selection.svg", format="svg")
+fig_baseline_selection.savefig(SAVE_FOLDER + "/images_baseline_selection.png", format="png")
+fig_baseline_selection.savefig(SAVE_FOLDER + "/images_baseline_selection.svg", format="svg")
+
 data_runs = {
-    "Grasp Score Ordered": base_grasps, 
-    "Random Ordering": base_grasps_random,
-    "Run 1": all_grasps[0],
-    "Run 2": all_grasps[1],
-    "Run 3": all_grasps[2],
-    "Run 4": all_grasps[3],
-    "Run 5": all_grasps[4]
+    "Corrected Baseline (Grasp Score Ordered)": average_corrected_baseline, 
+    "Corrected Baseline (Randomly Ordered)": average_corrected_baseline_random,
+    "Run 1": all_runs[0],
+    "Run 2": all_runs[1],
+    "Run 3": all_runs[2],
+    "Run 4": all_runs[3],
+    "Run 5": all_runs[4]
     }
 
 fig_runs = plot(data_runs)
 
-fig.savefig(SAVE_FOLDER + "/images.png", format="png")
-fig.savefig(SAVE_FOLDER + "/images.svg", format="svg")
 fig_runs.savefig(SAVE_FOLDER + "/images_all_runs.png", format="png")
 fig_runs.savefig(SAVE_FOLDER + "/images_all_runs.svg", format="svg")
-base_grasps.to_csv(SAVE_FOLDER + "/base_merged.csv")
-base_grasps_random.to_csv(SAVE_FOLDER + "/base_random_merged.csv")
-average_grasps.to_csv(SAVE_FOLDER + "/average.csv")
-for i in range(len(FOLDERS)):
-    all_grasps[i].to_csv(SAVE_FOLDER + f"/run_{i}.csv")
 
+for i in range(5):
+    all_runs[i].to_csv(f"{SAVE_FOLDER}/run_{i}.csv")
+    all_baselines[i].to_csv(f"{SAVE_FOLDER}/baseline_{i}.csv")
+    all_symmetry_baselines[i].to_csv(f"{SAVE_FOLDER}/symmetry_baseline_{i}.csv")
+    all_corrected_baselines[i].to_csv(f"{SAVE_FOLDER}/corrected_baseline_{i}.csv")
+    all_runs_random[i].to_csv(f"{SAVE_FOLDER}/run_random_{i}.csv")
+    all_baselines_random[i].to_csv(f"{SAVE_FOLDER}/baseline_random_{i}.csv")
+    all_symmetry_baselines_random[i].to_csv(f"{SAVE_FOLDER}/symmetry_baseline_random_{i}.csv")
+    all_corrected_baselines_random[i].to_csv(f"{SAVE_FOLDER}/corrected_baseline_random_{i}.csv")
 
+average_run.to_csv(f"{SAVE_FOLDER}/average_run.csv")
+average_baseline.to_csv(f"{SAVE_FOLDER}/average_baseline.csv")
+average_symmetry_baseline.to_csv(f"{SAVE_FOLDER}/average_symmetry_baseline.csv")
+average_corrected_baseline.to_csv(f"{SAVE_FOLDER}/average_corrected_baseline.csv")
+average_run_random.to_csv(f"{SAVE_FOLDER}/average_run_random.csv")
+average_baseline_random.to_csv(f"{SAVE_FOLDER}/average_baseline_random.csv")
+average_symmetry_baseline_random.to_csv(f"{SAVE_FOLDER}/average_symmetry_baseline_random.csv")
+average_corrected_baseline_random.to_csv(f"{SAVE_FOLDER}/average_corrected_baseline_random.csv")

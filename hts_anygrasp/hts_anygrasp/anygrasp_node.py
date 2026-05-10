@@ -126,6 +126,7 @@ class AnyGraspNode(Node):
         self.declare_parameter('acquisition_enable_decay', False)
         self.declare_parameter('acquisition_eps_final', 0.1)
         self.declare_parameter('acquisition_eps_decay_rate', 0.99)
+        self.declare_parameter('stability_score_correction_enable', True)
 
         # config options for point/grasp bounding
         self.Z_COORDS_MIN: float = self.get_parameter('z_coords_min').value
@@ -174,6 +175,8 @@ class AnyGraspNode(Node):
         self.SYMMETRY_LAYER_HEIGHT: float = self.get_parameter('symmetry_layer_height').value
         self.SYMMETRY_ROTATION_STEP: int = self.get_parameter('symmetry_rotation_step').value
         self.SYMMETRY_SIMILARITY_THRESHOLD: float = self.get_parameter('symmetry_similarity_threshold').value
+
+        self.STABILITY_SCORE_CORRECTION_ENABLE: bool = self.get_parameter('stability_score_correction_enable').value
 
         # config for grasp selection
         self.ENABLE_GRASP_SELECTION: bool = self.get_parameter('enable_grasp_selection').value      
@@ -526,7 +529,9 @@ class AnyGraspNode(Node):
             self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
 
         # STEP 8: Correct Grasp Score
-        self.correct_scores(gg, cloud, save_folder)
+        if self.STABILITY_SCORE_CORRECTION_ENABLE:
+            self.correct_scores(gg, cloud, save_folder)
+            gg = gg.sort_by_score()
 
         # visualization
         if self.VISUALISE:
@@ -547,6 +552,7 @@ class AnyGraspNode(Node):
         f.write(f"acquisition function eps [{self.ACQUISITION_EPS}] kappa [{self.ACQUISITION_KAPPA}] decay? [{self.ACQUISITION_ENABLE_DECAY}] rate [{self.ACQUISITION_EPS_DECAY_RATE}] final [{self.ACQUISITION_EPS_FINAL}]\r\n")
         f.write(f"kernel length scale z [{self.KERNEL_LENGTH_SCALE_Z}] theta [{self.KERNEL_LENGTH_SCALE_TH}] matern nu [{self.KERNEL_MATERN_NU}]\r\n")
         f.write(f"planning time multiplier [{self.PLANNING_TIME_MULTIPLIER}] base planning time [{self.BASELINE_PLANNING_TIME}] total planning time [{self.TOTAL_PLANNING_TIME_SEC}]\r\n")
+        f.write(f"stabe score correction enabled? [{self.STABILITY_SCORE_CORRECTION_ENABLE}]\r\n")
         f.write(f"using point cloud file [{self.POINTCLOUD_FILE}]\r\n")
 
     def to_hts_gg(self, gg: GraspNetGroup, folder: str, flip_z: bool=False) -> HTSGraspGroup:
