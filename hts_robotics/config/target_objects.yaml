@@ -1,6 +1,6 @@
 objects:
-  - conic_flask
-  # - volumetric_flask
+  # - conic_flask
+  - volumetric_flask
   # - round_bottomed_flask
   # - measuring_cylinder_sml
   # - measuring_cylinder_lrg

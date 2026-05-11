@@ -1054,10 +1054,10 @@ class SequentialGraspSelector(GenericSelector):
         )
         splt2 = axs[0, 1].scatter(
             evaluated_th, evaluated_z, vmin=0.0, vmax=1.0,
-            c=evaluated, cmap=cm.RdYlGn,marker="o", linewidths=0.3, edgecolors="black"
+            cmap=cm.RdYlGn,marker="o", linewidths=0.3, edgecolors="black"
         )
         splt3 = axs[1, 0].scatter(
-            evaluated_th, evaluated_z, vmin=0.0, vmax=1.0,
+            evaluated_th, evaluated_z, vmin=-1.0, vmax=1.0,
             c=evaluated_paths, cmap=cm.RdYlGn,marker="o", linewidths=0.3, edgecolors="black"
         )
         splt4 = axs[1, 1].scatter(

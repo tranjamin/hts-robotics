@@ -64,25 +64,21 @@ gg, cloud = anygrasp.get_grasp(
     collision_detection=True
 )
 
-def visualise(grasp):
-    gg = GraspGroup()
-
-    gg.add(grasp)
-
-    grippers = gg.to_open3d_geometry_list()
-
-    trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
-
-    for ind, g in enumerate(grippers):
-        g.transform(trans_mat)
-
+def visualise(grasp, origin=[0,0,0], post_translation=[0, 0, 0.1], color=(0,0,0)):
+    # gg = GraspGroup()
+    # gg.add(grasp)
+    gripper = grasp.to_open3d_geometry(color=color)
+    # grippers = gg.to_open3d_geometry_list()
+    # trans_mat = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+    # for ind, g in enumerate(grippers):
+        # g.transform(trans_mat)
     origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(
         size=0.1,      # length of the axes
+        origin=origin
     )
-
-    cloud.transform(trans_mat)
-
-    o3d.visualization.draw_geometries([*grippers, cloud, origin_frame])
+    # origin_frame.translate(post_translation)
+    origin_frame.rotate(grasp.rotation_matrix, center=origin)
+    o3d.visualization.draw_geometries([gripper, cloud, origin_frame])
 
 def map_grasp(grasp, flip_z=False, delta_back=0.0, delta_up=0.0):
     grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)

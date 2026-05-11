@@ -49,7 +49,7 @@ symmetry_enable: True
 stability_score_correction_enable: True
 
 # for baseline stuff
-# baseline_planning_time: 0.1
+# baseline_planning_time: 0.2
 # total_planning_time_sec: 600
 # enable_grasp_selection: False
 # visualise: False
@@ -63,7 +63,7 @@ acquisition_eps_final: 0.1
 acquisition_eps_decay_rate: 0.99
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/pointclouds/conic_flask.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/volumetric_flask.npz"
 
-override_anygrasp: True
+override_anygrasp: False
 override_anygrasp_folder: "/ros2_ws/src/grasp_groups/conic"
