@@ -15,15 +15,24 @@ class PlanningTimeModel(ABC):
         """
         self.planning_data: npt.NDArray[np.float64] = np.array([])
         self.planning_multiplier: float = planning_multiplier
-
+        
     @abstractmethod
     def add_planning_data(self, t: float) -> None:
         """Adds another data point to the planning time model"""
         pass
 
     @abstractmethod
+    def register_failed_plan(self) -> None:
+        """Registers that plan failed to plan"""
+
+    @abstractmethod
     def validity_failure_model(self, t: float) -> float:
         """Calculates the likelihood that a grasp would have failed before time t"""
+        pass
+
+    @abstractmethod
+    def get_exploration_planning_time(self) -> float:
+        """Gets the exploration planning time"""
         pass
 
     @abstractmethod
@@ -49,6 +58,13 @@ class LognormalPlanningTimeModel(PlanningTimeModel):
         self._initial_planning_time: float = initial_planning_time
         self.planning_time_mean: float = np.log(initial_planning_time)
         self.planning_time_variance: float = initial_var
+        self.current_exploration_planning_time: float = initial_planning_time
+
+    def register_failed_plan(self) -> None:
+        self.current_exploration_planning_time *= self.planning_multiplier
+
+    def get_exploration_planning_time(self) -> float:
+        return self.current_exploration_planning_time
 
     def get_initial_planning_time(self) -> float:
         """Gets the base planning time allocated for each evaluation"""

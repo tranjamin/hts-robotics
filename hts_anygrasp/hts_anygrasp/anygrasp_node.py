@@ -33,7 +33,7 @@ checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detect
 lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
 os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
 
-LOAD_ANYGRASP=True
+LOAD_ANYGRASP=False
 if LOAD_ANYGRASP:
     from gsnet import AnyGrasp
 else:
@@ -124,6 +124,7 @@ class AnyGraspNode(Node):
         self.declare_parameter('plot_selection_graphs', True)
         self.declare_parameter('planning_time_multiplier', 2.0)
         self.declare_parameter('baseline_planning_time', 0.03)
+        self.declare_parameter('baseline_planning_time_move', 0.3)
         self.declare_parameter('acquisition_kappa', 3.0)
         self.declare_parameter('acquisition_eps', 0.1)
         self.declare_parameter('kernel_length_scale_z', 0.03)
@@ -194,6 +195,7 @@ class AnyGraspNode(Node):
         self.PLOT_SELECTION_GRAPHS: bool = self.get_parameter('plot_selection_graphs').value
         self.PLANNING_TIME_MULTIPLIER: float = self.get_parameter('planning_time_multiplier').value
         self.BASELINE_PLANNING_TIME: float = self.get_parameter('baseline_planning_time').value
+        self.BASELINE_PLANNING_TIME_MOVE: float = self.get_parameter('baseline_planning_time_move').value
         self.ACQUISITION_KAPPA: float = self.get_parameter('acquisition_kappa').value
         self.ACQUISITION_EPS: float = self.get_parameter('acquisition_eps').value
         self.KERNEL_LENGTH_SCALE_Z: float = self.get_parameter('kernel_length_scale_z').value
@@ -727,6 +729,13 @@ class AnyGraspNode(Node):
             initial_var=0.5
         )
 
+        tuner_move = LognormalPlanningTimeModel(
+            planning_multiplier=self.PLANNING_TIME_MULTIPLIER,
+            initial_planning_time=self.BASELINE_PLANNING_TIME_MOVE,
+            initial_var=0.5
+        )
+
+
         acquisition_fn = EpsilonGreedyUCB(
             kappa=self.ACQUISITION_KAPPA,
             eps=self.ACQUISITION_EPS,
@@ -748,14 +757,14 @@ class AnyGraspNode(Node):
             final_context = ValidityContext(goal_handle=goal_handle)
 
             first_selector = GPGraspSelector(
-                hts_grasp_group, tuner, acquisition_fn, context,
+                hts_grasp_group, tuner, tuner_move, acquisition_fn, context,
                 length_scale_z=self.KERNEL_LENGTH_SCALE_Z, 
                 matern_nu_z=self.KERNEL_MATERN_NU, 
                 length_scale_th=self.KERNEL_LENGTH_SCALE_TH,
                 total_planning_time=self.TOTAL_PLANNING_TIME_SEC
             )
             second_selector = GPGraspSelector(
-                hts_grasp_group_flipped, tuner, acquisition_fn, context_flipped,
+                hts_grasp_group_flipped, tuner, tuner_move, acquisition_fn, context_flipped,
                 length_scale_z=self.KERNEL_LENGTH_SCALE_Z, 
                 matern_nu_z=self.KERNEL_MATERN_NU, 
                 length_scale_th=self.KERNEL_LENGTH_SCALE_TH,
@@ -774,14 +783,14 @@ class AnyGraspNode(Node):
                 goal_handle.abort()
             return final_context.response
         else:
-            problem = SequentialGraspSelector(hts_grasp_group, tuner, SequentialAcquisition(), context)
+            problem = SequentialGraspSelector(hts_grasp_group, tuner, tuner_move, SequentialAcquisition(), context)
             problem._handle_validity_send_goal()
 
             while context.response is None:
                 time.sleep(0.01)
             time.sleep(1.0)
 
-            problem = SequentialGraspSelector(hts_grasp_group_flipped, tuner, SequentialAcquisition(), context_flipped)
+            problem = SequentialGraspSelector(hts_grasp_group_flipped, tuner, tuner_move, SequentialAcquisition(), context_flipped)
             problem._handle_validity_send_goal()
 
             while context_flipped.response is None:

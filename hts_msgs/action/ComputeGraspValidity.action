@@ -4,6 +4,7 @@ float32 goal_y
 float32 goal_z
 int64 target_id
 float32 planning_time
+float32 planning_time_move
 ---
 bool success
 bool is_valid

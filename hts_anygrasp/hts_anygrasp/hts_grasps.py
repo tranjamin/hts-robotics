@@ -82,7 +82,7 @@ class HTSGrasp():
         temp_grasp_group.add(self.get_grasp_object())
         return temp_grasp_group
         
-    def evaluation_request_goal(self, request: RequestGrasp.Goal, planning_time: float) -> ComputeGraspValidity.Goal:
+    def evaluation_request_goal(self, request: RequestGrasp.Goal, planning_time_pickup: float, planning_time_move: float) -> ComputeGraspValidity.Goal:
         """
         Generates a request goal for evaluating this grasp
         
@@ -99,7 +99,8 @@ class HTSGrasp():
         goal.goal_x = request.goal_x
         goal.goal_y = request.goal_y
         goal.goal_z = request.goal_z + goal.grasp_pose.position.z # our goal z is expressed as an offset
-        goal.planning_time = planning_time
+        goal.planning_time = planning_time_pickup
+        goal.planning_time_move = planning_time_move
         goal.target_id = request.id
 
         return goal

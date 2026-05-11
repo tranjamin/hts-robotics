@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-OBJECT_TYPE = "CONIC"
+OBJECT_TYPE = "ROUND_BOTTOM"
 ENVIRONMENT = "CLUTTERED"
 RUNS_BASE_FOLDER = f"out"
 
