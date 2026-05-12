@@ -706,7 +706,7 @@ class GPGraspSelector(GPSelector):
         
         # recover the point from the index
         point: GraspPoint = self.points[idx]
-        point.handle_evaluation_result(result, self.tuner, self.tuner_move+)
+        point.handle_evaluation_result(result, self.tuner, self.tuner_move)
         point.grasp.process_result(result)
         point.grasp.end_timer()
 
