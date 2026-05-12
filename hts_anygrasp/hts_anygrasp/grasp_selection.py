@@ -379,7 +379,18 @@ class GPSelector(GenericSelector, ABC):
         # compute target y
         y: npt.NDArray[np.float64] = np.array([p.norm_path_score(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
         y_times: npt.NDArray[np.float64] = np.array([p.allocated_planning_time_pickup for p in evaluated_points]).reshape((n, 1))
-        y_times_move: npt.NDArray[np.float64] = np.array([p.allocated_planning_time_move for p in evaluated_points]).reshape((n, 1))
+        y_times_move = [p.allocated_planning_time_move for p in evaluated_points if p.valid or not p.invalidity_is_pickup]
+
+        if len(y_times_move):
+            y_times_move: npt.NDArray[np.float64] = np.array(y_times_move).reshape((-1, 1))
+            move_evaluated_z: npt.NDArray[np.float64] = np.array([p.z() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
+            move_evaluated_th: npt.NDArray[np.float64] = np.array([p.theta() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
+            move_evaluated_coords: npt.NDArray[np.float64] = np.hstack((move_evaluated_z, move_evaluated_th))
+
+            KXX_time_move: npt.NDArray[np.float64] = self.kernel_time(move_evaluated_coords)
+            KxX_time_move: npt.NDArray[np.float64] = self.kernel_time(self.all_coords, move_evaluated_coords)
+            I_move = np.linalg.inv(KXX_time_move + 1e-10*np.eye(KXX_time_move.shape[0]))
+            self.est_planning_times_move = KxX_time_move @ I_move @ y_times_move
         
         # perform inversions TODO make this cholesky
         self.inv: npt.NDArray[np.float64] = np.linalg.inv(KXX + 1e-10*np.eye(n) + Sigma)
@@ -387,7 +398,6 @@ class GPSelector(GenericSelector, ABC):
         self.cov = Kxx - KxX @ self.inv @ KxX.T
         I = np.linalg.inv(KXX_time + 1e-10*np.eye(n))
         self.est_planning_times = KxX_time @ I @ y_times
-        self.est_planning_times_move = KxX_time @ I @ y_times_move
 
         np.clip(self.cov, 0.0, None, self.cov)
 
@@ -414,16 +424,27 @@ class GPSelector(GenericSelector, ABC):
 
         y: npt.NDArray[np.float64] = np.array([p.norm_path_score(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
         y_times: npt.NDArray[np.float64] = np.array([p.allocated_planning_time_pickup for p in evaluated_points]).reshape((n, 1))
-        y_times_move: npt.NDArray[np.float64] = np.array([p.allocated_planning_time_move for p in evaluated_points]).reshape((n, 1))
+        y_times_move = [p.allocated_planning_time_move for p in evaluated_points if p.valid or not p.invalidity_is_pickup]
 
         KXX_time: npt.NDArray[np.float64] = self.kernel_time(evaluated_coords)
         KxX_time: npt.NDArray[np.float64] = self.kernel_time(coords, evaluated_coords)
+
+        t_move = np.zeros(coords.shape[0])
+        if len(y_times_move):
+            y_times_move: npt.NDArray[np.float64] = np.array(y_times_move).reshape((-1, 1))
+            move_evaluated_z: npt.NDArray[np.float64] = np.array([p.z() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
+            move_evaluated_th: npt.NDArray[np.float64] = np.array([p.theta() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
+            move_evaluated_coords: npt.NDArray[np.float64] = np.hstack((move_evaluated_z, move_evaluated_th))
+            KXX_time_move: npt.NDArray[np.float64] = self.kernel_time(move_evaluated_coords)
+            KxX_time_move: npt.NDArray[np.float64] = self.kernel_time(coords, move_evaluated_coords)
+
+            I_move = np.linalg.inv(KXX_time_move + 1e-10*np.eye(KXX_time_move.shape[0]))
+            t_move: npt.NDArray[np.float64] = KxX_time_move @ I_move @ y_times_move
 
         u: npt.NDArray[np.float64] = KxX @ self.inv @ y
         c: npt.NDArray[np.float64] = Kxx - KxX @ self.inv @ KxX.T
         I = np.linalg.inv(KXX_time + 1e-10*np.eye(n))
         t: npt.NDArray[np.float64] = KxX_time @ I @ y_times
-        t_move: npt.NDArray[np.float64] = KxX_time @ I @ y_times_move
         return u,c,t,t_move
 
     def plot_grasps(self, **kwargs):
