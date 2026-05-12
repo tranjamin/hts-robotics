@@ -41,7 +41,7 @@ kernel_matern_nu: 2.5
 
 # for normal stuff
 baseline_planning_time: 0.2
-baseline_planning_time_move: 0.2
+baseline_planning_time_move: 2.0
 total_planning_time_sec: 600
 enable_grasp_selection: True
 visualise: False
@@ -64,7 +64,7 @@ acquisition_eps_final: 0.1
 acquisition_eps_decay_rate: 0.99
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/pointclouds/round_bottom_flask.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/conic_flask.npz"
 
 override_anygrasp: True
-override_anygrasp_folder: "/ros2_ws/src/grasp_groups/round_bottom"
+override_anygrasp_folder: "/ros2_ws/src/grasp_groups/conic"

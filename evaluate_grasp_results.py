@@ -85,17 +85,25 @@ def plot(fields: dict[str, pd.DataFrame]):
 
     fig.show()
 
-all_grasps = merge_evaluations(FOLDER)
-# all_grasps_no_eps = merge_evaluations("out/1777957320.9340703")
-base_grasps = merge_evaluations(BASE_FOLDER)
-base_grasps_random = base_grasps.sample(frac=1, ignore_index=True)
+# all_grasps = merge_evaluations(FOLDER)
+# # all_grasps_no_eps = merge_evaluations("out/1777957320.9340703")
+# base_grasps = merge_evaluations(BASE_FOLDER)
+# base_grasps_random = base_grasps.sample(frac=1, ignore_index=True)
 
-add_metrics(all_grasps)
-# add_metrics(all_grasps_no_eps)
-add_metrics(base_grasps)
-add_metrics(base_grasps_random)
+# add_metrics(all_grasps)
+# # add_metrics(all_grasps_no_eps)
+# add_metrics(base_grasps)
+# add_metrics(base_grasps_random)
 
-data = {"Grasp Selection": all_grasps, "Grasp Score Ordered": base_grasps, "Random Ordering": base_grasps_random}
+long = merge_evaluations("out/10_sec")
+med = merge_evaluations("out/5_sec")
+short = merge_evaluations("out/0.2_sec")
+
+add_metrics(long)
+add_metrics(med)
+add_metrics(short)
+
+data = {"Long": long, "Medium": med, "Short": short}
 
 plot(data)
 

@@ -735,6 +735,9 @@ class AnyGraspNode(Node):
             initial_var=0.5
         )
 
+        self.get_logger().info(f"Tuner initial planning mean {tuner.planning_time_mean} time {self.BASELINE_PLANNING_TIME}")
+        self.get_logger().info(f"Tuner initial planning mean {tuner_move.planning_time_mean} time {self.BASELINE_PLANNING_TIME_MOVE}")
+
 
         acquisition_fn = EpsilonGreedyUCB(
             kappa=self.ACQUISITION_KAPPA,
