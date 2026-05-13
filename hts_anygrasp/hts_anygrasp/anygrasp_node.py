@@ -33,7 +33,7 @@ checkpoint_path = os.path.join(pkg_prefix, "share/hts_anygrasp/checkpoint_detect
 lib_path = os.path.join(pkg_prefix, "lib", "hts_anygrasp")
 os.environ["LD_LIBRARY_PATH"] = (lib_path + ":" + os.environ.get("LD_LIBRARY_PATH", ""))
 
-LOAD_ANYGRASP=True
+LOAD_ANYGRASP=False
 if LOAD_ANYGRASP:
     from gsnet import AnyGrasp
 else:
@@ -547,7 +547,7 @@ class AnyGraspNode(Node):
                 # another is filtered_grasps.npy --> this is after filtering and symmetry
                 # the last is post-symmetry-grasps.npy --> this is after symmetry but no filtering
             gg = GraspNetGroup()
-            gg.from_npy(f"{self.OVERRIDE_ANYGRASP_FOLDER}/all_grasps.npy")
+            gg.from_npy(f"{self.OVERRIDE_ANYGRASP_FOLDER}/anygrasp_output_grasps.npy")
             cloud = rainbow_cloud
         t1: float = time.time()
 
@@ -579,50 +579,45 @@ class AnyGraspNode(Node):
         if self.VISUALISE:
             display_grasps(unfiltered_gg, rainbow_cloud, origin_position=[x,y,z], description="All Grasps")
 
-        if not self.OVERRIDE_ANYGRASP:
-            # STEP 6: Filter Grasps
-            self.filter_grasps(gg)
+        # STEP 6: Filter Grasps
+        self.filter_grasps(gg)
 
-            if len(gg) == 0:
-                self.get_logger().error('No Grasps obtained after orientation filtering performed')
-                return None, None
-            
-            if self.SAVE_DATA:
-                self.save_grasps_in_polar(gg, save_folder, "post_filtering")
-                with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                    f.write(f"Filtered num grasps: {len(gg)}\r\n")
+        if len(gg) == 0:
+            self.get_logger().error('No Grasps obtained after orientation filtering performed')
+            return None, None
+        
+        if self.SAVE_DATA:
+            self.save_grasps_in_polar(gg, save_folder, "post_filtering")
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Filtered num grasps: {len(gg)}\r\n")
 
-            if self.SAVE_DATA:
-                tmp_gg = gg.nms(
-                    translation_thresh = self.NMS_TRANSLATION_THRESH,
-                    rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
-                ).sort_by_score()
-
-                with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                    f.write(f"Filtered num grasps after nms: {len(gg)}\r\n")
-                gg.save_npy(f"{save_folder}/grasp_groups/filtered_grasps")
-                self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
-
-            # STEP 4: Compute Symmetries
-            self.apply_symmetries(gg, cloud, x, y, z, save_folder)
-
-            # STEP 5: TODO Recheck Collisions
-
-            # STEP 7: Perform NMS
-            gg = gg.nms(
+        if self.SAVE_DATA:
+            tmp_gg = gg.nms(
                 translation_thresh = self.NMS_TRANSLATION_THRESH,
                 rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
             ).sort_by_score()
 
-            if self.SAVE_DATA:
-                with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
-                    f.write(f"Num grasps after filtering_nms_symmetry: {len(gg)}\r\n")
-                gg.save_npy(f"{save_folder}/grasp_groups/filtering_nms_symmetry")
-                self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms_symmetry")
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Filtered num grasps after nms: {len(gg)}\r\n")
+            gg.save_npy(f"{save_folder}/grasp_groups/filtered_grasps")
+            self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms")
 
-        else:
-            gg = GraspNetGroup()
-            gg.from_npy(f"{self.OVERRIDE_ANYGRASP_FOLDER}/filtered_grasps.npy")
+        # STEP 4: Compute Symmetries
+        self.apply_symmetries(gg, cloud, x, y, z, save_folder)
+
+        # STEP 5: TODO Recheck Collisions
+
+        # STEP 7: Perform NMS
+        gg = gg.nms(
+            translation_thresh = self.NMS_TRANSLATION_THRESH,
+            rotation_thresh = self.NMS_ANGLE_THRESH_DEG / 180 * np.pi
+        ).sort_by_score()
+
+        if self.SAVE_DATA:
+            with open(f"{save_folder}/grasp_metrics.txt", "a") as f:
+                f.write(f"Num grasps after filtering_nms_symmetry: {len(gg)}\r\n")
+            gg.save_npy(f"{save_folder}/grasp_groups/filtering_nms_symmetry")
+            self.save_grasps_in_polar(gg, save_folder, "post_filtering_postnms_symmetry")
 
         # STEP 8: Correct Grasp Score
         if self.STABILITY_SCORE_CORRECTION_ENABLE:
