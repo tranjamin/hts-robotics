@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-OBJECT_TYPE = "CONIC"
-ENVIRONMENT = "CLUTTERED"
+OBJECT_TYPE = "BEAKER_LRG"
+ENVIRONMENT = "TABLE"
 RUNS_BASE_FOLDER = f"out"
 
 SAVE_FOLDER = f"out/MERGED {ENVIRONMENT} ENVIRONMENT/{OBJECT_TYPE}/"
@@ -14,7 +14,7 @@ BASELINE_FOLDERS = [f"{BASE_FOLDER}/{OBJECT_TYPE}_BASE_{i}" for i in range(1,6)]
 SYMMETRY_FOLDERS = [f"{BASE_FOLDER}/{OBJECT_TYPE}_BASE_SYMMETRY_{i}" for i in range(1,6)]
 CORRECTED_FOLDERS = [f"{BASE_FOLDER}/{OBJECT_TYPE}_BASE_CORRECTED_{i}" for i in range(1,6)]
 
-RUNS_FOLDERS = [f"out/{OBJECT_TYPE}_{ENVIRONMENT}_RUN_{i}" for i in range(1,6)]
+RUNS_FOLDERS = [f"out/{OBJECT_TYPE}_RUN_{i}" for i in range(1,6)]
 
 def merge_evaluations(folder):
     normal_grasps = pd.read_csv(folder + "/grasp_evaluations.csv")

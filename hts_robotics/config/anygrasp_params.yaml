@@ -15,8 +15,8 @@ top_down_grasp: False
 min_grasp_width: 0.0
 max_grasp_pitch_roll_deg: 5.0
 
-nms_translation_thresh: 0.01
-nms_angle_thresh_deg: 5.0
+nms_translation_thresh: 0.05
+nms_angle_thresh_deg: 10.0
 
 grasp_z_offset: 0.0
 grasp_axis_offset: -0.02
@@ -40,22 +40,22 @@ kernel_length_scale_th: 0.8
 kernel_matern_nu: 2.5
 
 # for normal stuff
-baseline_planning_time: 0.1
-total_planning_time_sec: 600
-enable_grasp_selection: True
-visualise: False
-plot_selection_graphs: True
-symmetry_enable: True
-stability_score_correction_enable: True
+# baseline_planning_time: 0.1
+# total_planning_time_sec: 30
+# enable_grasp_selection: True
+# visualise: True
+# plot_selection_graphs: True
+# symmetry_enable: True
+# stability_score_correction_enable: True
 
 # for baseline stuff
-# baseline_planning_time: 0.2
-# total_planning_time_sec: 600
-# enable_grasp_selection: False
-# visualise: False
-# plot_selection_graphs: False
-# symmetry_enable: False
-# stability_score_correction_enable: False
+baseline_planning_time: 0.1
+total_planning_time_sec: 600
+enable_grasp_selection: False
+visualise: True
+plot_selection_graphs: False
+symmetry_enable: True
+stability_score_correction_enable: False
 
 acquisition_eps: 0.1
 acquisition_enable_decay: False
@@ -63,7 +63,7 @@ acquisition_eps_final: 0.1
 acquisition_eps_decay_rate: 0.99
 
 pointcloud_from_file: True
-pointcloud_file: "/ros2_ws/src/pointclouds/volumetric_flask.npz"
+pointcloud_file: "/ros2_ws/src/pointclouds/round_bottom_flask.npz"
 
-override_anygrasp: False
-override_anygrasp_folder: "/ros2_ws/src/grasp_groups/conic"
+override_anygrasp: True
+override_anygrasp_folder: "/ros2_ws/src/grasp_groups/round_bottom"

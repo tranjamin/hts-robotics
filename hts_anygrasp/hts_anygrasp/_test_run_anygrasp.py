@@ -12,7 +12,7 @@ from graspnetAPI.grasp import Grasp
 from graspnetAPI import GraspGroup
 from gsnet import AnyGrasp
 
-
+from symmetry import *
 from utils import display_pointcloud
 
 checkpoint_path = "/ros2_ws/src/hts_anygrasp/hts_anygrasp/log/checkpoint_detection.tar"
@@ -64,6 +64,11 @@ gg, cloud = anygrasp.get_grasp(
     collision_detection=True
 )
 
+# replace cloud with rainbow point clouds
+rainbow_cloud = o3d.geometry.PointCloud()
+rainbow_cloud.points = o3d.utility.Vector3dVector(cropped_points)
+cloud = rainbow_cloud
+
 def visualise(grasp, origin=[0,0,0], post_translation=[0, 0, 0.1], color=(0,0,0)):
     # gg = GraspGroup()
     # gg.add(grasp)
@@ -82,32 +87,23 @@ def visualise(grasp, origin=[0,0,0], post_translation=[0, 0, 0.1], color=(0,0,0)
 
 def map_grasp(grasp, flip_z=False, delta_back=0.0, delta_up=0.0):
     grasp_rotation = Rotation.from_matrix(grasp.rotation_matrix)
-
     offset_rotation = Rotation.from_euler('y', 90, degrees=True)
     flip_rotation = Rotation.from_euler('z', 180, degrees=True)
-
     final_rotation = grasp_rotation * offset_rotation
-
     # detect if camera is pointing downwards
     x_axis = final_rotation.as_matrix()[:, 0] # x_axis[2] > 0 ==> camera is facing upwards
     if (x_axis[2] < 0) ^ flip_z: # we are up and want to be down, or vice versa
         final_rotation =  final_rotation * flip_rotation
-
     # local axes:
         # z points in the direction of grasp attack
         # y is perpendicular to z in the horizontal plane (action of gripper)
         # x points vertical
-
     offset_translation = np.array([0, 0, -delta_back])
     grasp.translation[2] += delta_up
     final_translation = grasp.translation + final_rotation.as_matrix() @ offset_translation
     final_quaternion = final_rotation.as_quat()
-
     return final_translation, final_quaternion
 
-# replace cloud with rainbow point clouds
-rainbow_cloud = o3d.geometry.PointCloud()
-rainbow_cloud.points = o3d.utility.Vector3dVector(cropped_points)
 
 # for g in gg:
 #     visualise(g)

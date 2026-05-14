@@ -1,24 +1,24 @@
 objects:
   # - conic_flask
-  - volumetric_flask
-  # - round_bottomed_flask
+  # - volumetric_flask
+  - round_bottomed_flask
   # - measuring_cylinder_sml
   # - measuring_cylinder_lrg
   # - beaker_sml
   # - beaker_med
   # - beaker_lrg
-  # - table
-  - beaker_lrg_obstacle_0
-  - beaker_lrg_obstacle_1
-  - beaker_lrg_obstacle_3
-  - beaker_lrg_obstacle_4
-  - beaker_lrg_obstacle_6
-  - beaker_lrg_obstacle_7
-  - beaker_lrg_obstacle_8
-  - beaker_lrg_obstacle_9
-  - tall_obstacle_5
-  - tall_obstacle_6
-  - tall_obstacle_7
+  - table
+  # - beaker_lrg_obstacle_0
+  # - beaker_lrg_obstacle_1
+  # - beaker_lrg_obstacle_3
+  # - beaker_lrg_obstacle_4
+  # - beaker_lrg_obstacle_6
+  # - beaker_lrg_obstacle_7
+  # - beaker_lrg_obstacle_8
+  # - beaker_lrg_obstacle_9
+  # - tall_obstacle_5
+  # - tall_obstacle_6
+  # - tall_obstacle_7
 
 table:
   object_id: 99
