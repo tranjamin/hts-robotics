@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-OBJECT_TYPE = "BEAKER_LRG"
-ENVIRONMENT = "TABLE"
+OBJECT_TYPE = "VOLUMETRIC_FLASK"
+ENVIRONMENT = "SIMPLE"
 RUNS_BASE_FOLDER = f"out"
 
 SAVE_FOLDER = f"out/MERGED {ENVIRONMENT} ENVIRONMENT/{OBJECT_TYPE}/"
