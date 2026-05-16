@@ -10,6 +10,8 @@ cmake-build-*/
 build/
 install/
 log/
+out/
+ompl/
 
 hts_anygrasp/hts_anygrasp/*.so
 hts_anygrasp/hts_anygrasp/license/
