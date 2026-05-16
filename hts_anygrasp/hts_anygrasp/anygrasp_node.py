@@ -381,11 +381,12 @@ class AnyGraspNode(Node):
         geometric_centroid = cloud.get_center()
 
         # gets the original grasp scores
-        original_scores: npt.NDArray[np.float64] = gg.scores
+        original_scores: npt.NDArray[np.float64] = np.array(list(gg.scores))
         self.save_grasps_in_polar(gg, save_folder, "Original Grasp Scores", c=gg.scores)
 
         # calculate a simplified inertia and mass
         SLICE_LAYER_HEIGHT = 0.02
+        ASSUMED_THICKNESS = 0.002
         total_mass: float = 0
         total_ixx: float = 0
         layer_base_height: float = self.Z_COORDS_MIN
@@ -413,7 +414,7 @@ class AnyGraspNode(Node):
             average_rsquared: float= float(np.mean(rsquared))
 
             # approximate mass
-            layer_mass: float = average_rsquared*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
+            layer_mass: float = average_rsquared*np.pi*SLICE_LAYER_HEIGHT - (average_rsquared - ASSUMED_THICKNESS)*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
             layer_masses.append(layer_mass)
             layer_rsquareds.append(average_rsquared)
             total_mass += layer_mass
@@ -437,7 +438,7 @@ class AnyGraspNode(Node):
         for i, layer_mass in enumerate(layer_masses):
             if layer_mass == 0:
                 continue
-            layer_ixx: float = 1/4*layer_mass*layer_rsquareds[i] + 1/3*layer_mass*(SLICE_LAYER_HEIGHT**2)
+            layer_ixx: float = 1/4*layer_mass*(layer_rsquareds[i] + (math.sqrt(layer_rsquareds[i]) - ASSUMED_THICKNESS)**2) + 1/3*layer_mass*(SLICE_LAYER_HEIGHT**2)
             shifted_ixx: float = layer_ixx + layer_mass*((best_centroid_estimate - (self.Z_COORDS_MIN + i*SLICE_LAYER_HEIGHT))**2)
             total_ixx += shifted_ixx
 
@@ -460,24 +461,43 @@ class AnyGraspNode(Node):
         # calculate the estimated (sqrt) lambda
         lambdas: npt.NDArray[np.float64] = -np.sign(distance_above_centroid)*np.sqrt(total_mass*9.81*np.abs(distance_above_centroid)/(total_ixx + total_mass*distance_above_centroid**2))
 
-        # normalise lambdas
-        if np.max(lambdas):
-            lambdas = lambdas/np.abs(np.max(lambdas))
+        # normalise lambdas to [-0.5, 0.5]
+        self.get_logger().info(f"Total mass is {total_mass} total ixx is {total_ixx}")
+        self.get_logger().info(f"Best lamba is {np.max(np.abs(lambdas))} all are {lambdas}")
+
+        # negative lambdas are stable, with bigger values
+        # positive lambdas are unstable, with bigger values
+        most_positive = np.max(lambdas)
+        most_negative = np.min(lambdas)
+
+        lambdas_list = list(lambdas)
+
+        for i, l in enumerate(lambdas_list):
+            if most_negative < 0 and l < 0:
+                lambdas_list[i] = l/np.abs(most_negative)/2 # noramlise to between -0.5 and 0
+            elif most_positive > 0 and l > 0:
+                lambdas_list[i] = l/np.abs(most_positive)/2 # normalise to between 0 and 0.5
+
+        lambdas = np.array(lambdas_list)
+        lambdas = 1 - (lambdas + 0.5) # scale to [0, 1], larger values are more stable
+        self.get_logger().info(f"All new lambdas are {lambdas}")
 
         self.save_grasps_in_polar(gg, save_folder, "Lambda Values", c=lambdas)
 
         # lambdas = lambdas.clip(min=0.0)
 
         # multiply grasp scores by this
-        gg.scores = gg.scores*(1 - lambdas)
+        gg.scores = gg.scores*(lambdas)
         self.save_grasps_in_polar(gg, save_folder, "Grasp Score Lambda Corrected", c=gg.scores)
 
+        dist_from_centre = []
         grasp_factors = []
 
         # now we determine the grasps whose region does not pass through the centre of the object in 2D
         for grasp in gg:
             # we figure out the direction of closing in 2D
-            closing_direction = grasp.rotation_matrix[:2, 0]
+            closing_direction = grasp.rotation_matrix[:2, 1]
+            closing_direction /= np.linalg.norm(closing_direction)
             grasp_centre = grasp.translation[:2]
 
             # get key points:
@@ -489,19 +509,46 @@ class AnyGraspNode(Node):
             dist = grasp_centre - geometric_centroid[:2]
             min_dist = dist - np.dot(dist, closing_direction) * closing_direction
             
+
             # we need to decide whether our grippers are on the opposite side or not
             # min_dist = (1 if sign(min_dist) == sign(min_finger_dist) else -1)*min_finger_dist
 
             # clip everything
             grasp_factor = np.linalg.norm(min_dist)
+            dist_from_centre.append(grasp_factor)
             grasp_factors.append(grasp_factor)
+            # self.get_logger().info(f"Index {len(grasp_factors) - 1} Closing direction is {closing_direction}, grasp centre is {grasp.translation[:2]} centroid is {geometric_centroid[:2]} min dist is {np.linalg.norm(min_dist)}")
+            # self.get_logger().info(f"Dist from centre is {grasp_factor}")
         
         grasp_factors = np.array(grasp_factors)
+        self.get_logger().info(f"Max distance {np.max(grasp_factors)}")
         grasp_factors /= np.max(grasp_factors)
+        grasp_factors = 1 - grasp_factors
 
         self.save_grasps_in_polar(gg, save_folder, "Custom Stability Scores", c=grasp_factors)
         gg.scores = grasp_factors * (1 - gg.scores)
         self.save_grasps_in_polar(gg, save_folder, "Final Calculated Grasp Score", c=gg.scores)
+
+        grippers = []
+        for grasp in gg:
+            gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp.score)[:-1])
+            grippers.append(gripper)
+        centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
+        o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"All Grasp Score ")
+
+        grippers = []
+        for i, grasp in enumerate(gg):
+            gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp_factors[i])[:-1])
+            grippers.append(gripper)
+        centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
+        o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Sideways Grasp Score")
+
+        grippers = []
+        for i, grasp in enumerate(gg):
+            gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(lambdas[i])[:-1])
+            grippers.append(gripper)
+        centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
+        o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Lambda Grasp Score")
 
     def generate_candidates_(self, x: float, y: float, z: float, radius: float, save_folder: str) -> tuple[GraspNetGroup | None, o3d.cuda.pybind.geometry.PointCloud | None]:
         """

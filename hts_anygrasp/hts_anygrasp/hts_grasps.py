@@ -183,7 +183,7 @@ class HTSGrasp():
         """
         pose = self.get_pose()
         with open(f"{folder}/grasps.txt", "a") as f:
-            f.write(f"{self.id} | {pose.position.x} {pose.position.y} {pose.position.z} {pose.orientation.x} {pose.orientation.y} {pose.orientation.z} {pose.orientation.w}\r\n")
+            f.write(f"{self.id} | {self.grasp_score} | {pose.position.x} {pose.position.y} {pose.position.z} {pose.orientation.x} {pose.orientation.y} {pose.orientation.z} {pose.orientation.w}\r\n")
 
 class HTSGraspGroup():
     """"A wrapping class for grasp groups"""
