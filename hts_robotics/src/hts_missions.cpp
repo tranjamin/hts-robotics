@@ -79,20 +79,23 @@ class hts_missions : public rclcpp::Node {
       const std::shared_ptr<rclcpp_action::ServerGoalHandle<CustomActionGraspObject>> goal_handle
     ) {        
       std::thread([this, goal_handle] () {
-        auto result = std::make_shared<CustomActionGraspObject::Result>();
-        auto feedback = std::make_shared<CustomActionGraspObject::Feedback>();
-
-        auto position_request = std::make_shared<CustomServiceObjectPosition::Request>();
-        int object_id = goal_handle->get_goal()->object_id;
-        position_request->object_id = object_id;
+        // result and feedback objects
+        std::shared_ptr<CustomActionGraspObject::Result> result = std::make_shared<CustomActionGraspObject::Result>();
+        std::shared_ptr<CustomActionGraspObject::Feedback> feedback = std::make_shared<CustomActionGraspObject::Feedback>();
 
         feedback->progress = "Requesting Object Position...";
         goal_handle->publish_feedback(feedback);
-        std::shared_future<CustomServiceObjectPosition::Response::SharedPtr> position_future = object_position_client_->async_send_request(position_request);
+
+        // get the object position
+        std::shared_ptr<CustomServiceObjectPosition::Request> position_request = std::make_shared<CustomServiceObjectPosition::Request>();
+        int object_id = goal_handle->get_goal()->object_id;
+        position_request->object_id = object_id;
+        std::shared_future<CustomServiceObjectPosition::Response::SharedPtr> position_future = object_position_client_->async_send_request(position_request).future.share();
         CustomServiceObjectPosition::Response::SharedPtr position_response = position_future.get();
         feedback->progress = "Received Object Position.";
         goal_handle->publish_feedback(feedback);
 
+        // failed to get object position
         if (!position_response->success) {
           RCLCPP_ERROR(this->get_logger(), "Failed to identify object pose");
           result->success = false;
@@ -101,8 +104,8 @@ class hts_missions : public rclcpp::Node {
           return;
         }
 
-        // get the grasp for the target object
-        auto grasp_request = CustomActionRequestGrasp::Goal();
+        // set the grasp request
+        CustomActionRequestGrasp::Goal grasp_request = CustomActionRequestGrasp::Goal();
         grasp_request.id = object_id;
         grasp_request.x = position_response.get()->x;
         grasp_request.y = position_response.get()->y;
@@ -111,15 +114,18 @@ class hts_missions : public rclcpp::Node {
         grasp_request.goal_y = goal_handle->get_goal()->y;
         grasp_request.goal_z = goal_handle->get_goal()->z;
 
-        geometry_msgs::msg::Pose grasp_pose;
+        // pointer for the grasp pose identified
+        std::shared_ptr<geometry_msgs::msg::Pose> grasp_pose = std::make_shared<geometry_msgs::msg::Pose>();
 
-        auto pickup_goal = std::make_shared<CustomActionPickup::Goal>();
+        // pointer for the pickup goal
+        std::shared_ptr<CustomActionPickup::Goal> pickup_goal = std::make_shared<CustomActionPickup::Goal>();
 
+        // result and feedback callback for opening gripper at the end of the mission
         auto open_send_goal_options = rclcpp_action::Client<CustomActionOpen>::SendGoalOptions();
         open_send_goal_options.result_callback =
           [this, goal_handle, result, feedback](const rclcpp_action::ClientGoalHandle<CustomActionOpen>::WrappedResult &r) {
             if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
-              RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int)r.code);
+              RCLCPP_ERROR(this->get_logger(), "Gripper failed to open with code: %d", (int) r.code);
               result->success = false;
               result->message = "Gripper failed to open";
               goal_handle->abort(result);
@@ -130,9 +136,17 @@ class hts_missions : public rclcpp::Node {
               result->message = "Finished execution";
               goal_handle->succeed(result);
             }
-          };    
+          };
+        open_send_goal_options.feedback_callback = [goal_handle, feedback](
+          const rclcpp_action::ClientGoalHandle<CustomActionOpen>::SharedPtr /* goal handle */,
+          const std::shared_ptr<const CustomActionOpen::Feedback> f) {
+            char buf[150];
+            std::snprintf(buf, sizeof(buf), "Open Gripper Progress: %s", f->progress.c_str());
+            feedback->progress = std::string(buf);
+            goal_handle->publish_feedback(feedback);
+        };
 
-
+        // result and feedback callback for move trajectory
         auto move_send_goal_options = rclcpp_action::Client<CustomActionMove>::SendGoalOptions();
         move_send_goal_options.result_callback =
           [this, open_send_goal_options, goal_handle, result, feedback, object_id](const rclcpp_action::ClientGoalHandle<CustomActionMove>::WrappedResult &r) {
@@ -150,10 +164,19 @@ class hts_missions : public rclcpp::Node {
               open_client_->async_send_goal(open_goal, open_send_goal_options);
             }
           };
+        move_send_goal_options.feedback_callback = [goal_handle, feedback](
+          const rclcpp_action::ClientGoalHandle<CustomActionMove>::SharedPtr /* goal handle */,
+          const std::shared_ptr<const CustomActionMove::Feedback> f) {
+            char buf[150];
+            std::snprintf(buf, sizeof(buf), "Move Progress: %s", f->progress.c_str());
+            feedback->progress = std::string(buf);
+            goal_handle->publish_feedback(feedback);
+        };
 
+        // result and feedback callback for closing the gripper around the object
         auto close_send_goal_options = rclcpp_action::Client<CustomActionClose>::SendGoalOptions();
         close_send_goal_options.result_callback =
-          [this, move_send_goal_options, goal_handle, result, feedback, &grasp_pose](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
+          [this, move_send_goal_options, goal_handle, result, feedback, grasp_pose](const rclcpp_action::ClientGoalHandle<CustomActionClose>::WrappedResult &r) {
             if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
               RCLCPP_ERROR(this->get_logger(), "Gripper failed to close with code: %d", (int)r.code);
               result->success = false;
@@ -166,12 +189,21 @@ class hts_missions : public rclcpp::Node {
               auto move_goal = CustomActionMove::Goal();
               move_goal.x = goal_handle->get_goal()->x;
               move_goal.y = goal_handle->get_goal()->y;
-              move_goal.z = goal_handle->get_goal()->z + grasp_pose.position.z;
-              RCLCPP_INFO(this->get_logger(), "Gripper %f %f %f", move_goal.z, goal_handle->get_goal()->z, grasp_pose.position.z);
+              move_goal.z = goal_handle->get_goal()->z + grasp_pose->position.z;
+              RCLCPP_INFO(this->get_logger(), "Gripper %f %f %f", move_goal.z, goal_handle->get_goal()->z, grasp_pose->position.z);
 
               move_client_->async_send_goal(move_goal, move_send_goal_options);
             }
           };
+        close_send_goal_options.feedback_callback = [goal_handle, feedback](
+          const rclcpp_action::ClientGoalHandle<CustomActionClose>::SharedPtr /* goal handle */,
+          const std::shared_ptr<const CustomActionClose::Feedback> f) {
+            char buf[150];
+            std::snprintf(buf, sizeof(buf), "Close Gripper Progress: %s", f->progress.c_str());
+            feedback->progress = std::string(buf);
+            goal_handle->publish_feedback(feedback);
+        };
+
 
         auto pickup_send_goal_options = rclcpp_action::Client<CustomActionPickup>::SendGoalOptions();
         pickup_send_goal_options.result_callback =
@@ -190,10 +222,19 @@ class hts_missions : public rclcpp::Node {
               close_client_->async_send_goal(close_goal, close_send_goal_options);
             }
           };
+        pickup_send_goal_options.feedback_callback = [goal_handle, feedback](
+          const rclcpp_action::ClientGoalHandle<CustomActionPickup>::SharedPtr /* goal handle */,
+          const std::shared_ptr<const CustomActionPickup::Feedback> f) {
+            char buf[150];
+            std::snprintf(buf, sizeof(buf), "Pickup Progress: %s", f->progress.c_str());
+            feedback->progress = std::string(buf);
+            goal_handle->publish_feedback(feedback);
+        };
+
 
         auto grasp_object_send_goal_options = rclcpp_action::Client<hts_msgs::action::RequestGrasp>::SendGoalOptions();
         grasp_object_send_goal_options.result_callback =
-          [this, pickup_send_goal_options, goal_handle, result, feedback, pickup_goal, &grasp_pose](const rclcpp_action::ClientGoalHandle<hts_msgs::action::RequestGrasp>::WrappedResult &r) {
+          [this, pickup_send_goal_options, goal_handle, result, feedback, pickup_goal, grasp_pose](const rclcpp_action::ClientGoalHandle<hts_msgs::action::RequestGrasp>::WrappedResult &r) {
             if (r.code != rclcpp_action::ResultCode::SUCCEEDED) {
               RCLCPP_ERROR(this->get_logger(), "Anygrasp failed to identify pose");
               result->success = false;
@@ -201,20 +242,25 @@ class hts_missions : public rclcpp::Node {
               goal_handle->abort(result);
               return;
             } else {
-              grasp_pose = r.result->grasp_pose;
+              *grasp_pose = r.result->grasp_pose;
 
               char buf[150];
               std::snprintf(buf, sizeof(buf),
                 "AnyGrasp Found a Grasp of (%.3f, %.3f, %.3f) (%.3f, %.3f, %.3f, %.3f)", 
-                grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z,
-                grasp_pose.orientation.x, grasp_pose.orientation.y, grasp_pose.orientation.z, grasp_pose.orientation.w
+                grasp_pose->position.x, grasp_pose->position.y, grasp_pose->position.z,
+                grasp_pose->orientation.x, grasp_pose->orientation.y, grasp_pose->orientation.z, grasp_pose->orientation.w
               );
 
               feedback->progress = std::string(buf);
               goal_handle->publish_feedback(feedback);
 
-              pickup_goal->pose = grasp_pose;             
-              pickup_client_->async_send_goal(*pickup_goal, pickup_send_goal_options);
+              pickup_goal->pose = *grasp_pose;
+              
+              // temporarily do it
+              // pickup_client_->async_send_goal(*pickup_goal, pickup_send_goal_options);
+              result->success = false;
+              result->message = "Terminated early on purpose";
+              goal_handle->abort(result);
             }
           };
         grasp_object_send_goal_options.feedback_callback =
@@ -242,6 +288,14 @@ class hts_missions : public rclcpp::Node {
               grasp_request_client_->async_send_goal(grasp_request, grasp_object_send_goal_options);
             }
           };
+        first_open_send_goal_options.feedback_callback = [goal_handle, feedback](
+          const rclcpp_action::ClientGoalHandle<CustomActionOpen>::SharedPtr /* goal handle */,
+          const std::shared_ptr<const CustomActionOpen::Feedback> f) {
+            char buf[150];
+            std::snprintf(buf, sizeof(buf), "Open Gripper Progress: %s", f->progress.c_str());
+            feedback->progress = std::string(buf);
+            goal_handle->publish_feedback(feedback);
+        };
 
         // sends action
         feedback->progress = "Opening gripper...";

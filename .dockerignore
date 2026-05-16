@@ -1,6 +1,12 @@
 build/
 install/
 log/
+out/
+.git/
+ompl/
+
+moveit2/
+moveit_*/
 
 anygrasp/dependencies/MinkowskiEngine
 anygrasp/grasp_detection
