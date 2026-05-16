@@ -19,7 +19,7 @@ nms_translation_thresh: 0.01
 nms_angle_thresh_deg: 5.0
 
 grasp_z_offset: 0.0
-grasp_axis_offset: -0.02
+grasp_axis_offset: 0.0
 
 max_gripper_width: 0.1
 gripper_height: 0.03
@@ -50,13 +50,13 @@ symmetry_enable: True
 stability_score_correction_enable: True
 
 # for baseline stuff
-# baseline_planning_time: 0.2
+# baseline_planning_time: 0.1
 # total_planning_time_sec: 600
 # enable_grasp_selection: False
 # visualise: False
 # plot_selection_graphs: False
-# symmetry_enable: True
-# stability_score_correction_enable: True
+# symmetry_enable: False
+# stability_score_correction_enable: False
 
 acquisition_eps: 0.1
 acquisition_enable_decay: False

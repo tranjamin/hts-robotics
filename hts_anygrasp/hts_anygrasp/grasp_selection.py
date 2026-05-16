@@ -329,14 +329,15 @@ class GPSelector(GenericSelector, ABC):
         return sampled_idx, self.points[sampled_idx]
 
     def choose_best(self) -> tuple[GenericPoint | None, float]:
-        best_cost: float = 0.0
+        best_cost: float = 0
         best_point: GenericPoint | None = None
 
         self.points: Sequence[GenericPoint] # type: ignore
         for p in self.points:
             if not p.evaluated:
                 continue
-            cost: float = p.cost(self.max_path_score)
+            cost: float = p.cost(self.max_path_score + 1e-10)            
+            self.logger.info(f"Cost of grasp is [{cost + 1e-10}] grasp score [{p.grasp.grasp_score}] path score [{p.path_score}] norm path score [{p.norm_path_score(self.max_path_score)}]")
             if cost > best_cost:
                 best_cost = cost
                 best_point = p
@@ -808,7 +809,6 @@ class GPGraspSelector(GPSelector):
             # get the best grasp
             best_point: GenericPoint | None
             best_point, _ = self.choose_best()
-
             if best_point is None: # this should not happen
                 self.logger.info("No valid grasps found")
                 response.success = False
@@ -985,14 +985,15 @@ class SequentialGraspSelector(GenericSelector):
         return sampled_idx, self.points[sampled_idx]
 
     def choose_best(self) -> tuple[GraspPointBaseline | None, float]:
-        best_cost: float = 0.0
+        best_cost: float = 0
         best_point: GraspPointBaseline | None = None
 
         self.points: Sequence[GraspPointBaseline] # type: ignore
         for p in self.points:
             if not p.evaluated:
                 continue
-            cost: float = p.cost(self.max_path_score)
+            cost: float = p.cost(self.max_path_score + 1e-10)            
+            self.logger.info(f"Cost of grasp is [{cost}] grasp score [{p.grasp.grasp_score}] path score [{p.path_score}] norm path score [{p.norm_path_score(self.max_path_score)}]")
             if cost > best_cost:
                 best_cost = cost
                 best_point = p
@@ -1080,6 +1081,8 @@ class SequentialGraspSelector(GenericSelector):
         point.grasp.process_result(result)
         point.grasp.end_timer()
 
+        self.update_max_path_score(point.path_score)
+
         if self.context.save_data:
             hts_grasp.save_grasp_message(self.context.folder, self.context.is_flipped)
             hts_grasp.save_grasp_evaluations(self.context.folder, self.num_iterations == 1, self.context.is_flipped)
@@ -1112,7 +1115,6 @@ class SequentialGraspSelector(GenericSelector):
         if self.context.save_data:
             hts_grasp_group.save_metrics(folder, self.context.is_flipped)
         self.plot_grasps()
-        
         # visualise data
         if self.context.visualise:
             hts_grasp_group.visualise(cloud, origin_position=[request.x, request.y, request.z], description="Grasp Scores")
@@ -1148,7 +1150,7 @@ class SequentialGraspSelector(GenericSelector):
                 response.success = True
                 self.context.response = response
         else: # no valid grasps found
-            self.logger.info("No valid grasps found")
+            self.logger.info("No valid grasps found bad")
             response.success = False
             self.context.response = response
 
@@ -1267,9 +1269,9 @@ class DualGraspSelector(ABC):
             final_response.success = response1_success or response2_success
             if (response1_success and response2_success):
                 if self.first_bestcost > self.second_bestcost:
-                    final_response.grasp_pose = self.selector1.context.response.grasp_pose
+                    final_response.grasp_pose = self.first_bestgrasp.grasp.get_pose()
                 else:
-                    final_response.grasp_pose = self.selector2.context.response.grasp_pose
+                    final_response.grasp_pose = self.second_bestgrasp.grasp.get_pose()
             elif (response1_success):
                 final_response.grasp_pose = self.selector1.context.response.grasp_pose
             elif (response2_success):
@@ -1283,9 +1285,9 @@ class DualGPGraspSelector(DualGraspSelector):
     def __init__(self, selector1: GPGraspSelector, selector2: GPGraspSelector, final_context: ValidityContext, **kwargs):
         super().__init__(selector1, selector2, final_context, **kwargs)
 
-        self.first_bestgrasp: HTSGrasp | None = None
+        self.first_bestgrasp: GraspPoint | None = None
         self.first_bestcost: float = 0
-        self.second_bestgrasp: HTSGrasp | None = None
+        self.second_bestgrasp: GraspPoint | None = None
         self.second_bestcost: float = 0
 
         self.selector1: GPGraspSelector # type: ignore
