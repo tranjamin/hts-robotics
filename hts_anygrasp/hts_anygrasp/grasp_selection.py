@@ -29,6 +29,8 @@ except ImportError as e:
 # for speed purposes
 matplotlib.use("agg")
 
+NUM_STDDEVS = 0.0
+
 class CompositeKernel(RBF):
     """A class which combines a distance and angle kernel together to create a 2D polar coordinate kernel"""
 
@@ -263,8 +265,8 @@ class GPSelector(GenericSelector, ABC):
         self.angle_kernel = ExpSineSquared(length_scale=length_scale_th, periodicity=2*np.pi)
         self.kernel = CompositeKernel(self.dist_kernel, self.angle_kernel)
 
-        self.dist_kernel_time = Matern(length_scale=length_scale_z/2, nu=0.5)
-        self.angle_kernel_time = ExpSineSquared(length_scale=length_scale_th/2, periodicity=2*np.pi)
+        self.dist_kernel_time = Matern(length_scale=length_scale_z, nu=0.5)
+        self.angle_kernel_time = ExpSineSquared(length_scale=length_scale_th, periodicity=2*np.pi)
         self.kernel_time = CompositeKernel(self.dist_kernel_time, self.angle_kernel_time)
 
         self.total_planning_time: float = total_planning_time
@@ -344,6 +346,49 @@ class GPSelector(GenericSelector, ABC):
 
         return best_point, best_cost
 
+    def update_planning_time_map(self) -> None:
+        # construct training dataset from already sampled points
+        evaluated_points: list[GenericPoint] = list(filter(lambda p: p.evaluated, self.points))
+        n: int = len(evaluated_points)
+        evaluated_z: npt.NDArray[np.float64] = np.array([p.z() for p in evaluated_points]).reshape((n, 1))
+        evaluated_th: npt.NDArray[np.float64] = np.array([p.theta() for p in evaluated_points]).reshape((n, 1))
+        evaluated_coords: npt.NDArray[np.float64] = np.hstack((evaluated_z, evaluated_th))
+
+        f = open(f"{self.context.folder}/plts/debug.txt", "a")
+        f.write(f"Map is updating now...\n")
+
+        y_times: npt.NDArray[np.float64] = np.array([p.allocated_planning_time_pickup for p in evaluated_points]).reshape((n, 1))
+        y_times_move = [p.allocated_planning_time_move for p in evaluated_points if p.valid or not p.invalidity_is_pickup]
+
+        f.write(f"There are {len(list(y_times))} control points for the pickup GP\n")
+        f.write(f"There are {len(y_times_move)} control points for the move GP\n")
+
+        KXX_time: npt.NDArray[np.float64] = self.kernel_time(evaluated_coords)
+        KxX_time: npt.NDArray[np.float64] = self.kernel_time(self.all_coords, evaluated_coords)
+
+        if len(y_times_move):
+            y_times_move: npt.NDArray[np.float64] = np.array(y_times_move).reshape((-1, 1))
+            move_evaluated_z: npt.NDArray[np.float64] = np.array([p.z() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
+            move_evaluated_th: npt.NDArray[np.float64] = np.array([p.theta() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
+            move_evaluated_coords: npt.NDArray[np.float64] = np.hstack((move_evaluated_z, move_evaluated_th))
+
+            KXX_time_move: npt.NDArray[np.float64] = self.kernel_time(move_evaluated_coords)
+            KxX_time_move: npt.NDArray[np.float64] = self.kernel_time(self.all_coords, move_evaluated_coords)
+            I_move = np.linalg.inv(KXX_time_move + 1e-10*np.eye(KXX_time_move.shape[0]))
+            self.est_planning_times_move = KxX_time_move @ I_move @ (y_times_move - math.exp(self.tuner_move.planning_time_mean)) + math.exp(self.tuner_move.planning_time_mean)
+            f.write(f"KXX_time_move {KXX_time_move}")
+            f.write(f"KxX_time_move: {KxX_time_move}")
+            f.write(f"I_move: {I_move}")
+            f.write(f"est planning times: {self.est_planning_times_move}")
+        else:
+            self.est_planning_times_move = np.ones_like(self.est_planning_times_move)*math.exp(self.tuner_move.planning_time_mean)
+
+        I = np.linalg.inv(KXX_time + 1e-10*np.eye(n))
+        self.est_planning_times = KxX_time @ I @ (y_times - math.exp(self.tuner.planning_time_mean)) + math.exp(self.tuner.planning_time_mean)
+
+        f.write(f"The average time is pickup [{math.exp(self.tuner.planning_time_mean)}] move [{math.exp(self.tuner_move.planning_time_mean)}]\n")
+        f.close()
+
     def update_map(self) -> None:
         """
         Updates the gaussian process parameters.
@@ -361,8 +406,6 @@ class GPSelector(GenericSelector, ABC):
         KxX: npt.NDArray[np.float64] = self.kernel(self.all_coords, evaluated_coords)
         Kxx: npt.NDArray[np.float64] = self.kernel(self.all_coords)
 
-        KXX_time: npt.NDArray[np.float64] = self.kernel_time(evaluated_coords)
-        KxX_time: npt.NDArray[np.float64] = self.kernel_time(self.all_coords, evaluated_coords)
 
         # compute noise and y
         Sigma: npt.NDArray[np.float64] = np.eye(len(evaluated_points))
@@ -379,26 +422,13 @@ class GPSelector(GenericSelector, ABC):
 
         # compute target y
         y: npt.NDArray[np.float64] = np.array([p.norm_path_score(self.max_path_score) for p in evaluated_points]).reshape((n, 1))
-        y_times: npt.NDArray[np.float64] = np.array([p.allocated_planning_time_pickup for p in evaluated_points]).reshape((n, 1))
-        y_times_move = [p.allocated_planning_time_move for p in evaluated_points if p.valid or not p.invalidity_is_pickup]
-
-        if len(y_times_move):
-            y_times_move: npt.NDArray[np.float64] = np.array(y_times_move).reshape((-1, 1))
-            move_evaluated_z: npt.NDArray[np.float64] = np.array([p.z() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
-            move_evaluated_th: npt.NDArray[np.float64] = np.array([p.theta() for p in evaluated_points if p.valid or not p.invalidity_is_pickup]).reshape((-1, 1))
-            move_evaluated_coords: npt.NDArray[np.float64] = np.hstack((move_evaluated_z, move_evaluated_th))
-
-            KXX_time_move: npt.NDArray[np.float64] = self.kernel_time(move_evaluated_coords)
-            KxX_time_move: npt.NDArray[np.float64] = self.kernel_time(self.all_coords, move_evaluated_coords)
-            I_move = np.linalg.inv(KXX_time_move + 1e-10*np.eye(KXX_time_move.shape[0]))
-            self.est_planning_times_move = KxX_time_move @ I_move @ y_times_move
         
         # perform inversions TODO make this cholesky
         self.inv: npt.NDArray[np.float64] = np.linalg.inv(KXX + 1e-10*np.eye(n) + Sigma)
         self.est_path_scores = KxX @ self.inv @ y
         self.cov = Kxx - KxX @ self.inv @ KxX.T
-        I = np.linalg.inv(KXX_time + 1e-10*np.eye(n))
-        self.est_planning_times = KxX_time @ I @ y_times
+
+        self.update_planning_time_map()
 
         np.clip(self.cov, 0.0, None, self.cov)
 
@@ -440,12 +470,12 @@ class GPSelector(GenericSelector, ABC):
             KxX_time_move: npt.NDArray[np.float64] = self.kernel_time(coords, move_evaluated_coords)
 
             I_move = np.linalg.inv(KXX_time_move + 1e-10*np.eye(KXX_time_move.shape[0]))
-            t_move: npt.NDArray[np.float64] = KxX_time_move @ I_move @ y_times_move
+            t_move: npt.NDArray[np.float64] = KxX_time_move @ I_move @ (y_times_move - math.exp(self.tuner_move.planning_time_mean)) + math.exp(self.tuner_move.planning_time_mean)
 
         u: npt.NDArray[np.float64] = KxX @ self.inv @ y
         c: npt.NDArray[np.float64] = Kxx - KxX @ self.inv @ KxX.T
         I = np.linalg.inv(KXX_time + 1e-10*np.eye(n))
-        t: npt.NDArray[np.float64] = KxX_time @ I @ y_times
+        t: npt.NDArray[np.float64] = KxX_time @ I @ (y_times - math.exp(self.tuner.planning_time_mean)) + math.exp(self.tuner.planning_time_mean)
         return u,c,t,t_move
 
     def plot_grasps(self, **kwargs):
@@ -655,26 +685,44 @@ class GPGraspSelector(GPSelector):
         except AssertionError:
             raise AssertionError("Sampled Point is not of type GraspPoint")
 
+        # refresh the planning times
+        self.update_planning_time_map()
+
         # if we haven't evaluated the point, we can downgrade the planning time below the base planning time
         # give us whatever value gives us a 95% CI exp(mean + 1.96*std)
+        f = open(f"{self.context.folder}/plts/debug.txt", "a")
+        f.write(f"----- Grasp index {idx} ({point.z(), point.theta()})\n")
+        f.write(f"Original planning time: pickup [{point.allocated_planning_time_pickup}] move [{point.allocated_planning_time_move}]\n")
+        f.write(f"Pickup distribution: points [{self.tuner.planning_data.shape[0]}] mean [{self.tuner.planning_time_mean}] variance [{self.tuner.planning_time_variance}] CI [{math.exp(self.tuner.planning_time_mean + 0*math.sqrt(self.tuner.planning_time_variance))}]\n")
+        f.write(f"Move distribution: points [{self.tuner_move.planning_data.shape[0]}] mean [{self.tuner_move.planning_time_mean}] variance [{self.tuner_move.planning_time_variance}] CI [{math.exp(self.tuner_move.planning_time_mean + 0*math.sqrt(self.tuner_move.planning_time_variance))}]\n")
+        f.write(f"Times for successful pickups: [{self.tuner.planning_data}]\n")
+        f.write(f"Times for successful move: [{self.tuner_move.planning_data}]\n")
+
         if not point.evaluated and self.tuner.planning_data.shape[0] > 0:
-            point.allocated_planning_time = math.exp(self.tuner.planning_time_mean + 0*math.sqrt(self.tuner.planning_time_variance))
-            self.logger.info(f"We have a new point, so we reset it back to the 95% pickup CI of {point.allocated_planning_time}")
+            point.allocated_planning_time_pickup = math.exp(self.tuner.planning_time_mean + NUM_STDDEVS*math.sqrt(self.tuner.planning_time_variance))
+            self.logger.info(f"We have a new point, so we reset it back to the 95% pickup CI of {point.allocated_planning_time_pickup}")
+            f.write(f"Updated pickup planning time due to CI: [{point.allocated_planning_time_pickup}]\n")
         if (not point.evaluated or point.invalidity_is_pickup) and self.tuner_move.planning_data.shape[0] > 0:
-            point.allocated_planning_time_move = math.exp(self.tuner_move.planning_time_mean + 0*math.sqrt(self.tuner_move.planning_time_variance))
+            point.allocated_planning_time_move = math.exp(self.tuner_move.planning_time_mean + NUM_STDDEVS*math.sqrt(self.tuner_move.planning_time_variance))
             self.logger.info(f"We have a new point, so we reset it back to the 95% move CI of {point.allocated_planning_time_move}")
+            f.write(f"Updated move planning time due to CI: [{point.allocated_planning_time_move}]\n")
 
         # fast forward planning time if necessary (if we are more than half way to the next planning time)
         predicted_planning_time_pickup: float = self.est_planning_times.ravel()[idx]
         predicted_planning_time_move: float = self.est_planning_times_move.ravel()[idx]
         self.logger.info(f"The estimated pickup planning time is: {predicted_planning_time_pickup}")
-        
+        f.write(f"Estimations from GP: pickup [{predicted_planning_time_pickup}] move [{predicted_planning_time_move}]\n")
+
         while predicted_planning_time_pickup > point.allocated_planning_time_pickup * (self.tuner.get_planning_multiplier() + 1)/2:
             point.allocated_planning_time_pickup *= self.tuner.get_planning_multiplier()
+            f.write(f"Multiplying pickup: to [{point.allocated_planning_time_pickup}]\n")
 
         self.logger.info(f"The estimated move planning time is: {predicted_planning_time_move}")
         while predicted_planning_time_move > point.allocated_planning_time_move * (self.tuner_move.get_planning_multiplier() + 1)/2:
             point.allocated_planning_time_move *= self.tuner_move.get_planning_multiplier()
+            f.write(f"Multiplying move: to [{point.allocated_planning_time_move}]\n")
+
+        f.write(f"Fast-forwarded due to GP: pickup [{point.allocated_planning_time_pickup}] move [{point.allocated_planning_time_move}]\n")
 
         # get the actual grasp
         grasp: HTSGrasp = point.grasp
@@ -696,6 +744,8 @@ class GPGraspSelector(GPSelector):
         planning_time_pickup = point.allocated_planning_time_pickup
         planning_time_move = point.allocated_planning_time_move
         self.logger.info(f"Use planning time for pickup {planning_time_pickup} and move {planning_time_move}")
+        f.write(f"Planning times used: pickup [{point.allocated_planning_time_pickup}] move [{point.allocated_planning_time_move}]\n")
+        f.close()
 
         send_goal_future: Any = self.context.client.send_goal_async(grasp.evaluation_request_goal(
             self.context.request, planning_time_pickup, planning_time_move
@@ -735,18 +785,32 @@ class GPGraspSelector(GPSelector):
         pickup_time_taken = result.pickup_plan_time
         move_time_taken = result.move_refine_time
 
+        f = open(f"{self.context.folder}/plts/debug.txt", "a")
+        f.write(f">>>> (planned for index {idx}) <<<< \n")
+
         self.logger.info(f"Pickup time is {pickup_time_taken}, Move time is {move_time_taken}")
         self.logger.info(f"Adjusted pickup mean to {self.tuner.planning_time_mean} var {self.tuner.planning_time_variance}, Move time is {self.tuner_move.planning_time_mean} var {self.tuner_move.planning_time_variance}")
         self.logger.info(f"Mean data: {self.tuner.planning_data} Move data: {self.tuner_move.planning_data}")
+
+        f.write(f"Actual planning time: pickup [{pickup_time_taken}] move [{move_time_taken}]\n")
+        f.write(f"Adjusted pickup distribution: points [{self.tuner.planning_data.shape[0]}] mean [{self.tuner.planning_time_mean}] variance [{self.tuner.planning_time_variance}] CI [{math.exp(self.tuner.planning_time_mean + 0*math.sqrt(self.tuner.planning_time_variance))}]\n")
+        f.write(f"Adjusted move distribution: points [{self.tuner_move.planning_data.shape[0]}] mean [{self.tuner_move.planning_time_mean}] variance [{self.tuner_move.planning_time_variance}] CI [{math.exp(self.tuner_move.planning_time_mean + 0*math.sqrt(self.tuner_move.planning_time_variance))}]\n")
+        f.write(f"Times for successful pickups: [{self.tuner.planning_data}]\n")
+        f.write(f"Times for successful move: [{self.tuner_move.planning_data}]\n")
         
         # self.logger.info(f"Pickup time is {pickup_time_taken}, Move time is {move_time_taken}")
         if result.is_valid: # we update both
+            f.write(f"This grasp was valid\n")
             self.logger.info("Result is valid")
             self.certainty = 1.0
         elif move_time_taken == 0: # it is a pickup failure
+            f.write(f"Result is not valid because of a pickup failure\n")
             self.logger.info("Result is not valid because of a pickup failure")
         else: # it is a move failure
+            f.write(f"Result is not valid because of a move failure\n")
             self.logger.info("Result is not valid because of a move failure")
+
+        f.close()
 
         # update the max score found 
         self.update_max_path_score(point.path_score)

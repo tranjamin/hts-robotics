@@ -531,26 +531,27 @@ class AnyGraspNode(Node):
         gg.scores = grasp_factors * (1 - gg.scores)
         self.save_grasps_in_polar(gg, save_folder, "Final Calculated Grasp Score", c=gg.scores)
 
-        grippers = []
-        for grasp in gg:
-            gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp.score)[:-1])
-            grippers.append(gripper)
-        centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
-        o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"All Grasp Score ")
+        if self.VISUALISE:
+            grippers = []
+            for grasp in gg:
+                gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp.score)[:-1])
+                grippers.append(gripper)
+            centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
+            o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"All Grasp Score ")
 
-        grippers = []
-        for i, grasp in enumerate(gg):
-            gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp_factors[i])[:-1])
-            grippers.append(gripper)
-        centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
-        o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Sideways Grasp Score")
+            grippers = []
+            for i, grasp in enumerate(gg):
+                gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp_factors[i])[:-1])
+                grippers.append(gripper)
+            centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
+            o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Sideways Grasp Score")
 
-        grippers = []
-        for i, grasp in enumerate(gg):
-            gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(lambdas[i])[:-1])
-            grippers.append(gripper)
-        centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
-        o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Lambda Grasp Score")
+            grippers = []
+            for i, grasp in enumerate(gg):
+                gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(lambdas[i])[:-1])
+                grippers.append(gripper)
+            centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
+            o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Lambda Grasp Score")
 
     def generate_candidates_(self, x: float, y: float, z: float, radius: float, save_folder: str) -> tuple[GraspNetGroup | None, o3d.cuda.pybind.geometry.PointCloud | None]:
         """

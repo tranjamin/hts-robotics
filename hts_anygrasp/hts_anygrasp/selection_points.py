@@ -108,13 +108,14 @@ class GraspPoint(GenericPoint):
         self.grasp_score: float = grasp.get_grasp_object().score
 
     def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float) -> None:
-        if self.valid:
-            time_model.add_planning_data(time_taken)
-            self.certainty = 1.0
-        else:
-            time_model.register_failed_plan()
-            self.certainty = time_model.validity_failure_model(self.allocated_planning_time)
-            self.allocated_planning_time *= time_model.get_planning_multiplier() # update planning time
+        raise Exception("this should not be happening")
+        # if self.valid:
+        #     time_model.add_planning_data(time_taken)
+        #     self.certainty = 1.0
+        # else:
+        #     time_model.register_failed_plan()
+        #     self.certainty = time_model.validity_failure_model(self.allocated_planning_time)
+        #     self.allocated_planning_time *= time_model.get_planning_multiplier() # update planning time
 
     def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel, time_model_move: PlanningTimeModel) -> None:
         self.evaluated = True
@@ -127,6 +128,8 @@ class GraspPoint(GenericPoint):
             self.certainty = 1.0
             time_model.add_planning_data(pickup_time_taken)
             time_model_move.add_planning_data(move_time_taken)
+            self.allocated_planning_time_move = move_time_taken
+            self.allocated_planning_time_pickup = pickup_time_taken
         elif move_time_taken == 0: # it is a pickup failure
             time_model.register_failed_plan()
             self.certainty = time_model.validity_failure_model(pickup_time_taken)
@@ -138,6 +141,7 @@ class GraspPoint(GenericPoint):
             self.certainty = time_model_move.validity_failure_model(move_time_taken)
             self.allocated_planning_time_move *= time_model_move.get_planning_multiplier() # update planning time
             self.invalidity_is_pickup = False
+            self.allocated_planning_time_pickup = pickup_time_taken
 
         self.path_score = result.score if result.is_valid else math.inf
 
