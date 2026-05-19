@@ -29,7 +29,7 @@ except ImportError as e:
 # for speed purposes
 matplotlib.use("agg")
 
-NUM_STDDEVS = 0.0
+NUM_STDDEVS = 1.0
 
 class CompositeKernel(RBF):
     """A class which combines a distance and angle kernel together to create a 2D polar coordinate kernel"""

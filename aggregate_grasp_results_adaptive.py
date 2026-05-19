@@ -4,20 +4,20 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 
-FOLDER = "out/ADAPTIVE PLANNING TIME/CLUTTERED"
-SMALL_SMALL_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_0.1_1.0_0({i})" for i in range(1, 6)]
-SMALL_MED_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_0.1_1.0_1({i})" for i in range(1, 6)]
-SMALL_LARGE_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_0.1_1.0_2({i})" for i in range(1, 6)]
+FOLDER = "out/ADAPTIVE PLANNING TIME/SIMPLE"
+SMALL_SMALL_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_0.1_1.0_0({i})" for i in range(1, 6)]
+SMALL_MED_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_0.1_1.0_1({i})" for i in range(1, 6)]
+SMALL_LARGE_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_0.1_1.0_2({i})" for i in range(1, 6)]
 
-MED_SMALL_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_1.0_5.0_0({i})" for i in range(1, 6)]
-MED_MED_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_1.0_5.0_1({i})" for i in range(1, 6)]
-MED_LARGE_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_1.0_5.0_2({i})" for i in range(1, 6)]
+MED_SMALL_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_1.0_5.0_0({i})" for i in range(1, 6)]
+MED_MED_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_1.0_5.0_1({i})" for i in range(1, 6)]
+MED_LARGE_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_1.0_5.0_2({i})" for i in range(1, 6)]
 
-LARGE_SMALL_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_3.0_10.0_0({i})" for i in range(1, 6)]
-LARGE_MED_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_3.0_10.0_1({i})" for i in range(1, 6)]
-LARGE_LARGE_FOLDERS = [f"{FOLDER}/CONIC_CLUTTERED_3.0_10.0_2({i})" for i in range(1, 6)]
+LARGE_SMALL_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_3.0_10.0_0({i})" for i in range(1, 6)]
+LARGE_MED_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_3.0_10.0_1({i})" for i in range(1, 6)]
+LARGE_LARGE_FOLDERS = [f"{FOLDER}/CONIC_SIMPLE_3.0_10.0_2({i})" for i in range(1, 6)]
 
-SAVE_FOLDER = f"out/ADAPTIVE PLANNING TIME/CLUTTERED MERGED (MEDIAN)"
+SAVE_FOLDER = f"out/ADAPTIVE PLANNING TIME/SIMPLE MERGED"
 os.makedirs(SAVE_FOLDER, exist_ok=False)
 
 def merge_evaluations(folder):
@@ -118,7 +118,7 @@ def aggregate_grasps_randomised(folders):
     return all_runs
 
 def average_grasps(dfs):
-    return pd.concat(dfs).groupby(level=0).median()[:min([len(x) for x in dfs])] # can modify this
+    return pd.concat(dfs).groupby(level=0).mean()[:min([len(x) for x in dfs])] # can modify this
 
 all_small_small = aggregate_grasps(SMALL_SMALL_FOLDERS)
 all_small_med = aggregate_grasps(SMALL_MED_FOLDERS)
