@@ -93,6 +93,8 @@ class EpsilonGreedyUCB(AcquisitionFunction):
         weights = weights * uncertainty_weightings # weight by uncertainties
 
         # sample
+        if np.min(weights) == np.max(weights):
+            return random.sample(range(weights.shape[0]), 1)[0]
         if random.random() > self.current_eps or np.sum(weights) == 0.0:
             return int(np.argmax(weights))
         else:
