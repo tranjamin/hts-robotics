@@ -231,6 +231,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         if (goal_handle->get_goal()->target_id >= 0) {
             // register_grasped_object(object_name); // we don't need to do this because we don't actually close the gripper
             gripper_interface_->attachObject(object_name);
+            move_group_interface_->attachObject(object_name);
         }
 
         // ---------------- run trajectory generation for the move operation --------------- //        
@@ -248,6 +249,7 @@ void hts_node::handle_accepted_compute_grasp_validity_(const std::shared_ptr<rcl
         // detach target object
         if (goal_handle->get_goal()->target_id >= 0) {
             gripper_interface_->detachObject(object_name);
+            move_group_interface_->detachObject(object_name);
             // deregister_grasped_object(object_name); // we don't need to do this because we don't actually close the gripper
         }
 
@@ -314,6 +316,7 @@ void hts_node::handle_accepted_close_(const std::shared_ptr<rclcpp_action::Serve
         // attach object
         if (goal_handle->get_goal()->target_id >= 0) {
             gripper_interface_->attachObject(object_name);
+            move_group_interface_->attachObject(object_name);
         }
 
         // log results
@@ -351,6 +354,7 @@ void hts_node::handle_accepted_open_(const std::shared_ptr<rclcpp_action::Server
         // detach object
         if (goal_handle->get_goal()->target_id >= 0) {
             gripper_interface_->detachObject(object_name);
+            move_group_interface_->detachObject(object_name);
         }
 
         // move

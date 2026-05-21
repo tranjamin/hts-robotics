@@ -7,7 +7,7 @@ objects:
   # - beaker_sml
   # - beaker_med
   # - beaker_lrg
-  # - table
+  - table
   # - beaker_lrg_obstacle_0
   # - beaker_lrg_obstacle_1
   # - beaker_lrg_obstacle_3

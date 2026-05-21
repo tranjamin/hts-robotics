@@ -729,22 +729,22 @@ class AnyGraspNode(Node):
 
     def grasp_callback_(self, goal_handle) -> RequestGrasp.Result:
         """Callback for grasp request"""
-        # if self.GLOBAL_ITERATOR < 5: # base 
+        # if self.GLOBAL_ITERATOR < 0: # base 
         #     self.ENABLE_GRASP_SELECTION = False
         #     self.PLOT_SELECTION_GRAPHS = False
         #     self.SYMMETRY_ENABLE = False
         #     self.STABILITY_SCORE_CORRECTION_ENABLE = False
-        # elif self.GLOBAL_ITERATOR < 10: # symmetry
+        # elif self.GLOBAL_ITERATOR < 5: # symmetry
         #     self.ENABLE_GRASP_SELECTION = False
         #     self.PLOT_SELECTION_GRAPHS = False
         #     self.SYMMETRY_ENABLE = True
         #     self.STABILITY_SCORE_CORRECTION_ENABLE = False
-        # elif self.GLOBAL_ITERATOR < 15: # corrected
+        # elif self.GLOBAL_ITERATOR < 10: # corrected
         #     self.ENABLE_GRASP_SELECTION = False
         #     self.PLOT_SELECTION_GRAPHS = False
         #     self.SYMMETRY_ENABLE = True
         #     self.STABILITY_SCORE_CORRECTION_ENABLE = True
-        # elif self.GLOBAL_ITERATOR < 20:
+        # elif self.GLOBAL_ITERATOR < 15:
         #     self.ENABLE_GRASP_SELECTION = True
         #     self.PLOT_SELECTION_GRAPHS = True
         #     self.SYMMETRY_ENABLE = True

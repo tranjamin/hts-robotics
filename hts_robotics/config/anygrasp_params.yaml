@@ -40,8 +40,8 @@ kernel_length_scale_th: 0.8
 kernel_matern_nu: 2.5
 
 # for normal stuff
-baseline_planning_time: 0.2
-baseline_planning_time_move: 2.0
+baseline_planning_time: 0.1
+baseline_planning_time_move: 3.0
 total_planning_time_sec: 600
 enable_grasp_selection: True
 visualise: False
@@ -51,12 +51,13 @@ stability_score_correction_enable: True
 
 # for baseline stuff
 # baseline_planning_time: 0.1
+# baseline_planning_time_move: 1.0
 # total_planning_time_sec: 600
 # enable_grasp_selection: False
 # visualise: False
 # plot_selection_graphs: False
-# symmetry_enable: False
-# stability_score_correction_enable: False
+# symmetry_enable: True
+# stability_score_correction_enable: True
 
 acquisition_eps: 0.1
 acquisition_enable_decay: False
