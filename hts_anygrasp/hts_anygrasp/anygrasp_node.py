@@ -414,7 +414,7 @@ class AnyGraspNode(Node):
             average_rsquared: float= float(np.mean(rsquared))
 
             # approximate mass
-            layer_mass: float = average_rsquared*np.pi*SLICE_LAYER_HEIGHT - (average_rsquared - ASSUMED_THICKNESS)*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
+            layer_mass: float = average_rsquared*np.pi*SLICE_LAYER_HEIGHT - (np.sqrt(average_rsquared) - ASSUMED_THICKNESS)**2*np.pi*SLICE_LAYER_HEIGHT # alternatively, we could do convex hull
             layer_masses.append(layer_mass)
             layer_rsquareds.append(average_rsquared)
             total_mass += layer_mass
@@ -532,6 +532,7 @@ class AnyGraspNode(Node):
         grippers = []
         for grasp in gg:
             gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp.score)[:-1])
+            gripper.compute_vertex_normals()
             grippers.append(gripper)
         centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
         o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"All Grasp Score ")
@@ -539,6 +540,7 @@ class AnyGraspNode(Node):
         grippers = []
         for i, grasp in enumerate(gg):
             gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(grasp_factors[i])[:-1])
+            gripper.compute_vertex_normals()
             grippers.append(gripper)
         centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
         o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Sideways Grasp Score")
@@ -546,6 +548,7 @@ class AnyGraspNode(Node):
         grippers = []
         for i, grasp in enumerate(gg):
             gripper: Any = grasp.to_open3d_geometry(color=plt.get_cmap('Greens')(lambdas[i])[:-1])
+            gripper.compute_vertex_normals()
             grippers.append(gripper)
         centroid = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05, origin=geometric_centroid)
         o3d.visualization.draw_geometries([*grippers, cloud, centroid], window_name=f"Lambda Grasp Score")
@@ -946,11 +949,11 @@ class AnyGraspNode(Node):
 
         fig = plt.figure()
         ax = fig.add_subplot(projection="polar")
-        plot = ax.scatter(ths, zs, c=c)
+        plot = ax.scatter(ths, zs, c=c, marker="o", linewidths=0.3, edgecolors="black")
         ax.set_title(f"Grasp Group: {descr}")
         if c is not None:
             fig.colorbar(plot, ax=ax)
-        fig.savefig(f"{folder}/grasp_group_{descr}.png", format="png")
+        fig.savefig(f"{folder}/grasp_group_{descr}.svg", format="svg")
         plt.close(fig)
 
     def create_symmetry_grasps(self, gg: GraspNetGroup, cloud: o3d.cuda.pybind.geometry.PointCloud) -> None:

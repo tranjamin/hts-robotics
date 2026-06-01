@@ -99,7 +99,12 @@ def display_grasps(
     """
 
     # convert to o3d geometries
-    grippers: Any = gg.to_open3d_geometry_list()
+    # grippers: Any = gg.to_open3d_geometry_list()
+    grippers = []
+    for grasp in gg:
+        gripper = grasp.to_open3d_geometry(color=(0.3, 0.3, 1.0))
+        gripper.compute_vertex_normals()
+        grippers.append(gripper)
     origin_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1, origin=origin_position)
 
     # visualise
