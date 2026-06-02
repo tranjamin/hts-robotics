@@ -23,8 +23,10 @@ class GenericPoint(ABC):
         self._theta: float = 0 # the yaw of the grasp
         self.grasp_score: float = 0 # the grasp score
         self.path_score: float = math.inf # the computed path length, infinite if invalid
-        self.allocated_planning_time: float = 0.03 # the planning time allocated for this grasp
+        self.allocated_planning_time_pickup: float = 0.03 # the planning time allocated for this grasp
+        self.allocated_planning_time_move: float = 0.03
         self.valid: bool = False # whether this grasp is valid or not
+        self.invalidity_is_pickup: bool = True 
         self.evaluated: bool = False # whether this grasp has been evaluated or not
 
     def get_certainty(self) -> float:
@@ -66,7 +68,7 @@ class GenericPoint(ABC):
             return max(max_path_score - self.path_score, -max_path_score)
 
     @abstractmethod
-    def handle_evaluation_result(self, result: Any, time_model: PlanningTimeModel) -> None:
+    def handle_evaluation_result(self, result: Any, time_model: PlanningTimeModel, time_model_move: PlanningTimeModel | None=None) -> None:
         """
         Processes the result of a grasp evaluation.
 
@@ -106,17 +108,41 @@ class GraspPoint(GenericPoint):
         self.grasp_score: float = grasp.get_grasp_object().score
 
     def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float) -> None:
-        if self.valid:
-            time_model.add_planning_data(time_taken)
-            self.certainty = 1.0
-        else:
-            self.certainty = time_model.validity_failure_model(self.allocated_planning_time)
-            self.allocated_planning_time *= time_model.get_planning_multiplier() # update planning time
+        raise Exception("this should not be happening")
+        # if self.valid:
+        #     time_model.add_planning_data(time_taken)
+        #     self.certainty = 1.0
+        # else:
+        #     time_model.register_failed_plan()
+        #     self.certainty = time_model.validity_failure_model(self.allocated_planning_time)
+        #     self.allocated_planning_time *= time_model.get_planning_multiplier() # update planning time
 
-    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel) -> None:
+    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel, time_model_move: PlanningTimeModel) -> None:
         self.evaluated = True
         self.valid = result.is_valid
-        self.update_certainty_on_eval(time_model, float(result.pickup_plan_time))
+
+        pickup_time_taken = result.pickup_plan_time
+        move_time_taken = result.move_refine_time
+
+        if result.is_valid: # we update both
+            self.certainty = 1.0
+            time_model.add_planning_data(pickup_time_taken)
+            time_model_move.add_planning_data(move_time_taken)
+            self.allocated_planning_time_move = move_time_taken
+            self.allocated_planning_time_pickup = pickup_time_taken
+        elif move_time_taken == 0: # it is a pickup failure
+            time_model.register_failed_plan()
+            self.certainty = time_model.validity_failure_model(pickup_time_taken)
+            self.allocated_planning_time_pickup *= time_model.get_planning_multiplier() # update planning time
+            self.invalidity_is_pickup = True
+        else: # it is a move failure
+            time_model.register_failed_plan()
+            time_model.add_planning_data(pickup_time_taken)
+            self.certainty = time_model_move.validity_failure_model(move_time_taken)
+            self.allocated_planning_time_move *= time_model_move.get_planning_multiplier() # update planning time
+            self.invalidity_is_pickup = False
+            self.allocated_planning_time_pickup = pickup_time_taken
+
         self.path_score = result.score if result.is_valid else math.inf
 
 class GraspPointBaseline(GenericPoint):
@@ -136,7 +162,7 @@ class GraspPointBaseline(GenericPoint):
     def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float) -> None:
         self.certainty = 1.0
 
-    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel):
+    def handle_evaluation_result(self, result: ComputeGraspValidity.Result, time_model: PlanningTimeModel, time_model_move: PlanningTimeModel | None=None):
         self.evaluated = True
         self.valid = result.is_valid
         self.update_certainty_on_eval(time_model, float(result.pickup_plan_time))
@@ -166,7 +192,7 @@ class CoordinatePoint(GenericPoint):
     def update_certainty_on_eval(self, time_model: PlanningTimeModel, time_taken: float) -> None:
         self.certainty = 1.0
 
-    def handle_evaluation_result(self, result: float, time_model: PlanningTimeModel):
+    def handle_evaluation_result(self, result: float, time_model: PlanningTimeModel, time_model_move: PlanningTimeModel | None=None):
         self.evaluated = True
         self.valid = not math.isinf(result)
         self.update_certainty_on_eval(time_model, 0.0)
