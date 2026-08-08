@@ -1,3 +1,5 @@
+Thesis paper: [Motion-aware labware grasping for chemical research laboratories](thesis%20paper.pdf)
+
 <h1 style="font-size: 3em;">HTS Robotics</h1>
 
 > **Note:** hts-robotics is not officially supported on Windows.
